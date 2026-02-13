@@ -1,0 +1,101 @@
+{
+    "name": "server-monitor",
+    "displayName": "Server Monitor Dashboard",
+    "description": "Server-side monitoring and control dashboard",
+    "version": "1.0.0",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./dist/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "serverMonitor.showDashboard",
+                "title": "Focus Monitor Dashboard"
+            },
+            {
+                "command": "serverMonitor.generateReport",
+                "title": "Generate Client Report"
+            }
+        ],
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "monitor-explorer",
+                    "title": "Monitor",
+                    "icon": "resources/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "monitor-explorer": [
+                {
+                    "type": "webview",
+                    "id": "monitor-dashboard",
+                    "name": "Command Center",
+                    "icon": "resources/icon.svg"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "Server Monitor",
+            "properties": {
+                "serverMonitor.port": {
+                    "type": "number",
+                    "default": 54321,
+                    "description": "WebSocket server port"
+                },
+                "serverMonitor.serverId": {
+                    "type": "string",
+                    "default": "uwb-01",
+                    "description": "Unique identifier for this monitor server"
+                },
+                "serverMonitor.autoStart": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically start server on VS Code startup"
+                },
+                "serverMonitor.authorizedKeys": {
+                    "type": "array",
+                    "default": [],
+                    "description": "List of authorized client keys"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "node esbuild.js --production && node esbuild.js --production --webview",
+        "compile": "node esbuild.js && node esbuild.js --webview",
+        "watch": "concurrently \"node esbuild.js --watch\" \"node esbuild.js --webview --watch\"",
+        "build": "node esbuild.js && node esbuild.js --webview"
+    },
+    "dependencies": {
+        "ws": "^8.14.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "lucide-react": "^0.294.0",
+        "framer-motion": "^10.16.4",
+        "clsx": "^2.0.0",
+        "tailwind-merge": "^2.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.x",
+        "@types/vscode": "^1.85.0",
+        "@types/ws": "^8.5.0",
+        "@types/react": "^18.2.0",
+        "@types/react-dom": "^18.2.0",
+        "@vitejs/plugin-react": "^4.2.0",
+        "typescript": "^5.3.0",
+        "vite": "^5.0.0",
+        "vite-plugin-singlefile": "^0.13.5",
+        "autoprefixer": "^10.4.16",
+        "postcss": "^8.4.31",
+        "tailwindcss": "^3.3.5"
+    }
+}

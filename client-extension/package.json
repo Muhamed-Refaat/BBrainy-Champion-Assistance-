@@ -1,0 +1,58 @@
+{
+  "name": "client-monitor",
+  "displayName": "Client Monitor",
+  "description": "Client-side monitoring extension",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "clientMonitor.reconnect",
+        "title": "Reconnect to Monitor Server"
+      }
+    ],
+    "configuration": {
+      "title": "Client Monitor",
+      "properties": {
+        "clientMonitor.serverUrl": {
+          "type": "string",
+          "default": "ws://localhost:8080",
+          "description": "WebSocket server URL"
+        },
+        "clientMonitor.clientKey": {
+          "type": "string",
+          "description": "Unique client key for authentication"
+        },
+        "clientMonitor.autoConnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically connect on startup"
+        },
+        "clientMonitor.reportInterval": {
+          "type": "number",
+          "default": 60000,
+          "description": "Heartbeat interval in milliseconds"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "ws": "^8.14.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.3.0"
+  }
+}
