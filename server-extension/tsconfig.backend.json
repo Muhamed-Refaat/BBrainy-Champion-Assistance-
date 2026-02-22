@@ -1,0 +1,17 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "outDir": "./dist",
+        "module": "Node16",
+        "target": "ES2022",
+        "sourceMap": true,
+        "rootDir": "src/backend"
+    },
+    "include": [
+        "src/backend/**/*"
+    ],
+    "exclude": [
+        "node_modules",
+        "src/frontend"
+    ]
+}

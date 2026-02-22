@@ -39,43 +39,123 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 const vscode = __importStar(require("vscode"));
 const ws_1 = __importDefault(require("ws"));
-class ClientMonitor {
+class MonitorConnection {
+    config;
+    clientKey;
+    onCommand;
+    getSystemInfo;
     ws = null;
-    clientKey = '';
     reconnectInterval = null;
-    async connect() {
-        const config = vscode.workspace.getConfiguration('clientMonitor');
-        const serverUrl = config.get('serverUrl') || 'ws://localhost:8080';
-        this.clientKey = config.get('clientKey') || this.generateKey();
+    heartbeatInterval = null;
+    constructor(config, clientKey, onCommand, getSystemInfo) {
+        this.config = config;
+        this.clientKey = clientKey;
+        this.onCommand = onCommand;
+        this.getSystemInfo = getSystemInfo;
+    }
+    connect() {
         if (this.ws) {
             this.ws.close();
         }
-        this.ws = new ws_1.default(serverUrl);
+        console.log(`Connecting to ${this.config.serverId} at ${this.config.url}`);
+        this.ws = new ws_1.default(this.config.url);
         this.ws.on('open', () => {
-            console.log('Connected to monitor server');
+            console.log(`Connected to server: ${this.config.serverId}`);
             if (this.reconnectInterval) {
                 clearInterval(this.reconnectInterval);
                 this.reconnectInterval = null;
             }
             this.register();
+            this.startHeartbeat();
         });
-        this.ws.on('message', (data) => this.handleServerCommand(data));
+        this.ws.on('message', (data) => this.onCommand(this, data));
         this.ws.on('close', () => {
-            console.log('Disconnected from monitor server');
+            console.log(`Disconnected from ${this.config.serverId}`);
+            this.stopHeartbeat();
             this.scheduleReconnect();
         });
         this.ws.on('error', (err) => {
-            console.error('WebSocket error:', err);
+            console.error(`WebSocket error [${this.config.serverId}]:`, err.message);
         });
     }
     async register() {
-        const systemInfo = await this.collectSystemInfo();
+        const systemInfo = await this.getSystemInfo();
         this.send({
             type: 'register',
             clientKey: this.clientKey,
+            serverId: this.config.serverId,
             timestamp: Date.now(),
             payload: systemInfo
         });
+    }
+    startHeartbeat() {
+        this.stopHeartbeat();
+        this.heartbeatInterval = setInterval(() => {
+            this.send({
+                type: 'heartbeat',
+                clientKey: this.clientKey,
+                serverId: this.config.serverId,
+                timestamp: Date.now(),
+                payload: {}
+            });
+        }, 30000);
+    }
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+    }
+    scheduleReconnect() {
+        if (this.reconnectInterval)
+            return;
+        this.reconnectInterval = setInterval(() => this.connect(), 5000);
+    }
+    send(message) {
+        if (this.ws?.readyState === ws_1.default.OPEN) {
+            this.ws.send(JSON.stringify(message));
+        }
+    }
+    sendResponse(payload) {
+        this.send({
+            type: 'response',
+            clientKey: this.clientKey,
+            serverId: this.config.serverId,
+            timestamp: Date.now(),
+            payload
+        });
+    }
+    close() {
+        this.stopHeartbeat();
+        if (this.reconnectInterval)
+            clearInterval(this.reconnectInterval);
+        this.ws?.close();
+    }
+}
+class ClientMonitor {
+    connections = new Map();
+    clientKey = '';
+    async updateConnections() {
+        const config = vscode.workspace.getConfiguration('clientMonitor');
+        const servers = config.get('servers') || [];
+        this.clientKey = config.get('clientKey') || this.generateKey();
+        // Close old connections not in new config (by URL + ID)
+        const currentServerKeys = new Set(servers.map(s => `${s.serverId}@${s.url}`));
+        for (const [key, conn] of this.connections) {
+            if (!currentServerKeys.has(key)) {
+                conn.close();
+                this.connections.delete(key);
+            }
+        }
+        // Add or update connections
+        for (const server of servers) {
+            const key = `${server.serverId}@${server.url}`;
+            if (!this.connections.has(key)) {
+                const conn = new MonitorConnection(server, this.clientKey, (c, d) => this.handleServerCommand(c, d), () => this.collectSystemInfo());
+                this.connections.set(key, conn);
+                conn.connect();
+            }
+        }
     }
     async collectSystemInfo() {
         return {
@@ -101,7 +181,7 @@ class ClientMonitor {
             version: bbrainy?.packageJSON.version
         };
     }
-    async handleServerCommand(data) {
+    async handleServerCommand(conn, data) {
         let message;
         try {
             message = JSON.parse(data.toString());
@@ -111,81 +191,61 @@ class ClientMonitor {
         }
         switch (message.command) {
             case 'getSystemInfo':
-                this.sendResponse(await this.collectSystemInfo());
+                conn.sendResponse(await this.collectSystemInfo());
                 break;
             case 'checkBBrainy':
-                this.sendResponse(this.checkBBrainyStatus());
+                conn.sendResponse(this.checkBBrainyStatus());
                 break;
             case 'forceBBrainy':
-                await this.activateBBrainy();
+                await this.activateBBrainy(conn);
                 break;
             case 'setAlarm':
-                this.setupAlarm(message.payload);
+                this.setupAlarm(conn, message.payload);
                 break;
             case 'getWorkspace':
-                this.sendResponse({
+                conn.sendResponse({
                     workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
                     openFiles: vscode.workspace.textDocuments.map(d => d.fileName)
                 });
                 break;
         }
     }
-    async activateBBrainy() {
+    async activateBBrainy(conn) {
         const bbrainy = vscode.extensions.getExtension('bbrainy-id');
         if (bbrainy && !bbrainy.isActive) {
             await bbrainy.activate();
             vscode.window.showInformationMessage('BBrainy has been activated');
         }
-        this.sendResponse({ success: true, active: bbrainy?.isActive });
+        conn.sendResponse({ success: true, active: bbrainy?.isActive });
     }
-    setupAlarm(config) {
-        // Set up reminder/alarm for BBrainy usage
-        const interval = setInterval(() => {
+    setupAlarm(conn, config) {
+        setInterval(() => {
             const bbrainy = vscode.extensions.getExtension('bbrainy-id');
             if (!bbrainy?.isActive) {
-                vscode.window.showWarningMessage('Please activate BBrainy extension', 'Activate').then(choice => {
-                    if (choice === 'Activate') {
-                        this.activateBBrainy();
-                    }
+                vscode.window.showWarningMessage('Please activate BBrainy extension', 'Activate')
+                    .then(choice => {
+                    if (choice === 'Activate')
+                        this.activateBBrainy(conn);
                 });
             }
-        }, config.intervalMs || 3600000); // Default 1 hour
-    }
-    send(message) {
-        if (this.ws?.readyState === ws_1.default.OPEN) {
-            this.ws.send(JSON.stringify(message));
-        }
-    }
-    sendResponse(payload) {
-        this.send({
-            type: 'response',
-            clientKey: this.clientKey,
-            timestamp: Date.now(),
-            payload
-        });
+        }, config.intervalMs || 3600000);
     }
     generateKey() {
         const crypto = require('crypto');
         const machineId = require('os').hostname();
         const userId = require('os').userInfo().username;
-        return crypto
-            .createHash('sha256')
-            .update(`${machineId}-${userId}-${Date.now()}`)
-            .digest('hex');
-    }
-    scheduleReconnect() {
-        if (this.reconnectInterval)
-            return;
-        this.reconnectInterval = setInterval(() => {
-            this.connect();
-        }, 5000); // Try reconnecting every 5 seconds
+        return crypto.createHash('sha256').update(`${machineId}-${userId}-${Date.now()}`).digest('hex');
     }
 }
 function activate(context) {
     const monitor = new ClientMonitor();
-    monitor.connect();
-    context.subscriptions.push(vscode.commands.registerCommand('clientMonitor.reconnect', () => {
-        monitor.connect();
+    monitor.updateConnections();
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('clientMonitor.servers')) {
+            monitor.updateConnections();
+        }
+    }), vscode.commands.registerCommand('clientMonitor.reconnect', () => {
+        monitor.updateConnections();
     }));
 }
 //# sourceMappingURL=extension.js.map

@@ -68,19 +68,12 @@ interface Message {
 
 ```json
 {
-  "clientMonitor.serverUrl": "wss://localhost:54321", // Default: 54321
-  "clientMonitor.serverId": "uwb-01",              // Required: Target server ID
-  "clientMonitor.clientKey": "unique-key-here",
-  "clientMonitor.autoConnect": true
-}
-```
-### Configuration
-
-**File**: `settings.json`
-
-```json
-{
-  "clientMonitor.serverUrl": "wss://your-server.com",
+  "clientMonitor.servers": [
+    {
+      "url": "ws://10.11.35.154:54321",
+      "serverId": "uwb-01"
+    }
+  ],
   "clientMonitor.clientKey": "unique-key-here",
   "clientMonitor.autoConnect": true,
   "clientMonitor.reportInterval": 60000
@@ -1398,11 +1391,34 @@ private pruneOldClients() {
 - [ ] Batch operations
 - [ ] Cloud deployment
 
-### Phase 4: Polish
-- [ ] UI improvements
-- [ ] Performance optimization
-- [ ] Comprehensive documentation
-- [ ] User guide and tutorials
+## Network Connectivity & VPN Guide
+
+For the many-to-many architecture to function across different physical locations, the network path between Client and Server must be transparent.
+
+### 1. Unified VPN Access
+Ensure both the Server and all Clients are connected to the same VPN.
+- **Server VPN IP**: `10.11.35.154` (as identified by `Ethernet 2` adapter).
+- **Client Configuration**: Point the client to this specific IP in `settings.json`.
+
+### 2. Windows Firewall Configuration (Server Side)
+The Server machine **must** explicitly allow incoming traffic on the WebSocket port (54321).
+1. Open **Windows Defender Firewall with Advanced Security**.
+2. Go to **Inbound Rules** > **New Rule**.
+3. Select **Port** > **TCP** > Specific local ports: `54321`.
+4. Select **Allow the connection**.
+5. Apply to **Domain**, **Private**, and **Public**.
+
+### 3. Verification Commands
+- **Ping Test**: `ping 10.11.35.154`
+- **Port Visibility (PowerShell)**: 
+  ```powershell
+  Test-NetConnection -ComputerName 10.11.35.154 -Port 54321
+  ```
+
+### 4. Connection Lifecycle
+Connections are resilient. If the VPN drops, the Client enters a retry loop (every 5s) and reconnects automatically once the network is back. The Server preserves the "Last Seen" state to maintain asset history.
+
+---
 
 ## Resources
 

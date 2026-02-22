@@ -7742,7 +7742,8 @@ var require_react_dom_development = __commonJS({
           button: 0,
           buttons: 0,
           relatedTarget: function(event) {
-            if (event.relatedTarget === void 0) return event.fromElement === event.srcElement ? event.toElement : event.fromElement;
+            if (event.relatedTarget === void 0)
+              return event.fromElement === event.srcElement ? event.toElement : event.fromElement;
             return event.relatedTarget;
           },
           movementX: function(event) {
@@ -8458,42 +8459,43 @@ var require_react_dom_development = __commonJS({
           var indexWithinFocus = 0;
           var node = outerNode;
           var parentNode = null;
-          outer: while (true) {
-            var next = null;
+          outer:
             while (true) {
-              if (node === anchorNode && (anchorOffset === 0 || node.nodeType === TEXT_NODE)) {
-                start = length + anchorOffset;
+              var next = null;
+              while (true) {
+                if (node === anchorNode && (anchorOffset === 0 || node.nodeType === TEXT_NODE)) {
+                  start = length + anchorOffset;
+                }
+                if (node === focusNode && (focusOffset === 0 || node.nodeType === TEXT_NODE)) {
+                  end = length + focusOffset;
+                }
+                if (node.nodeType === TEXT_NODE) {
+                  length += node.nodeValue.length;
+                }
+                if ((next = node.firstChild) === null) {
+                  break;
+                }
+                parentNode = node;
+                node = next;
               }
-              if (node === focusNode && (focusOffset === 0 || node.nodeType === TEXT_NODE)) {
-                end = length + focusOffset;
+              while (true) {
+                if (node === outerNode) {
+                  break outer;
+                }
+                if (parentNode === anchorNode && ++indexWithinAnchor === anchorOffset) {
+                  start = length;
+                }
+                if (parentNode === focusNode && ++indexWithinFocus === focusOffset) {
+                  end = length;
+                }
+                if ((next = node.nextSibling) !== null) {
+                  break;
+                }
+                node = parentNode;
+                parentNode = node.parentNode;
               }
-              if (node.nodeType === TEXT_NODE) {
-                length += node.nodeValue.length;
-              }
-              if ((next = node.firstChild) === null) {
-                break;
-              }
-              parentNode = node;
               node = next;
             }
-            while (true) {
-              if (node === outerNode) {
-                break outer;
-              }
-              if (parentNode === anchorNode && ++indexWithinAnchor === anchorOffset) {
-                start = length;
-              }
-              if (parentNode === focusNode && ++indexWithinFocus === focusOffset) {
-                end = length;
-              }
-              if ((next = node.nextSibling) !== null) {
-                break;
-              }
-              node = parentNode;
-              parentNode = node.parentNode;
-            }
-            node = next;
-          }
           if (start === -1 || end === -1) {
             return null;
           }
@@ -9035,44 +9037,45 @@ var require_react_dom_development = __commonJS({
             var targetContainerNode = targetContainer;
             if (targetInst !== null) {
               var node = targetInst;
-              mainLoop: while (true) {
-                if (node === null) {
-                  return;
-                }
-                var nodeTag = node.tag;
-                if (nodeTag === HostRoot || nodeTag === HostPortal) {
-                  var container = node.stateNode.containerInfo;
-                  if (isMatchingRootContainer(container, targetContainerNode)) {
-                    break;
+              mainLoop:
+                while (true) {
+                  if (node === null) {
+                    return;
                   }
-                  if (nodeTag === HostPortal) {
-                    var grandNode = node.return;
-                    while (grandNode !== null) {
-                      var grandTag = grandNode.tag;
-                      if (grandTag === HostRoot || grandTag === HostPortal) {
-                        var grandContainer = grandNode.stateNode.containerInfo;
-                        if (isMatchingRootContainer(grandContainer, targetContainerNode)) {
-                          return;
+                  var nodeTag = node.tag;
+                  if (nodeTag === HostRoot || nodeTag === HostPortal) {
+                    var container = node.stateNode.containerInfo;
+                    if (isMatchingRootContainer(container, targetContainerNode)) {
+                      break;
+                    }
+                    if (nodeTag === HostPortal) {
+                      var grandNode = node.return;
+                      while (grandNode !== null) {
+                        var grandTag = grandNode.tag;
+                        if (grandTag === HostRoot || grandTag === HostPortal) {
+                          var grandContainer = grandNode.stateNode.containerInfo;
+                          if (isMatchingRootContainer(grandContainer, targetContainerNode)) {
+                            return;
+                          }
                         }
+                        grandNode = grandNode.return;
                       }
-                      grandNode = grandNode.return;
+                    }
+                    while (container !== null) {
+                      var parentNode = getClosestInstanceFromNode(container);
+                      if (parentNode === null) {
+                        return;
+                      }
+                      var parentTag = parentNode.tag;
+                      if (parentTag === HostComponent || parentTag === HostText) {
+                        node = ancestorInst = parentNode;
+                        continue mainLoop;
+                      }
+                      container = container.parentNode;
                     }
                   }
-                  while (container !== null) {
-                    var parentNode = getClosestInstanceFromNode(container);
-                    if (parentNode === null) {
-                      return;
-                    }
-                    var parentTag = parentNode.tag;
-                    if (parentTag === HostComponent || parentTag === HostText) {
-                      node = ancestorInst = parentNode;
-                      continue mainLoop;
-                    }
-                    container = container.parentNode;
-                  }
+                  node = node.return;
                 }
-                node = node.return;
-              }
             }
           }
           batchedUpdates(function() {
@@ -9352,8 +9355,10 @@ var require_react_dom_development = __commonJS({
               } else if (typeof nextProp === "number") {
                 setTextContent(domElement, "" + nextProp);
               }
-            } else if (propKey === SUPPRESS_CONTENT_EDITABLE_WARNING || propKey === SUPPRESS_HYDRATION_WARNING) ;
-            else if (propKey === AUTOFOCUS) ;
+            } else if (propKey === SUPPRESS_CONTENT_EDITABLE_WARNING || propKey === SUPPRESS_HYDRATION_WARNING)
+              ;
+            else if (propKey === AUTOFOCUS)
+              ;
             else if (registrationNameDependencies.hasOwnProperty(propKey)) {
               if (nextProp != null) {
                 if (typeof nextProp !== "function") {
@@ -9569,9 +9574,12 @@ var require_react_dom_development = __commonJS({
                   styleUpdates[styleName] = "";
                 }
               }
-            } else if (propKey === DANGEROUSLY_SET_INNER_HTML || propKey === CHILDREN) ;
-            else if (propKey === SUPPRESS_CONTENT_EDITABLE_WARNING || propKey === SUPPRESS_HYDRATION_WARNING) ;
-            else if (propKey === AUTOFOCUS) ;
+            } else if (propKey === DANGEROUSLY_SET_INNER_HTML || propKey === CHILDREN)
+              ;
+            else if (propKey === SUPPRESS_CONTENT_EDITABLE_WARNING || propKey === SUPPRESS_HYDRATION_WARNING)
+              ;
+            else if (propKey === AUTOFOCUS)
+              ;
             else if (registrationNameDependencies.hasOwnProperty(propKey)) {
               if (!updatePayload) {
                 updatePayload = [];
@@ -9630,7 +9638,8 @@ var require_react_dom_development = __commonJS({
               if (typeof nextProp === "string" || typeof nextProp === "number") {
                 (updatePayload = updatePayload || []).push(propKey, "" + nextProp);
               }
-            } else if (propKey === SUPPRESS_CONTENT_EDITABLE_WARNING || propKey === SUPPRESS_HYDRATION_WARNING) ;
+            } else if (propKey === SUPPRESS_CONTENT_EDITABLE_WARNING || propKey === SUPPRESS_HYDRATION_WARNING)
+              ;
             else if (registrationNameDependencies.hasOwnProperty(propKey)) {
               if (nextProp != null) {
                 if (typeof nextProp !== "function") {
@@ -9787,10 +9796,12 @@ var require_react_dom_development = __commonJS({
             typeof isCustomComponentTag === "boolean") {
               var serverValue = void 0;
               var propertyInfo = isCustomComponentTag && enableCustomElementPropertySupport ? null : getPropertyInfo(propKey);
-              if (rawProps[SUPPRESS_HYDRATION_WARNING] === true) ;
+              if (rawProps[SUPPRESS_HYDRATION_WARNING] === true)
+                ;
               else if (propKey === SUPPRESS_CONTENT_EDITABLE_WARNING || propKey === SUPPRESS_HYDRATION_WARNING || // Controlled attributes are not validated
               // TODO: Only ignore them on controlled tags.
-              propKey === "value" || propKey === "checked" || propKey === "selected") ;
+              propKey === "value" || propKey === "checked" || propKey === "selected")
+                ;
               else if (propKey === DANGEROUSLY_SET_INNER_HTML) {
                 var serverHTML = domElement.innerHTML;
                 var nextHtml = nextProp ? nextProp[HTML$1] : void 0;
@@ -10586,7 +10597,8 @@ var require_react_dom_development = __commonJS({
           {
             if (instance.nodeType === ELEMENT_NODE) {
               warnForDeletedHydratableElement(parentContainer, instance);
-            } else if (instance.nodeType === COMMENT_NODE) ;
+            } else if (instance.nodeType === COMMENT_NODE)
+              ;
             else {
               warnForDeletedHydratableText(parentContainer, instance);
             }
@@ -10598,7 +10610,8 @@ var require_react_dom_development = __commonJS({
             if (parentNode !== null) {
               if (instance.nodeType === ELEMENT_NODE) {
                 warnForDeletedHydratableElement(parentNode, instance);
-              } else if (instance.nodeType === COMMENT_NODE) ;
+              } else if (instance.nodeType === COMMENT_NODE)
+                ;
               else {
                 warnForDeletedHydratableText(parentNode, instance);
               }
@@ -10610,7 +10623,8 @@ var require_react_dom_development = __commonJS({
             if (isConcurrentMode || parentProps[SUPPRESS_HYDRATION_WARNING$1] !== true) {
               if (instance.nodeType === ELEMENT_NODE) {
                 warnForDeletedHydratableElement(parentInstance, instance);
-              } else if (instance.nodeType === COMMENT_NODE) ;
+              } else if (instance.nodeType === COMMENT_NODE)
+                ;
               else {
                 warnForDeletedHydratableText(parentInstance, instance);
               }
@@ -10630,13 +10644,15 @@ var require_react_dom_development = __commonJS({
         function didNotFindHydratableInstanceWithinSuspenseInstance(parentInstance, type, props) {
           {
             var parentNode = parentInstance.parentNode;
-            if (parentNode !== null) warnForInsertedHydratedElement(parentNode, type);
+            if (parentNode !== null)
+              warnForInsertedHydratedElement(parentNode, type);
           }
         }
         function didNotFindHydratableTextInstanceWithinSuspenseInstance(parentInstance, text) {
           {
             var parentNode = parentInstance.parentNode;
-            if (parentNode !== null) warnForInsertedHydratedText(parentNode, text);
+            if (parentNode !== null)
+              warnForInsertedHydratedText(parentNode, text);
           }
         }
         function didNotFindHydratableInstance(parentType, parentProps, parentInstance, type, props, isConcurrentMode) {
@@ -11223,7 +11239,8 @@ var require_react_dom_development = __commonJS({
               }
               case SuspenseComponent: {
                 var suspenseState = returnFiber.memoizedState;
-                if (suspenseState.dehydrated !== null) didNotHydrateInstanceWithinSuspenseInstance(suspenseState.dehydrated, instance);
+                if (suspenseState.dehydrated !== null)
+                  didNotHydrateInstanceWithinSuspenseInstance(suspenseState.dehydrated, instance);
                 break;
               }
             }
@@ -11302,17 +11319,18 @@ var require_react_dom_development = __commonJS({
               case SuspenseComponent: {
                 var suspenseState = returnFiber.memoizedState;
                 var _parentInstance = suspenseState.dehydrated;
-                if (_parentInstance !== null) switch (fiber.tag) {
-                  case HostComponent:
-                    var _type2 = fiber.type;
-                    var _props2 = fiber.pendingProps;
-                    didNotFindHydratableInstanceWithinSuspenseInstance(_parentInstance, _type2);
-                    break;
-                  case HostText:
-                    var _text2 = fiber.pendingProps;
-                    didNotFindHydratableTextInstanceWithinSuspenseInstance(_parentInstance, _text2);
-                    break;
-                }
+                if (_parentInstance !== null)
+                  switch (fiber.tag) {
+                    case HostComponent:
+                      var _type2 = fiber.type;
+                      var _props2 = fiber.pendingProps;
+                      didNotFindHydratableInstanceWithinSuspenseInstance(_parentInstance, _type2);
+                      break;
+                    case HostText:
+                      var _text2 = fiber.pendingProps;
+                      didNotFindHydratableTextInstanceWithinSuspenseInstance(_parentInstance, _text2);
+                      break;
+                  }
                 break;
               }
               default:
@@ -12601,7 +12619,8 @@ var require_react_dom_development = __commonJS({
                     var update = createUpdate(NoTimestamp, lane);
                     update.tag = ForceUpdate;
                     var updateQueue = fiber.updateQueue;
-                    if (updateQueue === null) ;
+                    if (updateQueue === null)
+                      ;
                     else {
                       var sharedQueue = updateQueue.shared;
                       var pending = sharedQueue.pending;
@@ -12687,7 +12706,8 @@ var require_react_dom_development = __commonJS({
             }
           }
           var value = context._currentValue;
-          if (lastFullyObservedContext === context) ;
+          if (lastFullyObservedContext === context)
+            ;
           else {
             var contextItem = {
               context,
@@ -17921,7 +17941,8 @@ var require_react_dom_development = __commonJS({
             while (node !== null) {
               if (node.tag === HostComponent || node.tag === HostText) {
                 appendInitialChild(parent, node.stateNode);
-              } else if (node.tag === HostPortal) ;
+              } else if (node.tag === HostPortal)
+                ;
               else if (node.child !== null) {
                 node.child.return = node;
                 node = node.child;
@@ -18875,19 +18896,20 @@ var require_react_dom_development = __commonJS({
                     onPostCommit(id3, phase, passiveEffectDuration, commitTime2);
                   }
                   var parentFiber = finishedWork.return;
-                  outer: while (parentFiber !== null) {
-                    switch (parentFiber.tag) {
-                      case HostRoot:
-                        var root2 = parentFiber.stateNode;
-                        root2.passiveEffectDuration += passiveEffectDuration;
-                        break outer;
-                      case Profiler:
-                        var parentStateNode = parentFiber.stateNode;
-                        parentStateNode.passiveEffectDuration += passiveEffectDuration;
-                        break outer;
+                  outer:
+                    while (parentFiber !== null) {
+                      switch (parentFiber.tag) {
+                        case HostRoot:
+                          var root2 = parentFiber.stateNode;
+                          root2.passiveEffectDuration += passiveEffectDuration;
+                          break outer;
+                        case Profiler:
+                          var parentStateNode = parentFiber.stateNode;
+                          parentStateNode.passiveEffectDuration += passiveEffectDuration;
+                          break outer;
+                      }
+                      parentFiber = parentFiber.return;
                     }
-                    parentFiber = parentFiber.return;
-                  }
                   break;
                 }
               }
@@ -19034,19 +19056,20 @@ var require_react_dom_development = __commonJS({
                     }
                     enqueuePendingPassiveProfilerEffect(finishedWork);
                     var parentFiber = finishedWork.return;
-                    outer: while (parentFiber !== null) {
-                      switch (parentFiber.tag) {
-                        case HostRoot:
-                          var root2 = parentFiber.stateNode;
-                          root2.effectDuration += effectDuration;
-                          break outer;
-                        case Profiler:
-                          var parentStateNode = parentFiber.stateNode;
-                          parentStateNode.effectDuration += effectDuration;
-                          break outer;
+                    outer:
+                      while (parentFiber !== null) {
+                        switch (parentFiber.tag) {
+                          case HostRoot:
+                            var root2 = parentFiber.stateNode;
+                            root2.effectDuration += effectDuration;
+                            break outer;
+                          case Profiler:
+                            var parentStateNode = parentFiber.stateNode;
+                            parentStateNode.effectDuration += effectDuration;
+                            break outer;
+                        }
+                        parentFiber = parentFiber.return;
                       }
-                      parentFiber = parentFiber.return;
-                    }
                   }
                 }
                 break;
@@ -19138,7 +19161,8 @@ var require_react_dom_development = __commonJS({
                     captureCommitPhaseError(finishedWork, finishedWork.return, error2);
                   }
                 }
-              } else if ((node.tag === OffscreenComponent || node.tag === LegacyHiddenComponent) && node.memoizedState !== null && node !== finishedWork) ;
+              } else if ((node.tag === OffscreenComponent || node.tag === LegacyHiddenComponent) && node.memoizedState !== null && node !== finishedWork)
+                ;
               else if (node.child !== null) {
                 node.child.return = node;
                 node = node.child;
@@ -19256,30 +19280,31 @@ var require_react_dom_development = __commonJS({
         }
         function getHostSibling(fiber) {
           var node = fiber;
-          siblings: while (true) {
-            while (node.sibling === null) {
-              if (node.return === null || isHostParent(node.return)) {
-                return null;
+          siblings:
+            while (true) {
+              while (node.sibling === null) {
+                if (node.return === null || isHostParent(node.return)) {
+                  return null;
+                }
+                node = node.return;
               }
-              node = node.return;
-            }
-            node.sibling.return = node.return;
-            node = node.sibling;
-            while (node.tag !== HostComponent && node.tag !== HostText && node.tag !== DehydratedFragment) {
-              if (node.flags & Placement) {
-                continue siblings;
+              node.sibling.return = node.return;
+              node = node.sibling;
+              while (node.tag !== HostComponent && node.tag !== HostText && node.tag !== DehydratedFragment) {
+                if (node.flags & Placement) {
+                  continue siblings;
+                }
+                if (node.child === null || node.tag === HostPortal) {
+                  continue siblings;
+                } else {
+                  node.child.return = node;
+                  node = node.child;
+                }
               }
-              if (node.child === null || node.tag === HostPortal) {
-                continue siblings;
-              } else {
-                node.child.return = node;
-                node = node.child;
+              if (!(node.flags & Placement)) {
+                return node.stateNode;
               }
             }
-            if (!(node.flags & Placement)) {
-              return node.stateNode;
-            }
-          }
         }
         function commitPlacement(finishedWork) {
           var parentFiber = getHostParentFiber(finishedWork);
@@ -19315,7 +19340,8 @@ var require_react_dom_development = __commonJS({
             } else {
               appendChildToContainer(parent, stateNode);
             }
-          } else if (tag === HostPortal) ;
+          } else if (tag === HostPortal)
+            ;
           else {
             var child = node.child;
             if (child !== null) {
@@ -19338,7 +19364,8 @@ var require_react_dom_development = __commonJS({
             } else {
               appendChild(parent, stateNode);
             }
-          } else if (tag === HostPortal) ;
+          } else if (tag === HostPortal)
+            ;
           else {
             var child = node.child;
             if (child !== null) {
@@ -19356,26 +19383,27 @@ var require_react_dom_development = __commonJS({
         function commitDeletionEffects(root2, returnFiber, deletedFiber) {
           {
             var parent = returnFiber;
-            findParent: while (parent !== null) {
-              switch (parent.tag) {
-                case HostComponent: {
-                  hostParent = parent.stateNode;
-                  hostParentIsContainer = false;
-                  break findParent;
+            findParent:
+              while (parent !== null) {
+                switch (parent.tag) {
+                  case HostComponent: {
+                    hostParent = parent.stateNode;
+                    hostParentIsContainer = false;
+                    break findParent;
+                  }
+                  case HostRoot: {
+                    hostParent = parent.stateNode.containerInfo;
+                    hostParentIsContainer = true;
+                    break findParent;
+                  }
+                  case HostPortal: {
+                    hostParent = parent.stateNode.containerInfo;
+                    hostParentIsContainer = true;
+                    break findParent;
+                  }
                 }
-                case HostRoot: {
-                  hostParent = parent.stateNode.containerInfo;
-                  hostParentIsContainer = true;
-                  break findParent;
-                }
-                case HostPortal: {
-                  hostParent = parent.stateNode.containerInfo;
-                  hostParentIsContainer = true;
-                  break findParent;
-                }
+                parent = parent.return;
               }
-              parent = parent.return;
-            }
             if (hostParent === null) {
               throw new Error("Expected to find a host parent. This error is likely caused by a bug in React. Please file an issue.");
             }
@@ -22287,66 +22315,67 @@ var require_react_dom_development = __commonJS({
           } else if (typeof type === "string") {
             fiberTag = HostComponent;
           } else {
-            getTag: switch (type) {
-              case REACT_FRAGMENT_TYPE:
-                return createFiberFromFragment(pendingProps.children, mode, lanes, key);
-              case REACT_STRICT_MODE_TYPE:
-                fiberTag = Mode;
-                mode |= StrictLegacyMode;
-                if ((mode & ConcurrentMode) !== NoMode) {
-                  mode |= StrictEffectsMode;
-                }
-                break;
-              case REACT_PROFILER_TYPE:
-                return createFiberFromProfiler(pendingProps, mode, lanes, key);
-              case REACT_SUSPENSE_TYPE:
-                return createFiberFromSuspense(pendingProps, mode, lanes, key);
-              case REACT_SUSPENSE_LIST_TYPE:
-                return createFiberFromSuspenseList(pendingProps, mode, lanes, key);
-              case REACT_OFFSCREEN_TYPE:
-                return createFiberFromOffscreen(pendingProps, mode, lanes, key);
-              case REACT_LEGACY_HIDDEN_TYPE:
-              case REACT_SCOPE_TYPE:
-              case REACT_CACHE_TYPE:
-              case REACT_TRACING_MARKER_TYPE:
-              case REACT_DEBUG_TRACING_MODE_TYPE:
-              default: {
-                if (typeof type === "object" && type !== null) {
-                  switch (type.$$typeof) {
-                    case REACT_PROVIDER_TYPE:
-                      fiberTag = ContextProvider;
-                      break getTag;
-                    case REACT_CONTEXT_TYPE:
-                      fiberTag = ContextConsumer;
-                      break getTag;
-                    case REACT_FORWARD_REF_TYPE:
-                      fiberTag = ForwardRef;
-                      {
-                        resolvedType = resolveForwardRefForHotReloading(resolvedType);
-                      }
-                      break getTag;
-                    case REACT_MEMO_TYPE:
-                      fiberTag = MemoComponent;
-                      break getTag;
-                    case REACT_LAZY_TYPE:
-                      fiberTag = LazyComponent;
-                      resolvedType = null;
-                      break getTag;
+            getTag:
+              switch (type) {
+                case REACT_FRAGMENT_TYPE:
+                  return createFiberFromFragment(pendingProps.children, mode, lanes, key);
+                case REACT_STRICT_MODE_TYPE:
+                  fiberTag = Mode;
+                  mode |= StrictLegacyMode;
+                  if ((mode & ConcurrentMode) !== NoMode) {
+                    mode |= StrictEffectsMode;
                   }
-                }
-                var info = "";
-                {
-                  if (type === void 0 || typeof type === "object" && type !== null && Object.keys(type).length === 0) {
-                    info += " You likely forgot to export your component from the file it's defined in, or you might have mixed up default and named imports.";
+                  break;
+                case REACT_PROFILER_TYPE:
+                  return createFiberFromProfiler(pendingProps, mode, lanes, key);
+                case REACT_SUSPENSE_TYPE:
+                  return createFiberFromSuspense(pendingProps, mode, lanes, key);
+                case REACT_SUSPENSE_LIST_TYPE:
+                  return createFiberFromSuspenseList(pendingProps, mode, lanes, key);
+                case REACT_OFFSCREEN_TYPE:
+                  return createFiberFromOffscreen(pendingProps, mode, lanes, key);
+                case REACT_LEGACY_HIDDEN_TYPE:
+                case REACT_SCOPE_TYPE:
+                case REACT_CACHE_TYPE:
+                case REACT_TRACING_MARKER_TYPE:
+                case REACT_DEBUG_TRACING_MODE_TYPE:
+                default: {
+                  if (typeof type === "object" && type !== null) {
+                    switch (type.$$typeof) {
+                      case REACT_PROVIDER_TYPE:
+                        fiberTag = ContextProvider;
+                        break getTag;
+                      case REACT_CONTEXT_TYPE:
+                        fiberTag = ContextConsumer;
+                        break getTag;
+                      case REACT_FORWARD_REF_TYPE:
+                        fiberTag = ForwardRef;
+                        {
+                          resolvedType = resolveForwardRefForHotReloading(resolvedType);
+                        }
+                        break getTag;
+                      case REACT_MEMO_TYPE:
+                        fiberTag = MemoComponent;
+                        break getTag;
+                      case REACT_LAZY_TYPE:
+                        fiberTag = LazyComponent;
+                        resolvedType = null;
+                        break getTag;
+                    }
                   }
-                  var ownerName = owner ? getComponentNameFromFiber(owner) : null;
-                  if (ownerName) {
-                    info += "\n\nCheck the render method of `" + ownerName + "`.";
+                  var info = "";
+                  {
+                    if (type === void 0 || typeof type === "object" && type !== null && Object.keys(type).length === 0) {
+                      info += " You likely forgot to export your component from the file it's defined in, or you might have mixed up default and named imports.";
+                    }
+                    var ownerName = owner ? getComponentNameFromFiber(owner) : null;
+                    if (ownerName) {
+                      info += "\n\nCheck the render method of `" + ownerName + "`.";
+                    }
                   }
+                  throw new Error("Element type is invalid: expected a string (for built-in components) or a class/function (for composite components) " + ("but got: " + (type == null ? type : typeof type) + "." + info));
                 }
-                throw new Error("Element type is invalid: expected a string (for built-in components) or a class/function (for composite components) " + ("but got: " + (type == null ? type : typeof type) + "." + info));
               }
-            }
           }
           var fiber = createFiber(fiberTag, pendingProps, key, mode);
           fiber.elementType = type;
@@ -23530,7 +23559,8 @@ var require_memoize_browser_cjs = __commonJS({
     function memoize(fn) {
       var cache = {};
       return function(arg) {
-        if (cache[arg] === void 0) cache[arg] = fn(arg);
+        if (cache[arg] === void 0)
+          cache[arg] = fn(arg);
         return cache[arg];
       };
     }
@@ -31750,7 +31780,7 @@ var vscode = acquireVsCodeApi();
 var GlassCard = ({ children, className = "" }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: `liquid-glass liquid-glass-glow rounded-2xl p-6 ${className}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "relative z-10", children }) });
 var App = () => {
   const [data, setData] = (0, import_react26.useState)({
-    serverStatus: { running: false, port: 8080 },
+    serverStatus: { running: false, port: 54321, serverId: "uwb-01" },
     total: 0,
     online: 0,
     offline: 0,
@@ -31780,7 +31810,7 @@ var App = () => {
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { className: "text-xl font-extrabold tracking-tight mb-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400", children: "Monitor Dashboard" }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-2", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `w-2 h-2 rounded-full ${data.serverStatus.running ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}` }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-slate-400 font-medium", children: data.serverStatus.running ? `Online (Port ${data.serverStatus.port})` : "Offline" })
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-slate-400 font-medium", children: data.serverStatus.running ? `Online: ${data.serverStatus.serverId} on ${data.serverStatus.port}` : `Standalone [${data.serverStatus.serverId}]` })
       ] })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "grid grid-cols-2 gap-2 mb-6", children: [

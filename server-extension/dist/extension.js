@@ -36,7 +36,8 @@ var require_constants = __commonJS({
     "use strict";
     var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
     var hasBlob = typeof Blob !== "undefined";
-    if (hasBlob) BINARY_TYPES.push("blob");
+    if (hasBlob)
+      BINARY_TYPES.push("blob");
     module2.exports = {
       BINARY_TYPES,
       CLOSE_TIMEOUT: 3e4,
@@ -60,8 +61,10 @@ var require_buffer_util = __commonJS({
     var { EMPTY_BUFFER } = require_constants();
     var FastBuffer = Buffer[Symbol.species];
     function concat(list, totalLength) {
-      if (list.length === 0) return EMPTY_BUFFER;
-      if (list.length === 1) return list[0];
+      if (list.length === 0)
+        return EMPTY_BUFFER;
+      if (list.length === 1)
+        return list[0];
       const target = Buffer.allocUnsafe(totalLength);
       let offset = 0;
       for (let i = 0; i < list.length; i++) {
@@ -92,7 +95,8 @@ var require_buffer_util = __commonJS({
     }
     function toBuffer(data) {
       toBuffer.readOnly = true;
-      if (Buffer.isBuffer(data)) return data;
+      if (Buffer.isBuffer(data))
+        return data;
       let buf;
       if (data instanceof ArrayBuffer) {
         buf = new FastBuffer(data);
@@ -115,12 +119,16 @@ var require_buffer_util = __commonJS({
       try {
         const bufferUtil = require("bufferutil");
         module2.exports.mask = function(source, mask, output, offset, length) {
-          if (length < 48) _mask(source, mask, output, offset, length);
-          else bufferUtil.mask(source, mask, output, offset, length);
+          if (length < 48)
+            _mask(source, mask, output, offset, length);
+          else
+            bufferUtil.mask(source, mask, output, offset, length);
         };
         module2.exports.unmask = function(buffer, mask) {
-          if (buffer.length < 32) _unmask(buffer, mask);
-          else bufferUtil.unmask(buffer, mask);
+          if (buffer.length < 32)
+            _unmask(buffer, mask);
+          else
+            bufferUtil.unmask(buffer, mask);
         };
       } catch (e) {
       }
@@ -166,7 +174,8 @@ var require_limiter = __commonJS({
        * @private
        */
       [kRun]() {
-        if (this.pending === this.concurrency) return;
+        if (this.pending === this.concurrency)
+          return;
         if (this.jobs.length) {
           const job = this.jobs.shift();
           this.pending++;
@@ -462,7 +471,8 @@ var require_permessage_deflate = __commonJS({
         }
         this._inflate[kCallback] = callback;
         this._inflate.write(data);
-        if (fin) this._inflate.write(TRAILER);
+        if (fin)
+          this._inflate.write(TRAILER);
         this._inflate.flush(() => {
           const err = this._inflate[kError];
           if (err) {
@@ -835,7 +845,8 @@ var require_receiver = __commonJS({
        * @private
        */
       _write(chunk, encoding, cb) {
-        if (this._opcode === 8 && this._state == GET_INFO) return cb();
+        if (this._opcode === 8 && this._state == GET_INFO)
+          return cb();
         this._bufferedBytes += chunk.length;
         this._buffers.push(chunk);
         this.startLoop(cb);
@@ -849,7 +860,8 @@ var require_receiver = __commonJS({
        */
       consume(n) {
         this._bufferedBytes -= n;
-        if (n === this._buffers[0].length) return this._buffers.shift();
+        if (n === this._buffers[0].length)
+          return this._buffers.shift();
         if (n < this._buffers[0].length) {
           const buf = this._buffers[0];
           this._buffers[0] = new FastBuffer(
@@ -908,7 +920,8 @@ var require_receiver = __commonJS({
               return;
           }
         } while (this._loop);
-        if (!this._errored) cb();
+        if (!this._errored)
+          cb();
       }
       /**
        * Reads the first two bytes of a frame.
@@ -1030,7 +1043,8 @@ var require_receiver = __commonJS({
           cb(error);
           return;
         }
-        if (!this._fin && !this._fragmented) this._fragmented = this._opcode;
+        if (!this._fin && !this._fragmented)
+          this._fragmented = this._opcode;
         this._masked = (buf[1] & 128) === 128;
         if (this._isServer) {
           if (!this._masked) {
@@ -1055,9 +1069,12 @@ var require_receiver = __commonJS({
           cb(error);
           return;
         }
-        if (this._payloadLength === 126) this._state = GET_PAYLOAD_LENGTH_16;
-        else if (this._payloadLength === 127) this._state = GET_PAYLOAD_LENGTH_64;
-        else this.haveLength(cb);
+        if (this._payloadLength === 126)
+          this._state = GET_PAYLOAD_LENGTH_16;
+        else if (this._payloadLength === 127)
+          this._state = GET_PAYLOAD_LENGTH_64;
+        else
+          this.haveLength(cb);
       }
       /**
        * Gets extended payload length (7+16).
@@ -1121,8 +1138,10 @@ var require_receiver = __commonJS({
             return;
           }
         }
-        if (this._masked) this._state = GET_MASK;
-        else this._state = GET_DATA;
+        if (this._masked)
+          this._state = GET_MASK;
+        else
+          this._state = GET_DATA;
       }
       /**
        * Reads mask bytes.
@@ -1180,7 +1199,8 @@ var require_receiver = __commonJS({
       decompress(data, cb) {
         const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
         perMessageDeflate.decompress(data, this._fin, (err, buf) => {
-          if (err) return cb(err);
+          if (err)
+            return cb(err);
           if (buf.length) {
             this._messageLength += buf.length;
             if (this._messageLength > this._maxPayload && this._maxPayload > 0) {
@@ -1197,7 +1217,8 @@ var require_receiver = __commonJS({
             this._fragments.push(buf);
           }
           this.dataMessage(cb);
-          if (this._state === GET_INFO) this.startLoop(cb);
+          if (this._state === GET_INFO)
+            this.startLoop(cb);
         });
       }
       /**
@@ -1464,7 +1485,8 @@ var require_sender = __commonJS({
         }
         const target = Buffer.allocUnsafe(merge ? dataLength + offset : offset);
         target[0] = options.fin ? options.opcode | 128 : options.opcode;
-        if (options.rsv1) target[0] |= 64;
+        if (options.rsv1)
+          target[0] |= 64;
         target[1] = payloadLength;
         if (payloadLength === 126) {
           target.writeUInt16BE(dataLength, 2);
@@ -1472,13 +1494,15 @@ var require_sender = __commonJS({
           target[2] = target[3] = 0;
           target.writeUIntBE(dataLength, 4, 6);
         }
-        if (!options.mask) return [target, data];
+        if (!options.mask)
+          return [target, data];
         target[1] |= 128;
         target[offset - 4] = mask[0];
         target[offset - 3] = mask[1];
         target[offset - 2] = mask[2];
         target[offset - 1] = mask[3];
-        if (skipMasking) return [target, data];
+        if (skipMasking)
+          return [target, data];
         if (merge) {
           applyMask(data, mask, target, offset, dataLength);
           return [target];
@@ -1670,7 +1694,8 @@ var require_sender = __commonJS({
           rsv1 = false;
           opcode = 0;
         }
-        if (options.fin) this._firstFragment = true;
+        if (options.fin)
+          this._firstFragment = true;
         const opts = {
           [kByteLength]: byteLength,
           fin: options.fin,
@@ -1828,11 +1853,13 @@ var require_sender = __commonJS({
     };
     module2.exports = Sender2;
     function callCallbacks(sender, err, cb) {
-      if (typeof cb === "function") cb(err);
+      if (typeof cb === "function")
+        cb(err);
       for (let i = 0; i < sender._queue.length; i++) {
         const params = sender._queue[i];
         const callback = params[params.length - 1];
-        if (typeof callback === "function") callback(err);
+        if (typeof callback === "function")
+          callback(err);
       }
     }
     function onError(sender, err, cb) {
@@ -2077,8 +2104,10 @@ var require_extension = __commonJS({
     "use strict";
     var { tokenChars } = require_validation();
     function push(dest, name, elem) {
-      if (dest[name] === void 0) dest[name] = [elem];
-      else dest[name].push(elem);
+      if (dest[name] === void 0)
+        dest[name] = [elem];
+      else
+        dest[name].push(elem);
     }
     function parse(header) {
       const offers = /* @__PURE__ */ Object.create(null);
@@ -2096,14 +2125,17 @@ var require_extension = __commonJS({
         code = header.charCodeAt(i);
         if (extensionName === void 0) {
           if (end === -1 && tokenChars[code] === 1) {
-            if (start === -1) start = i;
+            if (start === -1)
+              start = i;
           } else if (i !== 0 && (code === 32 || code === 9)) {
-            if (end === -1 && start !== -1) end = i;
+            if (end === -1 && start !== -1)
+              end = i;
           } else if (code === 59 || code === 44) {
             if (start === -1) {
               throw new SyntaxError(`Unexpected character at index ${i}`);
             }
-            if (end === -1) end = i;
+            if (end === -1)
+              end = i;
             const name = header.slice(start, end);
             if (code === 44) {
               push(offers, name, params);
@@ -2117,14 +2149,17 @@ var require_extension = __commonJS({
           }
         } else if (paramName === void 0) {
           if (end === -1 && tokenChars[code] === 1) {
-            if (start === -1) start = i;
+            if (start === -1)
+              start = i;
           } else if (code === 32 || code === 9) {
-            if (end === -1 && start !== -1) end = i;
+            if (end === -1 && start !== -1)
+              end = i;
           } else if (code === 59 || code === 44) {
             if (start === -1) {
               throw new SyntaxError(`Unexpected character at index ${i}`);
             }
-            if (end === -1) end = i;
+            if (end === -1)
+              end = i;
             push(params, header.slice(start, end), true);
             if (code === 44) {
               push(offers, extensionName, params);
@@ -2143,12 +2178,15 @@ var require_extension = __commonJS({
             if (tokenChars[code] !== 1) {
               throw new SyntaxError(`Unexpected character at index ${i}`);
             }
-            if (start === -1) start = i;
-            else if (!mustUnescape) mustUnescape = true;
+            if (start === -1)
+              start = i;
+            else if (!mustUnescape)
+              mustUnescape = true;
             isEscaping = false;
           } else if (inQuotes) {
             if (tokenChars[code] === 1) {
-              if (start === -1) start = i;
+              if (start === -1)
+                start = i;
             } else if (code === 34 && start !== -1) {
               inQuotes = false;
               end = i;
@@ -2160,14 +2198,17 @@ var require_extension = __commonJS({
           } else if (code === 34 && header.charCodeAt(i - 1) === 61) {
             inQuotes = true;
           } else if (end === -1 && tokenChars[code] === 1) {
-            if (start === -1) start = i;
+            if (start === -1)
+              start = i;
           } else if (start !== -1 && (code === 32 || code === 9)) {
-            if (end === -1) end = i;
+            if (end === -1)
+              end = i;
           } else if (code === 59 || code === 44) {
             if (start === -1) {
               throw new SyntaxError(`Unexpected character at index ${i}`);
             }
-            if (end === -1) end = i;
+            if (end === -1)
+              end = i;
             let value = header.slice(start, end);
             if (mustUnescape) {
               value = value.replace(/\\/g, "");
@@ -2189,7 +2230,8 @@ var require_extension = __commonJS({
       if (start === -1 || inQuotes || code === 32 || code === 9) {
         throw new SyntaxError("Unexpected end of input");
       }
-      if (end === -1) end = i;
+      if (end === -1)
+        end = i;
       const token = header.slice(start, end);
       if (extensionName === void 0) {
         push(offers, token, params);
@@ -2208,12 +2250,14 @@ var require_extension = __commonJS({
     function format(extensions) {
       return Object.keys(extensions).map((extension) => {
         let configurations = extensions[extension];
-        if (!Array.isArray(configurations)) configurations = [configurations];
+        if (!Array.isArray(configurations))
+          configurations = [configurations];
         return configurations.map((params) => {
           return [extension].concat(
             Object.keys(params).map((k) => {
               let values = params[k];
-              if (!Array.isArray(values)) values = [values];
+              if (!Array.isArray(values))
+                values = [values];
               return values.map((v) => v === true ? k : `${k}=${v}`).join("; ");
             })
           ).join("; ");
@@ -2315,15 +2359,18 @@ var require_websocket = __commonJS({
         return this._binaryType;
       }
       set binaryType(type) {
-        if (!BINARY_TYPES.includes(type)) return;
+        if (!BINARY_TYPES.includes(type))
+          return;
         this._binaryType = type;
-        if (this._receiver) this._receiver._binaryType = type;
+        if (this._receiver)
+          this._receiver._binaryType = type;
       }
       /**
        * @type {Number}
        */
       get bufferedAmount() {
-        if (!this._socket) return this._bufferedAmount;
+        if (!this._socket)
+          return this._bufferedAmount;
         return this._socket._writableState.length + this._sender._bufferedBytes;
       }
       /**
@@ -2423,9 +2470,12 @@ var require_websocket = __commonJS({
         receiver.on("ping", receiverOnPing);
         receiver.on("pong", receiverOnPong);
         sender.onerror = senderOnError;
-        if (socket.setTimeout) socket.setTimeout(0);
-        if (socket.setNoDelay) socket.setNoDelay();
-        if (head.length > 0) socket.unshift(head);
+        if (socket.setTimeout)
+          socket.setTimeout(0);
+        if (socket.setNoDelay)
+          socket.setNoDelay();
+        if (head.length > 0)
+          socket.unshift(head);
         socket.on("close", socketOnClose);
         socket.on("data", socketOnData);
         socket.on("end", socketOnEnd);
@@ -2472,7 +2522,8 @@ var require_websocket = __commonJS({
        * @public
        */
       close(code, data) {
-        if (this.readyState === _WebSocket.CLOSED) return;
+        if (this.readyState === _WebSocket.CLOSED)
+          return;
         if (this.readyState === _WebSocket.CONNECTING) {
           const msg = "WebSocket was closed before the connection was established";
           abortHandshake(this, this._req, msg);
@@ -2486,7 +2537,8 @@ var require_websocket = __commonJS({
         }
         this._readyState = _WebSocket.CLOSING;
         this._sender.close(code, data, !this._isServer, (err) => {
-          if (err) return;
+          if (err)
+            return;
           this._closeFrameSent = true;
           if (this._closeFrameReceived || this._receiver._writableState.errorEmitted) {
             this._socket.end();
@@ -2525,12 +2577,14 @@ var require_websocket = __commonJS({
           cb = mask;
           mask = void 0;
         }
-        if (typeof data === "number") data = data.toString();
+        if (typeof data === "number")
+          data = data.toString();
         if (this.readyState !== _WebSocket.OPEN) {
           sendAfterClose(this, data, cb);
           return;
         }
-        if (mask === void 0) mask = !this._isServer;
+        if (mask === void 0)
+          mask = !this._isServer;
         this._sender.ping(data || EMPTY_BUFFER, mask, cb);
       }
       /**
@@ -2552,12 +2606,14 @@ var require_websocket = __commonJS({
           cb = mask;
           mask = void 0;
         }
-        if (typeof data === "number") data = data.toString();
+        if (typeof data === "number")
+          data = data.toString();
         if (this.readyState !== _WebSocket.OPEN) {
           sendAfterClose(this, data, cb);
           return;
         }
-        if (mask === void 0) mask = !this._isServer;
+        if (mask === void 0)
+          mask = !this._isServer;
         this._sender.pong(data || EMPTY_BUFFER, mask, cb);
       }
       /**
@@ -2570,7 +2626,8 @@ var require_websocket = __commonJS({
           return;
         }
         this._paused = false;
-        if (!this._receiver._writableState.needDrain) this._socket.resume();
+        if (!this._receiver._writableState.needDrain)
+          this._socket.resume();
       }
       /**
        * Send a data message.
@@ -2595,7 +2652,8 @@ var require_websocket = __commonJS({
           cb = options;
           options = {};
         }
-        if (typeof data === "number") data = data.toString();
+        if (typeof data === "number")
+          data = data.toString();
         if (this.readyState !== _WebSocket.OPEN) {
           sendAfterClose(this, data, cb);
           return;
@@ -2618,7 +2676,8 @@ var require_websocket = __commonJS({
        * @public
        */
       terminate() {
-        if (this.readyState === _WebSocket.CLOSED) return;
+        if (this.readyState === _WebSocket.CLOSED)
+          return;
         if (this.readyState === _WebSocket.CONNECTING) {
           const msg = "WebSocket was closed before the connection was established";
           abortHandshake(this, this._req, msg);
@@ -2678,7 +2737,8 @@ var require_websocket = __commonJS({
         enumerable: true,
         get() {
           for (const listener of this.listeners(method)) {
-            if (listener[kForOnEventAttribute]) return listener[kListener];
+            if (listener[kForOnEventAttribute])
+              return listener[kListener];
           }
           return null;
         },
@@ -2689,7 +2749,8 @@ var require_websocket = __commonJS({
               break;
             }
           }
-          if (typeof handler !== "function") return;
+          if (typeof handler !== "function")
+            return;
           this.addEventListener(method, handler, {
             [kForOnEventAttribute]: true
           });
@@ -2834,7 +2895,8 @@ var require_websocket = __commonJS({
           if (!isSameHost || websocket._originalSecure && !isSecure) {
             delete opts.headers.authorization;
             delete opts.headers.cookie;
-            if (!isSameHost) delete opts.headers.host;
+            if (!isSameHost)
+              delete opts.headers.host;
             opts.auth = void 0;
           }
         }
@@ -2854,7 +2916,8 @@ var require_websocket = __commonJS({
         });
       }
       req.on("error", (err) => {
-        if (req === null || req[kAborted]) return;
+        if (req === null || req[kAborted])
+          return;
         req = websocket._req = null;
         emitErrorAndClose(websocket, err);
       });
@@ -2886,7 +2949,8 @@ var require_websocket = __commonJS({
       });
       req.on("upgrade", (res, socket, head) => {
         websocket.emit("upgrade", res);
-        if (websocket.readyState !== WebSocket2.CONNECTING) return;
+        if (websocket.readyState !== WebSocket2.CONNECTING)
+          return;
         req = websocket._req = null;
         const upgrade = res.headers.upgrade;
         if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
@@ -2913,7 +2977,8 @@ var require_websocket = __commonJS({
           abortHandshake(websocket, socket, protError);
           return;
         }
-        if (serverProt) websocket._protocol = serverProt;
+        if (serverProt)
+          websocket._protocol = serverProt;
         const secWebSocketExtensions = res.headers["sec-websocket-extensions"];
         if (secWebSocketExtensions !== void 0) {
           if (!perMessageDeflate) {
@@ -2994,8 +3059,10 @@ var require_websocket = __commonJS({
     function sendAfterClose(websocket, data, cb) {
       if (data) {
         const length = isBlob(data) ? data.size : toBuffer(data).length;
-        if (websocket._socket) websocket._sender._bufferedBytes += length;
-        else websocket._bufferedAmount += length;
+        if (websocket._socket)
+          websocket._sender._bufferedBytes += length;
+        else
+          websocket._bufferedAmount += length;
       }
       if (cb) {
         const err = new Error(
@@ -3009,15 +3076,19 @@ var require_websocket = __commonJS({
       websocket._closeFrameReceived = true;
       websocket._closeMessage = reason;
       websocket._closeCode = code;
-      if (websocket._socket[kWebSocket] === void 0) return;
+      if (websocket._socket[kWebSocket] === void 0)
+        return;
       websocket._socket.removeListener("data", socketOnData);
       process.nextTick(resume, websocket._socket);
-      if (code === 1005) websocket.close();
-      else websocket.close(code, reason);
+      if (code === 1005)
+        websocket.close();
+      else
+        websocket.close(code, reason);
     }
     function receiverOnDrain() {
       const websocket = this[kWebSocket];
-      if (!websocket.isPaused) websocket._socket.resume();
+      if (!websocket.isPaused)
+        websocket._socket.resume();
     }
     function receiverOnError(err) {
       const websocket = this[kWebSocket];
@@ -3039,7 +3110,8 @@ var require_websocket = __commonJS({
     }
     function receiverOnPing(data) {
       const websocket = this[kWebSocket];
-      if (websocket._autoPong) websocket.pong(data, !this._isServer, NOOP);
+      if (websocket._autoPong)
+        websocket.pong(data, !this._isServer, NOOP);
       websocket.emit("ping", data);
     }
     function receiverOnPong(data) {
@@ -3050,7 +3122,8 @@ var require_websocket = __commonJS({
     }
     function senderOnError(err) {
       const websocket = this[kWebSocket];
-      if (websocket.readyState === WebSocket2.CLOSED) return;
+      if (websocket.readyState === WebSocket2.CLOSED)
+        return;
       if (websocket.readyState === WebSocket2.OPEN) {
         websocket._readyState = WebSocket2.CLOSING;
         setCloseTimer(websocket);
@@ -3142,15 +3215,18 @@ var require_stream = __commonJS({
       });
       ws.on("message", function message(msg, isBinary) {
         const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
-        if (!duplex.push(data)) ws.pause();
+        if (!duplex.push(data))
+          ws.pause();
       });
       ws.once("error", function error(err) {
-        if (duplex.destroyed) return;
+        if (duplex.destroyed)
+          return;
         terminateOnDestroy = false;
         duplex.destroy(err);
       });
       ws.once("close", function close() {
-        if (duplex.destroyed) return;
+        if (duplex.destroyed)
+          return;
         duplex.push(null);
       });
       duplex._destroy = function(err, callback) {
@@ -3165,10 +3241,12 @@ var require_stream = __commonJS({
           callback(err2);
         });
         ws.once("close", function close() {
-          if (!called) callback(err);
+          if (!called)
+            callback(err);
           process.nextTick(emitClose, duplex);
         });
-        if (terminateOnDestroy) ws.terminate();
+        if (terminateOnDestroy)
+          ws.terminate();
       };
       duplex._final = function(callback) {
         if (ws.readyState === ws.CONNECTING) {
@@ -3177,10 +3255,12 @@ var require_stream = __commonJS({
           });
           return;
         }
-        if (ws._socket === null) return;
+        if (ws._socket === null)
+          return;
         if (ws._socket._writableState.finished) {
           callback();
-          if (duplex._readableState.endEmitted) duplex.destroy();
+          if (duplex._readableState.endEmitted)
+            duplex.destroy();
         } else {
           ws._socket.once("finish", function finish() {
             callback();
@@ -3189,7 +3269,8 @@ var require_stream = __commonJS({
         }
       };
       duplex._read = function() {
-        if (ws.isPaused) ws.resume();
+        if (ws.isPaused)
+          ws.resume();
       };
       duplex._write = function(chunk, encoding, callback) {
         if (ws.readyState === ws.CONNECTING) {
@@ -3221,14 +3302,17 @@ var require_subprotocol = __commonJS({
       for (i; i < header.length; i++) {
         const code = header.charCodeAt(i);
         if (end === -1 && tokenChars[code] === 1) {
-          if (start === -1) start = i;
+          if (start === -1)
+            start = i;
         } else if (i !== 0 && (code === 32 || code === 9)) {
-          if (end === -1 && start !== -1) end = i;
+          if (end === -1 && start !== -1)
+            end = i;
         } else if (code === 44) {
           if (start === -1) {
             throw new SyntaxError(`Unexpected character at index ${i}`);
           }
-          if (end === -1) end = i;
+          if (end === -1)
+            end = i;
           const protocol2 = header.slice(start, end);
           if (protocols.has(protocol2)) {
             throw new SyntaxError(`The "${protocol2}" subprotocol is duplicated`);
@@ -3360,7 +3444,8 @@ var require_websocket_server = __commonJS({
             }
           });
         }
-        if (options.perMessageDeflate === true) options.perMessageDeflate = {};
+        if (options.perMessageDeflate === true)
+          options.perMessageDeflate = {};
         if (options.clientTracking) {
           this.clients = /* @__PURE__ */ new Set();
           this._shouldEmitClose = false;
@@ -3381,7 +3466,8 @@ var require_websocket_server = __commonJS({
         if (this.options.noServer) {
           throw new Error('The server is operating in "noServer" mode');
         }
-        if (!this._server) return null;
+        if (!this._server)
+          return null;
         return this._server.address();
       }
       /**
@@ -3401,8 +3487,10 @@ var require_websocket_server = __commonJS({
           process.nextTick(emitClose, this);
           return;
         }
-        if (cb) this.once("close", cb);
-        if (this._state === CLOSING) return;
+        if (cb)
+          this.once("close", cb);
+        if (this._state === CLOSING)
+          return;
         this._state = CLOSING;
         if (this.options.noServer || this.options.server) {
           if (this._server) {
@@ -3438,7 +3526,8 @@ var require_websocket_server = __commonJS({
         if (this.options.path) {
           const index = req.url.indexOf("?");
           const pathname = index !== -1 ? req.url.slice(0, index) : req.url;
-          if (pathname !== this.options.path) return false;
+          if (pathname !== this.options.path)
+            return false;
         }
         return true;
       }
@@ -3536,7 +3625,8 @@ var require_websocket_server = __commonJS({
             });
             return;
           }
-          if (!this.options.verifyClient(info)) return abortHandshake(socket, 401);
+          if (!this.options.verifyClient(info))
+            return abortHandshake(socket, 401);
         }
         this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
       }
@@ -3554,13 +3644,15 @@ var require_websocket_server = __commonJS({
        * @private
        */
       completeUpgrade(extensions, key, protocols, req, socket, head, cb) {
-        if (!socket.readable || !socket.writable) return socket.destroy();
+        if (!socket.readable || !socket.writable)
+          return socket.destroy();
         if (socket[kWebSocket]) {
           throw new Error(
             "server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration"
           );
         }
-        if (this._state > RUNNING) return abortHandshake(socket, 503);
+        if (this._state > RUNNING)
+          return abortHandshake(socket, 503);
         const digest = createHash("sha1").update(key + GUID).digest("base64");
         const headers = [
           "HTTP/1.1 101 Switching Protocols",
@@ -3606,7 +3698,8 @@ var require_websocket_server = __commonJS({
     };
     module2.exports = WebSocketServer2;
     function addListeners(server, map) {
-      for (const event of Object.keys(map)) server.on(event, map[event]);
+      for (const event of Object.keys(map))
+        server.on(event, map[event]);
       return function removeListeners() {
         for (const event of Object.keys(map)) {
           server.removeListener(event, map[event]);
@@ -3678,11 +3771,15 @@ var MonitorServer = class {
   serverId = "uwb-01";
   initialize(context) {
     this.context = context;
+    const config = vscode.workspace.getConfiguration("serverMonitor");
+    this.serverId = config.get("serverId") || "uwb-01";
     this.loadPersistentClients();
   }
   loadPersistentClients() {
-    if (!this.context) return;
-    const savedClients = this.context.globalState.get("registeredClients") || [];
+    if (!this.context || !this.serverId)
+      return;
+    const allSaved = this.context.globalState.get("persistentAssets") || {};
+    const savedClients = allSaved[this.serverId] || [];
     savedClients.forEach((c) => {
       this.clients.set(c.key, {
         ...c,
@@ -3692,41 +3789,61 @@ var MonitorServer = class {
     });
   }
   savePersistentClients() {
-    if (!this.context) return;
-    const clientsToSave = Array.from(this.clients.values()).map((c) => ({
+    if (!this.context || !this.serverId)
+      return;
+    const allSaved = this.context.globalState.get("persistentAssets") || {};
+    allSaved[this.serverId] = Array.from(this.clients.values()).map((c) => ({
       key: c.key,
       info: c.info,
       lastSeen: c.lastSeen
     }));
-    this.context.globalState.update("registeredClients", clientsToSave);
+    this.context.globalState.update("persistentAssets", allSaved);
   }
   setProvider(provider) {
     this.provider = provider;
   }
   async start() {
-    if (this.running) return;
+    if (this.running)
+      return;
     if (!this.context) {
       vscode.window.showErrorMessage("Server not initialized with Context");
       return;
     }
     const config = vscode.workspace.getConfiguration("serverMonitor");
-    this.port = config.get("port") || 54321;
+    const basePort = config.get("port") || 54321;
     this.serverId = config.get("serverId") || "uwb-01";
+    this.clients.clear();
+    this.loadPersistentClients();
     this.server = http.createServer();
     this.wss = new import_websocket_server.default({ server: this.server });
     this.wss.on("connection", (ws) => {
       ws.on("message", (data) => this.handleClientMessage(ws, data));
       ws.on("close", () => this.handleClientDisconnect(ws));
     });
-    this.server.listen(this.port, () => {
+    this.listenWithRetry(basePort);
+  }
+  listenWithRetry(port, attempt = 0) {
+    if (attempt >= 10) {
+      vscode.window.showErrorMessage(`Failed to start server: Ports ${port - 10} to ${port - 1} are busy.`);
+      return;
+    }
+    this.server?.listen(port, () => {
+      this.port = port;
       this.running = true;
       this.triggerUpdate();
-      vscode.window.showInformationMessage(`Monitor server running on port ${this.port} (ID: ${this.serverId})`);
+      vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running on port ${this.port}`);
+    }).on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        console.log(`Port ${port} busy, trying ${port + 1}...`);
+        this.listenWithRetry(port + 1, attempt + 1);
+      } else {
+        vscode.window.showErrorMessage(`Server error: ${err.message}`);
+      }
     });
-    setInterval(() => this.checkHeartbeats(), 3e4);
   }
   stop() {
-    if (!this.running) return;
+    if (!this.running)
+      return;
     this.wss?.close();
     this.server?.close();
     this.wss = null;
@@ -3854,7 +3971,8 @@ var MonitorServer = class {
       this.provider.update({
         serverStatus: {
           running: this.running,
-          port: this.port
+          port: this.port,
+          serverId: this.serverId
         },
         total: this.clients.size,
         online: clientsArray.filter((c) => c.status === "online").length,

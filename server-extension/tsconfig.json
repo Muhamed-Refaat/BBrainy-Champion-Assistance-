@@ -13,8 +13,7 @@
         "skipLibCheck": true
     },
     "include": [
-        "src/**/*",
-        "vite.config.mts"
+        "src/**/*"
     ],
     "exclude": [
         "node_modules",

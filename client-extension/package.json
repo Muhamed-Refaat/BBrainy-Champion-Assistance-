@@ -19,24 +19,42 @@
     "configuration": {
       "title": "Client Monitor",
       "properties": {
-        "clientMonitor.serverUrl": {
-          "type": "string",
-          "default": "ws://localhost:8080",
-          "description": "WebSocket server URL"
+        "clientMonitor.servers": {
+          "type": "array",
+          "default": [
+            {
+              "url": "ws://localhost:54321",
+              "serverId": "uwb-01"
+            }
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "WebSocket server URL"
+              },
+              "serverId": {
+                "type": "string",
+                "description": "Unique identifier for this server instance"
+              }
+            }
+          },
+          "description": "List of monitor servers to connect to"
         },
         "clientMonitor.clientKey": {
           "type": "string",
-          "description": "Unique client key for authentication"
+          "description": "Unique client key for authentication (generated automatically if empty)"
         },
         "clientMonitor.autoConnect": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically connect on startup"
+          "description": "Automatically connect to all configured servers on startup"
         },
         "clientMonitor.reportInterval": {
           "type": "number",
           "default": 60000,
-          "description": "Heartbeat interval in milliseconds"
+          "description": "Shared heartbeat interval in milliseconds for all connections"
         }
       }
     }
