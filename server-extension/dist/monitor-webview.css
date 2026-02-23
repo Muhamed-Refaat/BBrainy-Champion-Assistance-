@@ -429,6 +429,9 @@ video {
 .cursor-pointer {
   cursor: pointer;
 }
+.resize-none {
+  resize: none;
+}
 .grid-cols-2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -528,6 +531,9 @@ video {
 .border-emerald-500\/30 {
   border-color: rgb(16 185 129 / 0.3);
 }
+.border-orange-500\/20 {
+  border-color: rgb(249 115 22 / 0.2);
+}
 .border-purple-500\/20 {
   border-color: rgb(168 85 247 / 0.2);
 }
@@ -571,6 +577,9 @@ video {
 }
 .bg-emerald-500\/20 {
   background-color: rgb(16 185 129 / 0.2);
+}
+.bg-orange-500\/10 {
+  background-color: rgb(249 115 22 / 0.1);
 }
 .bg-purple-500\/10 {
   background-color: rgb(168 85 247 / 0.1);
@@ -765,6 +774,10 @@ video {
   --tw-text-opacity: 1;
   color: rgb(52 211 153 / var(--tw-text-opacity, 1));
 }
+.text-orange-400 {
+  --tw-text-opacity: 1;
+  color: rgb(251 146 60 / var(--tw-text-opacity, 1));
+}
 .text-purple-400 {
   --tw-text-opacity: 1;
   color: rgb(192 132 252 / var(--tw-text-opacity, 1));
@@ -916,6 +929,9 @@ body {
 }
 .hover\:bg-emerald-500\/20:hover {
   background-color: rgb(16 185 129 / 0.2);
+}
+.hover\:bg-orange-500\/20:hover {
+  background-color: rgb(249 115 22 / 0.2);
 }
 .hover\:bg-purple-500\/20:hover {
   background-color: rgb(168 85 247 / 0.2);

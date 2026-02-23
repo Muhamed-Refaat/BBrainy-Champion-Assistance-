@@ -128,6 +128,8 @@ class ClientMonitor {
     private clientKey: string = '';
     private context: vscode.ExtensionContext | null = null;
     private notifierIntervals: Map<string, NodeJS.Timeout> = new Map();
+    private reminderPanels: Map<string, vscode.WebviewPanel> = new Map();
+    private notifierRunningInstances: Set<string> = new Set();
     private usageLogPath: string = '';
 
     constructor(context: vscode.ExtensionContext) {
@@ -241,6 +243,10 @@ class ClientMonitor {
 
             case 'closeNotifier':
                 this.closeNotifier(conn);
+                break;
+
+            case 'displayReminderScreen':
+                this.displayReminderScreen(conn, message.payload);
                 break;
 
             default:
@@ -388,26 +394,70 @@ class ClientMonitor {
     }
 
     private setNotifier(conn: MonitorConnection, intervalMs?: number): void {
-        const interval = intervalMs || 3600000; // Default 1 hour
         const serverId = (conn as any).config?.serverId || 'unknown';
+        let interval = intervalMs || 3600000; // Default 1 hour
+
+        // Validate interval (1 min to 120 min)
+        const minInterval = 60000; // 1 minute
+        const maxInterval = 120 * 60000; // 120 minutes
         
+        if (interval < minInterval) {
+            conn.sendResponse({
+                success: false,
+                message: 'Interval must be at least 1 minute (60000 ms)',
+                intervalMs: minInterval
+            });
+            return;
+        }
+        
+        if (interval > maxInterval) {
+            conn.sendResponse({
+                success: false,
+                message: 'Interval cannot exceed 120 minutes (7200000 ms)',
+                intervalMs: maxInterval
+            });
+            return;
+        }
+        
+        // Only allow one instance to run the notifier
+        if (this.notifierRunningInstances.has(serverId)) {
+            conn.sendResponse({
+                success: true,
+                message: 'Notifier already active in another instance',
+                intervalMs: interval
+            });
+            return;
+        }
+
         // Clear existing notifier for this server
         this.closeNotifier(conn);
+
+        // Mark this instance as running the notifier
+        this.notifierRunningInstances.add(serverId);
 
         // Set up new notifier
         const notifierId = serverId;
         const notifierInterval = setInterval(() => {
+            // Beep sound using PowerShell on Windows
+            const { exec } = require('child_process');
+            if (require('os').platform() === 'win32') {
+                exec('powershell.exe -c "[console]::beep(500, 300); Start-Sleep -m 100; [console]::beep(500, 300)"');
+            }
+
             const bbrainyExt = vscode.extensions.getExtension('bbrainy-usage-assistant');
             if (bbrainyExt?.isActive) {
                 vscode.window.showInformationMessage(
-                    '🧠 Reminder: Have you used BBrainy today?',
-                    'View Report',
+                    "Don't forget to use BBrainy for assistance!",
+                    'OK',
                     'Dismiss'
                 ).then(choice => {
-                    if (choice === 'View Report') {
+                    if (choice === 'OK') {
                         vscode.commands.executeCommand('bbrainy.showUsageCommands');
                     }
                 });
+            } else {
+                // Fallback if BBrainy extension is not active
+                vscode.window.showInformationMessage("Don't forget to use BBrainy for assistance!");
             }
         }, interval);
 
@@ -415,7 +465,7 @@ class ClientMonitor {
         
         conn.sendResponse({
             success: true,
-            message: 'Notifier set',
+            message: 'Notifier set (running in this instance only)',
             intervalMs: interval
         });
     }
@@ -427,12 +477,151 @@ class ClientMonitor {
         if (interval) {
             clearInterval(interval);
             this.notifierIntervals.delete(serverId);
+            this.notifierRunningInstances.delete(serverId);
         }
 
         conn.sendResponse({
             success: true,
             message: 'Notifier closed'
         });
+    }
+
+    private displayReminderScreen(conn: MonitorConnection, payload: any): void {
+        const serverId = (conn as any).config?.serverId || 'unknown';
+        const title = payload?.title || 'Reminder';
+        const body = payload?.body || 'No message provided';
+        
+        // Close existing panel if any
+        const existingPanel = this.reminderPanels.get(serverId);
+        if (existingPanel) {
+            existingPanel.dispose();
+        }
+
+        // Create new webview panel
+        const panel = vscode.window.createWebviewPanel(
+            'reminderScreen',
+            'Reminder from Monitor',
+            vscode.ViewColumn.One,
+            { enableScripts: true }
+        );
+
+        // Set up the webview content
+        panel.webview.html = this.getReminderScreenHtml(title, body);
+
+        // Handle panel disposal
+        panel.onDidDispose(() => {
+            this.reminderPanels.delete(serverId);
+        });
+
+        this.reminderPanels.set(serverId, panel);
+
+        conn.sendResponse({
+            success: true,
+            message: 'Reminder screen displayed in all instances'
+        });
+    }
+
+    private getReminderScreenHtml(title: string, body: string): string {
+        return `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Reminder</title>
+                <style>
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                        min-height: 100vh;
+                        display: flex;
+                        flex-direction: column;
+                        padding: 40px;
+                    }
+
+                    .header {
+                        display: flex;
+                        align-items: center;
+                        gap: 25px;
+                        margin-bottom: 50px;
+                        flex-shrink: 0;
+                    }
+
+                    .icon {
+                        font-size: 56px;
+                        animation: pulse 1s ease-in-out infinite;
+                        flex-shrink: 0;
+                    }
+
+                    @keyframes pulse {
+                        0%, 100% { transform: scale(1); }
+                        50% { transform: scale(1.15); }
+                    }
+
+                    h1 {
+                        color: #60a5fa;
+                        font-size: 40px;
+                        font-weight: 700;
+                        letter-spacing: -0.5px;
+                        background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                    }
+
+                    .body-area {
+                        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.8) 100%);
+                        border: 2px solid rgba(96, 165, 250, 0.2);
+                        border-radius: 20px;
+                        padding: 50px 45px;
+                        flex: 1;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: 350px;
+                        backdrop-filter: blur(8px);
+                        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+                    }
+
+                    .body-text {
+                        color: #e2e8f0;
+                        font-size: 20px;
+                        line-height: 1.9;
+                        text-align: center;
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                        letter-spacing: 0.3px;
+                    }
+
+                    .info {
+                        color: #64748b;
+                        font-size: 13px;
+                        text-align: center;
+                        margin-top: 50px;
+                        flex-shrink: 0;
+                        font-weight: 500;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="icon">🔔</div>
+                    <h1>${title}</h1>
+                </div>
+                
+                <div class="body-area">
+                    <div class="body-text">${body}</div>
+                </div>
+
+                <div class="info">Close this window to dismiss</div>
+            </body>
+            </html>
+        `;
     }
 
     private getOrCreateClientKey(): string {

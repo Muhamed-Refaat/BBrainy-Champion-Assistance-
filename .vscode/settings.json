@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cmd /c \"cd c:\\\\Users\\\\mrefaata\\\\MyProjects\\\\BBrainy_Chambion_Assistant\\\\BBrainy-Champion-Assistance- && build\\.bat 2>&1\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

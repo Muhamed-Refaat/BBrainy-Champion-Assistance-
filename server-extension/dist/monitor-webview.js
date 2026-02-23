@@ -31838,7 +31838,16 @@ var ModalDialog = ({
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-4", children: modal.fields.map((field) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "space-y-2", children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", { className: "block text-sm font-medium text-slate-300", children: field.label }),
-              field.type === "select" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+              field.type === "textarea" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "textarea",
+                {
+                  value: field.value,
+                  onChange: (e) => handleFieldChange(field.name, e.target.value),
+                  placeholder: field.label,
+                  rows: 6,
+                  className: "w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all text-sm resize-none"
+                }
+              ) : field.type === "select" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "select",
                 {
                   value: field.value,
@@ -31914,7 +31923,16 @@ var App = () => {
       }
     });
     if (modal.command === "setNotifier" && payload.intervalMs) {
-      payload.intervalMs = payload.intervalMs * 6e4;
+      const minutes = payload.intervalMs;
+      if (minutes < 1) {
+        vscode.postMessage({ action: "showError", message: "Interval must be at least 1 minute" });
+        return;
+      }
+      if (minutes > 120) {
+        vscode.postMessage({ action: "showError", message: "Interval cannot exceed 120 minutes" });
+        return;
+      }
+      payload.intervalMs = minutes * 6e4;
     }
     sendCommand(selectedClient, modal.command, payload);
     closeModal();
@@ -32157,7 +32175,7 @@ var App = () => {
                   onClick: () => openModal("setNotifier", [
                     {
                       name: "intervalMs",
-                      label: "Interval (minutes)",
+                      label: "Interval (1-120 minutes)",
                       type: "number",
                       value: "60"
                     }
@@ -32174,10 +32192,35 @@ var App = () => {
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "closeNotifier"),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-slate-500/10 hover:bg-slate-500/20 transition-colors border border-slate-500/20 text-slate-400 text-xs disabled:cursor-not-allowed",
+                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-slate-500/10 hover:bg-slate-500/20 transition-colors border border-slate-500/20 text-slate-400 text-xs mb-1 disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
                     /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 12 }),
                     " Close Reminder"
+                  ] })
+                }
+              ),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "button",
+                {
+                  disabled: !data.serverStatus.running,
+                  onClick: () => openModal("displayReminderScreen", [
+                    {
+                      name: "title",
+                      label: "Title",
+                      type: "text",
+                      value: "Important Message"
+                    },
+                    {
+                      name: "body",
+                      label: "Message Body",
+                      type: "textarea",
+                      value: "This is your message content"
+                    }
+                  ]),
+                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 transition-colors border border-orange-500/20 text-orange-400 text-xs disabled:cursor-not-allowed",
+                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 12 }),
+                    " Reminder Screen"
                   ] })
                 }
               )
