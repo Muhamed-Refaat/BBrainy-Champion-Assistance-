@@ -10,7 +10,8 @@ import {
   Activity,
   Power,
   Bell,
-  FolderOpen
+  FolderOpen,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -25,6 +26,11 @@ interface Client {
   bbrainyActive: boolean;
   lastSeen: number;
   status: 'online' | 'offline';
+  lastResponse?: {
+    command: string;
+    data: any;
+    timestamp: number;
+  };
 }
 
 interface DashboardData {
@@ -39,11 +45,123 @@ interface DashboardData {
   clients: Client[];
 }
 
+interface CommandModal {
+  isOpen: boolean;
+  command: string;
+  fields: {
+    name: string;
+    label: string;
+    type: 'text' | 'number' | 'select';
+    value: string;
+    options?: { label: string; value: string }[];
+  }[];
+}
+
 const GlassCard = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => (
   <div className={`liquid-glass liquid-glass-glow rounded-2xl p-6 ${className}`}>
     <div className="relative z-10">{children}</div>
   </div>
 );
+
+const ModalDialog = ({ 
+  modal, 
+  onClose, 
+  onConfirm,
+  selectedClient,
+  disabled = false,
+  setModal
+}: { 
+  modal: CommandModal, 
+  onClose: () => void, 
+  onConfirm: () => void,
+  selectedClient: string | null,
+  disabled?: boolean,
+  setModal: (m: CommandModal) => void
+}) => {
+  if (!modal.isOpen) return null;
+
+  const handleFieldChange = (fieldName: string, value: string) => {
+    const newModal = { ...modal };
+    const fieldIdx = newModal.fields.findIndex(f => f.name === fieldName);
+    if (fieldIdx >= 0) {
+      newModal.fields[fieldIdx].value = value;
+    }
+    setModal(newModal);
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-96 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 shadow-2xl p-6 space-y-4"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-white capitalize">{modal.command.replace(/([A-Z])/g, ' $1').trim()}</h3>
+            <button
+              onClick={onClose}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-slate-300"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {modal.fields.map((field) => (
+              <div key={field.name} className="space-y-2">
+                <label className="block text-sm font-medium text-slate-300">{field.label}</label>
+                {field.type === 'select' ? (
+                  <select
+                    value={field.value}
+                    onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all text-sm"
+                  >
+                    {field.options?.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type={field.type}
+                    value={field.value}
+                    onChange={(e) => handleFieldChange(field.name, e.target.value)}
+                    placeholder={field.label}
+                    className="w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all text-sm"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-slate-700/50 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-white transition-all font-medium text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={disabled || !selectedClient}
+              className="flex-1 px-4 py-2.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-400 hover:text-blue-300 transition-all font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Confirm
+            </button>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+};
 
 const App = () => {
   const [data, setData] = useState<DashboardData>({ 
@@ -54,6 +172,40 @@ const App = () => {
     clients: [] 
   });
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
+  const [modal, setModal] = useState<CommandModal>({
+    isOpen: false,
+    command: '',
+    fields: []
+  });
+
+  const openModal = (command: string, fields: CommandModal['fields']) => {
+    setModal({ isOpen: true, command, fields });
+  };
+
+  const closeModal = () => {
+    setModal({ isOpen: false, command: '', fields: [] });
+  };
+
+  const sendCommandWithModal = () => {
+    if (!selectedClient) return;
+    
+    const payload: any = {};
+    modal.fields.forEach(field => {
+      if (field.type === 'number' && field.value) {
+        payload[field.name] = parseInt(field.value);
+      } else if (field.value) {
+        payload[field.name] = field.value;
+      }
+    });
+    
+    // Special handling for setNotifier - convert minutes to milliseconds
+    if (modal.command === 'setNotifier' && payload.intervalMs) {
+      payload.intervalMs = payload.intervalMs * 60000;
+    }
+    
+    sendCommand(selectedClient, modal.command, payload);
+    closeModal();
+  };
 
   useEffect(() => {
     window.addEventListener('message', (event) => {
@@ -192,7 +344,7 @@ const App = () => {
           </div>
         </section>
 
-      {/* Selected Client controls */}
+        {/* Selected Client controls */}
         <section>
           <h2 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-2">
             <ShieldCheck size={14} className={`text-emerald-400 ${!data.serverStatus.running ? 'opacity-50' : ''}`} /> Control Center
@@ -201,32 +353,129 @@ const App = () => {
           <GlassCard className={!data.serverStatus.running ? 'opacity-50' : ''}>
             {selectedClient && data.serverStatus.running ? (
               <div className="space-y-2">
-                <p className="text-[10px] text-slate-500 mb-2 truncate">Managing: {data.clients.find(c => c.key === selectedClient)?.username}</p>
-                <button 
-                  disabled={!data.serverStatus.running}
-                  onClick={() => sendCommand(selectedClient, 'getSystemInfo')}
-                  className="w-full flex items-center justify-between p-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5 text-xs disabled:cursor-not-allowed"
-                >
-                  <span className="flex items-center gap-2 text-slate-300 tracking-tight leading-none"><RefreshCcw size={14} /> Refresh Node</span>
-                </button>
-                <button 
-                  disabled={!data.serverStatus.running}
-                  onClick={() => sendCommand(selectedClient, 'forceBBrainy')}
-                  className="w-full flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors border border-emerald-500/20 text-emerald-400 text-xs disabled:cursor-not-allowed"
-                >
-                  <span className="flex items-center gap-2 tracking-tight leading-none"><Power size={14} /> Wake BBrainy</span>
-                </button>
-                <button 
-                  disabled={!data.serverStatus.running}
-                  onClick={() => sendCommand(selectedClient, 'getWorkspace')}
-                  className="w-full flex items-center justify-between p-2.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs disabled:cursor-not-allowed"
-                >
-                  <span className="flex items-center gap-2 tracking-tight leading-none"><FolderOpen size={14} /> Peek Directory</span>
-                </button>
+                <p className="text-[10px] text-slate-500 mb-3 truncate">Managing: {data.clients.find(c => c.key === selectedClient)?.username}</p>
+                
+                {/* System Management */}
+                <div className="pb-2 border-b border-white/10">
+                  <p className="text-[9px] text-slate-600 uppercase font-bold mb-2">System</p>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'getSystemInfo')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5 text-xs mb-1 disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 text-slate-300"><RefreshCcw size={12} /> Refresh Node</span>
+                  </button>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'getWorkspace')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5 text-xs disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 text-slate-300"><FolderOpen size={12} /> Peek Directory</span>
+                  </button>
+                </div>
+
+                {/* BBrainy Management */}
+                <div className="py-2 border-b border-white/10">
+                  <p className="text-[9px] text-slate-600 uppercase font-bold mb-2">BBrainy</p>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'forceBBrainy')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors border border-emerald-500/20 text-emerald-400 text-xs mb-1 disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><Power size={12} /> Activate</span>
+                  </button>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'checkBBrainy')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors border border-emerald-500/20 text-emerald-400 text-xs disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><Activity size={12} /> Check Status</span>
+                  </button>
+                </div>
+
+                {/* Usage Analytics */}
+                <div className="py-2 border-b border-white/10">
+                  <p className="text-[9px] text-slate-600 uppercase font-bold mb-2">Analytics</p>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'getUsageReport', { hours: 24 })}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs mb-1 disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><FileJson size={12} /> 24h Report</span>
+                  </button>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'getUsageReport', { hours: 168 })}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs mb-1 disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><FileJson size={12} /> 7d Report</span>
+                  </button>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'getUsageReport', {})}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs mb-1 disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><FileJson size={12} /> All Time</span>
+                  </button>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => openModal('getUsageReport', [
+                      { 
+                        name: 'hours', 
+                        label: 'Hours (less than 24)', 
+                        type: 'number', 
+                        value: '1' 
+                      }
+                    ])}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><FileJson size={12} /> Custom</span>
+                  </button>
+                </div>
+
+                {/* Notifications */}
+                <div className="pt-2">
+                  <p className="text-[9px] text-slate-600 uppercase font-bold mb-2">Notifications</p>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => openModal('setNotifier', [
+                      { 
+                        name: 'intervalMs', 
+                        label: 'Interval (minutes)', 
+                        type: 'number', 
+                        value: '60' 
+                      }
+                    ])}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 transition-colors border border-purple-500/20 text-purple-400 text-xs mb-1 disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><Bell size={12} /> Set Reminder</span>
+                  </button>
+                  <button 
+                    disabled={!data.serverStatus.running}
+                    onClick={() => sendCommand(selectedClient, 'closeNotifier')}
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-500/10 hover:bg-slate-500/20 transition-colors border border-slate-500/20 text-slate-400 text-xs disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-2 leading-none"><Bell size={12} /> Close Reminder</span>
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="text-[10px] text-slate-500 py-2 italic text-center">
+              <div className="text-[10px] text-slate-500 py-4 italic text-center">
                 {!data.serverStatus.running ? 'Start server to manage assets' : 'Select a node to authorize actions'}
+              </div>
+            )}
+            
+            {/* Response Display */}
+            {selectedClient && data.serverStatus.running && data.clients.find(c => c.key === selectedClient)?.lastResponse && (
+              <div className="mt-4 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 text-[10px]">
+                <p className="text-slate-400 uppercase font-bold mb-2">
+                  ↳ {data.clients.find(c => c.key === selectedClient)?.lastResponse?.command} Response
+                </p>
+                <div className="space-y-1 max-h-48 overflow-y-auto text-slate-300 font-mono">
+                  <pre className="whitespace-pre-wrap break-words text-[9px]">
+                    {JSON.stringify(data.clients.find(c => c.key === selectedClient)?.lastResponse?.data, null, 2)}
+                  </pre>
+                </div>
               </div>
             )}
           </GlassCard>
@@ -253,6 +502,15 @@ const App = () => {
           </div>
         </section>
       </div>
+
+      <ModalDialog 
+        modal={modal}
+        onClose={closeModal}
+        onConfirm={sendCommandWithModal}
+        selectedClient={selectedClient}
+        disabled={!data.serverStatus.running}
+        setModal={setModal}
+      />
     </div>
   );
 };
