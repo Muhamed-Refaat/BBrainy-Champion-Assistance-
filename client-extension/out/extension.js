@@ -190,11 +190,37 @@ class ClientMonitor {
         };
     }
     checkBBrainyStatus() {
-        const bbrainy = vscode.extensions.getExtension('bbrainy-id');
+        const bbrainy = vscode.extensions.getExtension('Valeo.BBrainy');
+        let lastUsedTime = 'Unknown';
+        let usageCount = 0;
+        // Try to get BBrainy usage information
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const logPath = path.join(require('os').homedir(), 'AppData', 'Local', 'AI4ALL_log', 'AI4ALL_log.log');
+            if (fs.existsSync(logPath)) {
+                const logContent = fs.readFileSync(logPath, 'utf-8');
+                const lines = logContent.split('\n').filter((l) => l.trim());
+                if (lines.length > 0) {
+                    // Get last entry
+                    const lastLine = lines[lines.length - 1];
+                    const match = lastLine.match(/'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'/);
+                    if (match) {
+                        lastUsedTime = match[1];
+                    }
+                    usageCount = lines.length;
+                }
+            }
+        }
+        catch (e) {
+            // Silently fail if can't read log
+        }
         return {
             installed: !!bbrainy,
             active: bbrainy?.isActive || false,
-            version: bbrainy?.packageJSON.version
+            version: bbrainy?.packageJSON.version || 'Unknown',
+            lastUsedTime: lastUsedTime,
+            totalUsage: usageCount
         };
     }
     async handleServerCommand(conn, data) {
@@ -212,7 +238,8 @@ class ClientMonitor {
                 conn.sendResponse(await this.collectSystemInfo());
                 break;
             case 'checkBBrainy':
-                conn.sendResponse(this.checkBBrainyStatus());
+                const bbrainyStatus = this.checkBBrainyStatus();
+                conn.sendResponse(bbrainyStatus);
                 break;
             case 'forceBBrainy':
                 await this.activateBBrainy(conn);
@@ -238,6 +265,11 @@ class ClientMonitor {
                 break;
             case 'displayReminderScreen':
                 this.displayReminderScreen(conn, message.payload);
+                break;
+            case 'getAssets':
+                // This command broadcasts to all clients, showing assets on monitor client
+                // Return a response to acknowledge
+                conn.sendResponse({ acknowledged: true });
                 break;
             default:
                 conn.sendResponse({ error: 'Unknown command', command: message.command });

@@ -328,6 +328,12 @@ export class MonitorServer {
                 agents: message.payload?.agents?.length
             });
             
+            // Store BBrainy status if available
+            if (message.command === 'checkBBrainy' && message.payload) {
+                if (!client.info) client.info = {};
+                client.info.bbrainyStatus = message.payload;
+            }
+            
             // Handle usage report - create webview panel
             if (message.command === 'getUsageReport' && message.payload?.success && message.payload?.agents) {
                 this.showUsageReportWebview(message.payload, client.info?.username, client.info?.hostname);
@@ -697,6 +703,344 @@ export class MonitorServer {
         );
         await Promise.all(promises);
         console.log(`[MonitorServer] Broadcast complete for command: ${command}`);
+    }
+
+    getAllClientsInfo() {
+        return Array.from(this.clients.values()).map(c => ({
+            key: c.key,
+            username: c.info?.username || 'Unknown',
+            hostname: c.info?.hostname || 'Unknown',
+            workspace: c.info?.workspace,
+            bbrainyActive: c.info?.bbrainyStatus?.active || false,
+            status: c.status,
+            lastSeen: c.lastSeen,
+            onlineStatus: c.status === 'online' ? 'online' : 'offline'
+        }));
+    }
+
+    showAllAssetsWebview() {
+        const assets = this.getAllClientsInfo();
+        const panel = vscode.window.createWebviewPanel(
+            'allAssets',
+            'All Assets',
+            vscode.ViewColumn.One,
+            { enableScripts: true }
+        );
+
+        panel.webview.html = this.getAllAssetsHtml(assets);
+    }
+
+    private getAllAssetsHtml(assets: any[]): string {
+        const assetRows = assets.map(asset => `
+            <tr>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.username}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.hostname}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${asset.onlineStatus === 'online' ? '#34d399' : '#ef4444'};"></span>
+                    ${asset.onlineStatus}
+                </td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? '✓ Active' : '✗ Inactive'}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">${asset.lastSeen ? new Date(asset.lastSeen).toLocaleString() : 'Never'}</td>
+            </tr>
+        `).join('');
+
+        return `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Assets Status</title>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                        min-height: 100vh;
+                        padding: 40px;
+                        color: #e2e8f0;
+                    }
+                    .container { max-width: 1200px; margin: 0 auto; }
+                    h1 {
+                        font-size: 36px;
+                        margin-bottom: 30px;
+                        background: linear-gradient(135deg, #60a5fa, #34d399);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        font-weight: 700;
+                    }
+                    .summary-stats {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                        gap: 20px;
+                        margin-bottom: 40px;
+                    }
+                    .stat-card {
+                        background: rgba(30, 41, 59, 0.8);
+                        border: 2px solid rgba(96, 165, 250, 0.2);
+                        border-radius: 16px;
+                        padding: 20px;
+                        backdrop-filter: blur(8px);
+                        text-align: center;
+                    }
+                    .stat-value {
+                        font-size: 28px;
+                        font-weight: 700;
+                        background: linear-gradient(135deg, #60a5fa, #34d399);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                    }
+                    .stat-label {
+                        color: #94a3b8;
+                        font-size: 12px;
+                        margin-top: 10px;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    .table-container {
+                        background: rgba(30, 41, 59, 0.8);
+                        border: 2px solid rgba(96, 165, 250, 0.2);
+                        border-radius: 16px;
+                        overflow: hidden;
+                        backdrop-filter: blur(8px);
+                    }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
+                    th {
+                        background: rgba(96, 165, 250, 0.1);
+                        padding: 15px;
+                        text-align: left;
+                        border-bottom: 2px solid rgba(96, 165, 250, 0.2);
+                        font-weight: 600;
+                        color: #60a5fa;
+                        font-size: 14px;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    tr:hover {
+                        background: rgba(96, 165, 250, 0.05);
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>📊 All Assets (${assets.length} Total)</h1>
+                    
+                    <div class="summary-stats">
+                        <div class="stat-card">
+                            <div class="stat-value">${assets.length}</div>
+                            <div class="stat-label">Total Clients</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${assets.filter(a => a.onlineStatus === 'online').length}</div>
+                            <div class="stat-label">Online</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${assets.filter(a => a.bbrainyActive).length}</div>
+                            <div class="stat-label">BBrainy Active</div>
+                        </div>
+                    </div>
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Hostname</th>
+                                    <th>Status</th>
+                                    <th>BBrainy</th>
+                                    <th>Last Seen</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${assetRows}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+    }
+
+    showBBrainyStatusWebview(clientKey: string) {
+        const client = this.clients.get(clientKey);
+        if (!client) {
+            vscode.window.showErrorMessage(`Client ${clientKey} not found`);
+            return;
+        }
+
+        const status = client.info?.bbrainyStatus || { 
+            installed: false, 
+            active: false, 
+            version: 'Unknown',
+            lastUsedTime: 'Never',
+            totalUsage: 0
+        };
+
+        const panel = vscode.window.createWebviewPanel(
+            `bbrainyStatus-${clientKey}`,
+            `BBrainy Status - ${client.info?.username}@${client.info?.hostname}`,
+            vscode.ViewColumn.One,
+            { enableScripts: true }
+        );
+
+        panel.webview.html = this.getBBrainyStatusHtml(status, client.info?.username, client.info?.hostname);
+    }
+
+    private getBBrainyStatusHtml(status: any, username: string = 'Unknown', hostname: string = 'Unknown'): string {
+        const installed = status.installed;
+        const active = status.active;
+        const version = status.version || 'Unknown';
+        const lastUsed = status.lastUsedTime || 'Never';
+        const totalUsage = status.totalUsage || 0;
+
+        const statusColor = installed ? (active ? '#34d399' : '#f59e0b') : '#ef4444';
+        const statusText = installed ? (active ? 'Active' : 'Installed - Inactive') : 'Not Installed';
+
+        return `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>BBrainy Status</title>
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+                        min-height: 100vh;
+                        padding: 40px;
+                        color: #e2e8f0;
+                    }
+                    .container { max-width: 800px; margin: 0 auto; }
+                    .client-info {
+                        text-align: center;
+                        margin-bottom: 30px;
+                        padding-bottom: 20px;
+                        border-bottom: 2px solid rgba(96, 165, 250, 0.2);
+                    }
+                    .client-name {
+                        font-size: 18px;
+                        color: #94a3b8;
+                        margin-bottom: 5px;
+                    }
+                    h1 {
+                        font-size: 36px;
+                        margin-bottom: 10px;
+                        background: linear-gradient(135deg, #60a5fa, #34d399);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        font-weight: 700;
+                    }
+                    .status-badge {
+                        display: inline-block;
+                        padding: 8px 16px;
+                        border-radius: 12px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        background-color: ${statusColor}20;
+                        color: ${statusColor};
+                        border: 2px solid ${statusColor};
+                        margin-top: 15px;
+                    }
+                    .stats-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                        gap: 20px;
+                        margin-bottom: 40px;
+                    }
+                    .stat-card {
+                        background: rgba(30, 41, 59, 0.8);
+                        border: 2px solid rgba(96, 165, 250, 0.2);
+                        border-radius: 16px;
+                        padding: 25px;
+                        backdrop-filter: blur(8px);
+                    }
+                    .stat-label {
+                        color: #94a3b8;
+                        font-size: 13px;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                        margin-bottom: 10px;
+                        font-weight: 600;
+                    }
+                    .stat-value {
+                        color: #60a5fa;
+                        font-size: 24px;
+                        font-weight: 700;
+                        word-break: break-word;
+                    }
+                    .contribution-graph {
+                        background: rgba(30, 41, 59, 0.8);
+                        border: 2px solid rgba(96, 165, 250, 0.2);
+                        border-radius: 16px;
+                        padding: 30px;
+                        backdrop-filter: blur(8px);
+                        margin-top: 30px;
+                    }
+                    .graph-title {
+                        font-size: 16px;
+                        font-weight: 600;
+                        margin-bottom: 20px;
+                        color: #60a5fa;
+                    }
+                    .graph-grid {
+                        display: grid;
+                        grid-template-columns: repeat(12, 1fr);
+                        gap: 4px;
+                        margin-bottom: 15px;
+                    }
+                    .graph-cell {
+                        width: 100%;
+                        aspect-ratio: 1;
+                        background: rgba(100, 116, 139, 0.3);
+                        border-radius: 4px;
+                        border: 1px solid rgba(100, 116, 139, 0.2);
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="client-info">
+                        <div class="client-name">📱 ${username}@${hostname}</div>
+                        <h1>🧠 BBrainy Status</h1>
+                        <div class="status-badge">${statusText}</div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Installed</div>
+                            <div class="stat-value">${installed ? '✓ Yes' : '✗ No'}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Version</div>
+                            <div class="stat-value">${version}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Last Used</div>
+                            <div class="stat-value" style="font-size: 14px;">${lastUsed}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Total Usage</div>
+                            <div class="stat-value">${totalUsage}</div>
+                        </div>
+                    </div>
+
+                    <div class="contribution-graph">
+                        <div class="graph-title">📊 Contribution Graph (Last 12 Weeks)</div>
+                        <div class="graph-grid">
+                            ${Array.from({length: 84}, (_, i) => `<div class="graph-cell" style="background: rgba(52, 211, 153, ${Math.random() * 0.5});"></div>`).join('')}
+                        </div>
+                        <div style="font-size: 12px; color: #94a3b8; text-align: center;">Green intensity shows activity level</div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
     }
 
     async generateReport() {

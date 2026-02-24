@@ -407,7 +407,10 @@ const App = () => {
                   </button>
                   <button 
                     disabled={!data.serverStatus.running}
-                    onClick={() => sendCommand(selectedClient, 'checkBBrainy')}
+                    onClick={() => {
+                      sendCommand(selectedClient, 'checkBBrainy');
+                      vscode.postMessage({ action: 'showBBrainyStatus', clientKey: selectedClient });
+                    }}
                     className="w-full flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors border border-emerald-500/20 text-emerald-400 text-xs disabled:cursor-not-allowed"
                   >
                     <span className="flex items-center gap-2 leading-none"><Activity size={12} /> Check Status</span>
@@ -535,7 +538,7 @@ const App = () => {
             </button>
             <button 
               disabled={!data.serverStatus.running}
-              onClick={() => queryAll('getSystemInfo')}
+              onClick={() => vscode.postMessage({ action: 'showAssets' })}
               className="flex items-center justify-center gap-1.5 p-2 rounded-lg border border-white/10 hover:bg-white/5 transition-all text-[10px] text-slate-400 disabled:cursor-not-allowed"
             >
               Check Assets
