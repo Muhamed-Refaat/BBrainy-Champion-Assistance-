@@ -55,12 +55,12 @@
         },
         "clientMonitor.syncPath": {
           "type": "string",
-          "default": "\\\\cai1-users\\Users\\Mohamed.REFAAT-ALLAM\\Share\\AI-Champion-Assist\\sync",
+          "default": "\\\\cai1-users\\share\\AI-Champion-Assist\\sync",
           "description": "Path to shared sync folder (git-synced or network share) for offline command queuing. Leave empty to disable."
         },
         "clientMonitor.clientReleasePath": {
           "type": "string",
-          "default": "\\\\cai1-users\\Users\\Mohamed.REFAAT-ALLAM\\Share\\AI-Champion-Assist\\client-release",
+          "default": "\\\\cai1-users\\share\\AI-Champion-Assist\\client-release",
           "description": "Path to shared folder for client extension auto-updates (VSIX files). Leave empty to disable."
         },
         "clientMonitor.autoConnect": {
