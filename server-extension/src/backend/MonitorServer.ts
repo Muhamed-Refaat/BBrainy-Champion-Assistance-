@@ -230,6 +230,26 @@ class ServerFallbackManager {
         }
     }
 
+    // Read the queue file for a client WITHOUT deleting it (used for UI display on startup)
+    peekQueuedCommands(clientLabel: string): QueuedCommand[] {
+        if (!this.isConfigured) { return []; }
+        const queueFile = path.join(this.syncPath, 'queue', `${clientLabel}.json`);
+        if (!fsPathExists(queueFile)) { return []; }
+        try {
+            return JSON.parse(fsReadText(queueFile));
+        } catch { return []; }
+    }
+
+    // List all client labels that have a pending queue file
+    listQueuedClients(): string[] {
+        if (!this.isConfigured) { return []; }
+        const queueDir = path.join(this.syncPath, 'queue');
+        if (!fsPathExists(queueDir)) { return []; }
+        return fsListDir(queueDir)
+            .filter(f => f.endsWith('.json'))
+            .map(f => f.replace(/\.json$/, ''));
+    }
+
     // Read and clear the queue file for a client (called when client comes online)
     dequeueCommands(clientLabel: string): QueuedCommand[] {
         if (!this.isConfigured) { return []; }
@@ -508,13 +528,10 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
         } else {
             client.commandLog.push({ id: entry.id, command: entry.command, status: 'executed', timestamp: entry.timestamp, result: entry.payload });
         }
-        client.lastResponse = { command: entry.command, data: entry.payload, timestamp: Date.now() };
+        // Update checkBBrainy status silently (no auto-webview — view via Backlog button)
         if (entry.command === 'checkBBrainy' && entry.payload) {
             if (!client.info) { client.info = {}; }
             client.info.bbrainyStatus = entry.payload;
-        }
-        if (entry.command === 'getUsageReport' && entry.payload?.success && entry.payload?.agents) {
-            this.showUsageReportWebview(entry.payload, client.info?.username, client.info?.hostname);
         }
         console.log(`[MonitorServer] Processed server-backlog entry for ${clientLabel}: ${entry.command}`);
         this.triggerUpdate();
@@ -526,12 +543,25 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
         const entries = this.fallback.scanRegisteredClients();
         if (entries.length === 0) { return; }
 
+        // Grace period: treat 'inactive' only if lastSeen > 2 hours ago.
+        // This prevents normal VS Code close+reopen from showing the uninstalled badge.
+        const INACTIVE_GRACE_MS = 2 * 60 * 60 * 1000; // 2 hours
+        const effectiveExtStatus = (entry: PresenceEntry): 'active' | 'inactive' => {
+            if (entry.status === 'inactive' && (Date.now() - entry.lastSeen) < INACTIVE_GRACE_MS) {
+                return 'active'; // still within grace period — treat as temporarily closed
+            }
+            return entry.status ?? 'active';
+        };
+
         let added = 0;
         for (const entry of entries) {
             if (this.clients.has(entry.clientKey)) {
                 // Update extensionStatus on existing client from latest presence file
                 const existing = this.clients.get(entry.clientKey)!;
-                existing.extensionStatus = entry.status ?? 'active';
+                // Only update if client is not currently connected via WebSocket
+                if (existing.status !== 'online') {
+                    existing.extensionStatus = effectiveExtStatus(entry);
+                }
                 continue;
             }
             this.clients.set(entry.clientKey, {
@@ -542,7 +572,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
                 status: 'offline',
                 clientLabel: entry.clientLabel,
                 commandLog: [],
-                extensionStatus: entry.status ?? 'active'
+                extensionStatus: effectiveExtStatus(entry)
             });
             console.log(`[MonitorServer] Discovered new client via presence file: ${entry.clientLabel} (${entry.clientKey})`);
             added++;
@@ -569,9 +599,26 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
                 ws: null,
                 status: 'offline',
                 clientLabel: c.clientLabel || `${c.info?.username || 'unknown'}-${c.info?.hostname || 'unknown'}`,
-                commandLog: c.commandLog || []
+                commandLog: []   // reset log on each new VS Code session
             });
         });
+    }
+
+    // After loadPersistentClients + setupFallback: scan disk queue files and show pending commands in the log
+    private restorePendingQueueToLog() {
+        if (!this.fallback.isConfigured) { return; }
+        const pendingLabels = this.fallback.listQueuedClients();
+        for (const label of pendingLabels) {
+            const client = Array.from(this.clients.values()).find(c => c.clientLabel === label);
+            if (!client) { continue; }
+            const cmds = this.fallback.peekQueuedCommands(label);
+            for (const cmd of cmds) {
+                if (!client.commandLog.find(e => e.id === cmd.id)) {
+                    client.commandLog.push({ id: cmd.id, command: cmd.command, status: 'queued', timestamp: cmd.timestamp });
+                }
+            }
+            console.log(`[MonitorServer] Restored ${cmds.length} pending queued command(s) to log for ${label}`);
+        }
     }
 
     private deduplicateClients() {
@@ -651,6 +698,8 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
         this.setupFallback();
         // Import any clients that registered via presence file while server was offline
         this.importSyncClients();
+        // Restore pending disk-queue entries into each client's command log
+        this.restorePendingQueueToLog();
 
         this.server = http.createServer();
         this.wss = new WebSocketServer({ server: this.server });
@@ -796,6 +845,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
             existingClient.info = message.payload;
             existingClient.lastSeen = Date.now();
             existingClient.clientLabel = clientLabel;
+            existingClient.extensionStatus = 'active'; // clear uninstalled badge on reconnect
         } else {
             console.log(`[MonitorServer] Registering new client: ${message.clientKey} (${clientLabel})`);
             const client: Client = {
@@ -1324,6 +1374,51 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
         console.log(`[MonitorServer] Command sent successfully to ${clientKey}`);
     }
 
+    // Remove all queued (not-yet-delivered) commands for a client from disk and log
+    clearClientQueue(clientKey: string) {
+        const client = this.clients.get(clientKey);
+        if (!client) { return; }
+        // Remove disk queue file
+        if (this.fallback.isConfigured) {
+            try {
+                const queueFile = path.join(this.fallback.syncPathValue, 'queue', `${client.clientLabel}.json`);
+                if (fsPathExists(queueFile)) { fsDeleteFile(queueFile); }
+            } catch (e) {
+                console.error('[MonitorServer] clearClientQueue: failed to delete queue file', e);
+            }
+        }
+        // Remove queued/sent entries from in-memory log
+        client.commandLog = client.commandLog.filter(e => e.status !== 'queued' && e.status !== 'sent');
+        this.savePersistentClients();
+        this.triggerUpdate();
+    }
+
+    // Cancel a single queued command entry (removes from disk queue + log)
+    cancelQueueEntry(clientKey: string, entryId: string) {
+        const client = this.clients.get(clientKey);
+        if (!client) { return; }
+        // Remove from disk queue file (rewrite without that entry)
+        if (this.fallback.isConfigured) {
+            try {
+                const queueFile = path.join(this.fallback.syncPathValue, 'queue', `${client.clientLabel}.json`);
+                if (fsPathExists(queueFile)) {
+                    const cmds = JSON.parse(fsReadText(queueFile)) as any[];
+                    const remaining = cmds.filter(c => c.id !== entryId);
+                    if (remaining.length === 0) {
+                        fsDeleteFile(queueFile);
+                    } else {
+                        fsWriteText(queueFile, JSON.stringify(remaining, null, 2));
+                    }
+                }
+            } catch (e) {
+                console.error('[MonitorServer] cancelQueueEntry: failed to update queue file', e);
+            }
+        }
+        client.commandLog = client.commandLog.filter(e => e.id !== entryId);
+        this.savePersistentClients();
+        this.triggerUpdate();
+    }
+
     async queryAllClients(command: string) {
         console.log(`[MonitorServer] Broadcasting command to all ${this.clients.size} clients: ${command}`);
         const promises = Array.from(this.clients.keys()).map(key =>
@@ -1672,34 +1767,178 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
     }
 
     async generateReport() {
-        if (!vscode.workspace.workspaceFolders) {
-            vscode.window.showErrorMessage('Open a workspace to generate reports');
-            return;
-        }
+        const now = new Date();
+        const clientsArray = Array.from(this.clients.values());
+        const online  = clientsArray.filter(c => c.status === 'online');
+        const offline = clientsArray.filter(c => c.status === 'offline');
+        const inactive = clientsArray.filter(c => c.extensionStatus === 'inactive');
 
-        const report = {
-            timestamp: new Date().toISOString(),
-            totalClients: this.clients.size,
-            onlineClients: Array.from(this.clients.values()).filter(c => c.status === 'online').length,
-            clients: Array.from(this.clients.values()).map(c => ({
+        // Build JSON export object
+        const reportData = {
+            generatedAt: now.toISOString(),
+            server: {
+                key: this.serverId,
+                machine: os.hostname(),
+                username: os.userInfo().username,
+                version: this.version,
+                port: this.port,
+                configuredPort: this.configuredPort,
+                running: this.running,
+                syncPath: this.fallback.syncPathValue || '(not configured)',
+            },
+            summary: {
+                total: clientsArray.length,
+                online: online.length,
+                offline: offline.length,
+                inactive: inactive.length,
+            },
+            clients: clientsArray.map(c => ({
+                label: c.clientLabel,
                 key: c.key,
-                hostname: c.info.hostname,
-                username: c.info.username,
-                workspace: c.info.workspace,
-                bbrainyActive: c.info.bbrainyStatus?.active,
+                username: c.info?.username,
+                hostname: c.info?.hostname,
+                workspace: c.info?.workspace,
+                version: c.info?.version,
+                bbrainyActive: c.info?.bbrainyStatus?.active,
+                status: c.status,
+                extensionStatus: c.extensionStatus ?? 'active',
                 lastSeen: new Date(c.lastSeen).toISOString(),
-                status: c.status
+                pendingCommands: c.commandLog.filter(e => e.status === 'queued' || e.status === 'sent').length,
+                lastCommand: c.commandLog.length > 0 ? c.commandLog[c.commandLog.length - 1]?.command : null,
             }))
         };
+        const exportJson = JSON.stringify(reportData, null, 2);
 
-        const reportPath = vscode.Uri.joinPath(vscode.workspace.workspaceFolders[0].uri, 'reports', `report-${Date.now()}.json`);
+        // Build client rows HTML
+        const statusColor: Record<string, string> = {
+            online:  '#22c55e',
+            offline: '#94a3b8',
+            active:  '#22c55e',
+            inactive:'#f97316',
+        };
+        const clientRows = clientsArray.map(c => {
+            const pending = c.commandLog.filter(e => e.status === 'queued' || e.status === 'sent').length;
+            const bbrainyDot = c.info?.bbrainyStatus?.active ? '#22c55e' : '#475569';
+            return `<tr>
+                <td><span class="label">${c.clientLabel}</span></td>
+                <td>${c.info?.username || '—'}</td>
+                <td>${c.info?.hostname || '—'}</td>
+                <td>${c.info?.version || '—'}</td>
+                <td><span class="badge" style="color:${statusColor[c.status] || '#94a3b8'}">${c.status}</span></td>
+                <td><span class="badge" style="color:${statusColor[c.extensionStatus ?? 'active'] || '#94a3b8'}">${c.extensionStatus ?? 'active'}</span></td>
+                <td><span style="color:${bbrainyDot};font-size:18px">●</span></td>
+                <td>${pending > 0 ? `<span class="badge-warn">${pending} pending</span>` : '<span class="badge-ok">0</span>'}</td>
+                <td>${new Date(c.lastSeen).toLocaleString()}</td>
+            </tr>`;
+        }).join('');
 
-        try {
-            await vscode.workspace.fs.writeFile(reportPath, Buffer.from(JSON.stringify(report, null, 2)));
-            vscode.window.showInformationMessage(`Report saved to ${reportPath.fsPath}`);
-        } catch (e) {
-            vscode.window.showErrorMessage(`Failed to save report: ${e}`);
-        }
+        const panel = vscode.window.createWebviewPanel(
+            'serverReport',
+            `Server Report — ${this.serverId}`,
+            vscode.ViewColumn.One,
+            { enableScripts: true, retainContextWhenHidden: true }
+        );
+
+        panel.webview.onDidReceiveMessage(msg => {
+            if (msg.action === 'exportJson') {
+                // Save the JSON report to a file
+                vscode.window.showSaveDialog({
+                    defaultUri: vscode.Uri.file(path.join(os.homedir(), `server-report-${this.serverId}-${Date.now()}.json`)),
+                    filters: { 'JSON': ['json'] },
+                    title: 'Save Server Report'
+                }).then(uri => {
+                    if (uri) {
+                        try {
+                            fs.writeFileSync(uri.fsPath, exportJson, 'utf-8');
+                            vscode.window.showInformationMessage(`Report saved to ${uri.fsPath}`);
+                        } catch (e) {
+                            vscode.window.showErrorMessage(`Failed to save: ${e}`);
+                        }
+                    }
+                });
+            }
+        });
+
+        panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Server Report</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);color:#e2e8f0;padding:28px;min-height:100vh}
+.container{max-width:1100px;margin:0 auto}
+h1{font-size:24px;font-weight:700;margin-bottom:4px;background:linear-gradient(135deg,#60a5fa,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:12px;color:#64748b;margin-bottom:24px}
+.section{margin-bottom:28px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#60a5fa;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid rgba(59,130,246,0.2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.card{background:rgba(30,41,59,0.8);border:1px solid rgba(59,130,246,0.2);border-radius:10px;padding:14px}
+.card-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:4px}
+.card-value{font-size:20px;font-weight:700;color:#60a5fa}
+.card-value.green{color:#22c55e}.card-value.red{color:#f87171}.card-value.orange{color:#f97316}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px}
+.info-row{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+.info-key{color:#64748b;min-width:110px;flex-shrink:0}
+.info-val{color:#cbd5e1;word-break:break-all}
+table{width:100%;border-collapse:collapse;background:rgba(30,41,59,0.8);border:1px solid rgba(59,130,246,0.15);border-radius:10px;overflow:hidden;font-size:12px}
+thead{background:rgba(15,23,42,0.6)}
+th{padding:9px 12px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
+td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;vertical-align:middle}
+.label{color:#34d399;font-weight:600}
+.badge{font-weight:600;font-size:11px}
+.badge-warn{color:#fbbf24;font-weight:600}
+.badge-ok{color:#475569}
+.export-btn{display:inline-flex;align-items:center;gap:6px;margin-top:20px;padding:8px 18px;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:8px;color:#60a5fa;cursor:pointer;font-size:12px;font-weight:600;transition:background 0.2s}
+.export-btn:hover{background:rgba(59,130,246,0.3)}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>&#128202; Server Monitor Report</h1>
+  <div class="subtitle">Generated: ${now.toLocaleString()} &nbsp;|&nbsp; Server: <strong>${this.serverId}</strong> on <strong>${os.hostname()}</strong></div>
+
+  <div class="section">
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="card"><div class="card-label">Total Clients</div><div class="card-value">${clientsArray.length}</div></div>
+      <div class="card"><div class="card-label">Online</div><div class="card-value green">${online.length}</div></div>
+      <div class="card"><div class="card-label">Offline</div><div class="card-value red">${offline.length}</div></div>
+      <div class="card"><div class="card-label">Uninstalled</div><div class="card-value orange">${inactive.length}</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Server Info</h2>
+    <div class="info-grid">
+      <div><div class="info-row"><span class="info-key">Server Key</span><span class="info-val">${this.serverId}</span></div>
+           <div class="info-row"><span class="info-key">Machine</span><span class="info-val">${os.hostname()}</span></div>
+           <div class="info-row"><span class="info-key">Username</span><span class="info-val">${os.userInfo().username}</span></div>
+           <div class="info-row"><span class="info-key">Version</span><span class="info-val">${this.version}</span></div></div>
+      <div><div class="info-row"><span class="info-key">Active Port</span><span class="info-val">${this.running ? this.port : '(stopped)'}</span></div>
+           <div class="info-row"><span class="info-key">Configured Port</span><span class="info-val">${this.configuredPort}</span></div>
+           <div class="info-row"><span class="info-key">Status</span><span class="info-val" style="color:${this.running ? '#22c55e' : '#f87171'}">${this.running ? 'Running' : 'Stopped'}</span></div>
+           <div class="info-row"><span class="info-key">Sync Path</span><span class="info-val">${this.fallback.syncPathValue || '(not configured)'}</span></div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Clients (${clientsArray.length})</h2>
+    <table>
+      <thead><tr>
+        <th>Label</th><th>User</th><th>Host</th><th>Version</th>
+        <th>WS Status</th><th>Ext Status</th><th>BBrainy</th><th>Queue</th><th>Last Seen</th>
+      </tr></thead>
+      <tbody>${clientRows || '<tr><td colspan="9" style="text-align:center;color:#475569;padding:20px">No clients registered</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  <button class="export-btn" onclick="vscode.postMessage({action:'exportJson'})">&#11015; Export as JSON</button>
+</div>
+<script>const vscode=acquireVsCodeApi();</script>
+</body>
+</html>`;
     }
 
     // Publish a client extension update via client-release folder

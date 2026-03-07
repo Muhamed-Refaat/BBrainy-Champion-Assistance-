@@ -63,6 +63,12 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
                     if (!isNaN(p)) { await this.server.changePort(p); }
                     break;
                 }
+                case 'clearClientQueue':
+                    this.server.clearClientQueue(message.clientKey);
+                    break;
+                case 'cancelQueueEntry':
+                    this.server.cancelQueueEntry(message.clientKey, message.entryId);
+                    break;
             }
         });
 

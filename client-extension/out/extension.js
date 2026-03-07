@@ -1351,6 +1351,22 @@ function activate(context) {
             { label: '$(info) Connection Status', description: info ? `${info.serverKey} — ${info.connected ? 'Online' : 'Offline'}` : 'Not initialized',
                 action: () => vscode.commands.executeCommand('clientMonitor.showStatus') },
             { label: '$(key) Change Server Key', action: () => vscode.commands.executeCommand('clientMonitor.setServerKey') },
+            {
+                label: '$(globe) Change Server URL / Port',
+                description: info?.serverUrl ?? '',
+                action: async () => {
+                    const current = vscode.workspace.getConfiguration('clientMonitor').get('serverUrl') || 'ws://localhost:54321';
+                    const input = await vscode.window.showInputBox({
+                        prompt: 'Enter server WebSocket URL (e.g. ws://192.168.1.10:54321)',
+                        value: current,
+                        validateInput: v => /^wss?:\/\/.+:\d+$/.test(v.trim()) ? null : 'Must be ws:// or wss:// with a port number'
+                    });
+                    if (input?.trim()) {
+                        await vscode.workspace.getConfiguration('clientMonitor').update('serverUrl', input.trim(), vscode.ConfigurationTarget.Global);
+                        vscode.window.showInformationMessage(`Server URL updated to ${input.trim()}`);
+                    }
+                }
+            },
             { label: '$(sync) Reconnect', action: () => vscode.commands.executeCommand('clientMonitor.reconnect') },
         ];
         const picked = await vscode.window.showQuickPick(items.map(i => ({ label: i.label, description: i.description, _action: i.action })), { placeHolder: 'BBrainy Champion — choose an action' });

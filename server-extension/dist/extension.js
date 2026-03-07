@@ -1,17 +1,4209 @@
-"use strict";var pr=Object.create;var fe=Object.defineProperty;var gr=Object.getOwnPropertyDescriptor;var mr=Object.getOwnPropertyNames;var vr=Object.getPrototypeOf,yr=Object.prototype.hasOwnProperty;var x=(s,e)=>()=>(e||s((e={exports:{}}).exports,e),e.exports),br=(s,e)=>{for(var t in e)fe(s,t,{get:e[t],enumerable:!0})},nt=(s,e,t,r)=>{if(e&&typeof e=="object"||typeof e=="function")for(let n of mr(e))!yr.call(s,n)&&n!==t&&fe(s,n,{get:()=>e[n],enumerable:!(r=gr(e,n))||r.enumerable});return s};var k=(s,e,t)=>(t=s!=null?pr(vr(s)):{},nt(e||!s||!s.__esModule?fe(t,"default",{value:s,enumerable:!0}):t,s)),_r=s=>nt(fe({},"__esModule",{value:!0}),s);var O=x((Ys,at)=>{"use strict";var it=["nodebuffer","arraybuffer","fragments"],ot=typeof Blob<"u";ot&&it.push("blob");at.exports={BINARY_TYPES:it,CLOSE_TIMEOUT:3e4,EMPTY_BUFFER:Buffer.alloc(0),GUID:"258EAFA5-E914-47DA-95CA-C5AB0DC85B11",hasBlob:ot,kForOnEventAttribute:Symbol("kIsForOnEventAttribute"),kListener:Symbol("kListener"),kStatusCode:Symbol("status-code"),kWebSocket:Symbol("websocket"),NOOP:()=>{}}});var re=x((Js,ue)=>{"use strict";var{EMPTY_BUFFER:Sr}=O(),Me=Buffer[Symbol.species];function xr(s,e){if(s.length===0)return Sr;if(s.length===1)return s[0];let t=Buffer.allocUnsafe(e),r=0;for(let n=0;n<s.length;n++){let i=s[n];t.set(i,r),r+=i.length}return r<e?new Me(t.buffer,t.byteOffset,r):t}function lt(s,e,t,r,n){for(let i=0;i<n;i++)t[r+i]=s[i]^e[i&3]}function ct(s,e){for(let t=0;t<s.length;t++)s[t]^=e[t&3]}function wr(s){return s.length===s.buffer.byteLength?s.buffer:s.buffer.slice(s.byteOffset,s.byteOffset+s.length)}function Oe(s){if(Oe.readOnly=!0,Buffer.isBuffer(s))return s;let e;return s instanceof ArrayBuffer?e=new Me(s):ArrayBuffer.isView(s)?e=new Me(s.buffer,s.byteOffset,s.byteLength):(e=Buffer.from(s),Oe.readOnly=!1),e}ue.exports={concat:xr,mask:lt,toArrayBuffer:wr,toBuffer:Oe,unmask:ct};if(!process.env.WS_NO_BUFFER_UTIL)try{let s=require("bufferutil");ue.exports.mask=function(e,t,r,n,i){i<48?lt(e,t,r,n,i):s.mask(e,t,r,n,i)},ue.exports.unmask=function(e,t){e.length<32?ct(e,t):s.unmask(e,t)}}catch{}});var ft=x((Xs,ht)=>{"use strict";var dt=Symbol("kDone"),Te=Symbol("kRun"),Ie=class{constructor(e){this[dt]=()=>{this.pending--,this[Te]()},this.concurrency=e||1/0,this.jobs=[],this.pending=0}add(e){this.jobs.push(e),this[Te]()}[Te](){if(this.pending!==this.concurrency&&this.jobs.length){let e=this.jobs.shift();this.pending++,e(this[dt])}}};ht.exports=Ie});var ne=x((Qs,mt)=>{"use strict";var se=require("zlib"),ut=re(),kr=ft(),{kStatusCode:pt}=O(),Er=Buffer[Symbol.species],Cr=Buffer.from([0,0,255,255]),ge=Symbol("permessage-deflate"),T=Symbol("total-length"),V=Symbol("callback"),B=Symbol("buffers"),G=Symbol("error"),pe,Le=class{constructor(e,t,r){if(this._maxPayload=r|0,this._options=e||{},this._threshold=this._options.threshold!==void 0?this._options.threshold:1024,this._isServer=!!t,this._deflate=null,this._inflate=null,this.params=null,!pe){let n=this._options.concurrencyLimit!==void 0?this._options.concurrencyLimit:10;pe=new kr(n)}}static get extensionName(){return"permessage-deflate"}offer(){let e={};return this._options.serverNoContextTakeover&&(e.server_no_context_takeover=!0),this._options.clientNoContextTakeover&&(e.client_no_context_takeover=!0),this._options.serverMaxWindowBits&&(e.server_max_window_bits=this._options.serverMaxWindowBits),this._options.clientMaxWindowBits?e.client_max_window_bits=this._options.clientMaxWindowBits:this._options.clientMaxWindowBits==null&&(e.client_max_window_bits=!0),e}accept(e){return e=this.normalizeParams(e),this.params=this._isServer?this.acceptAsServer(e):this.acceptAsClient(e),this.params}cleanup(){if(this._inflate&&(this._inflate.close(),this._inflate=null),this._deflate){let e=this._deflate[V];this._deflate.close(),this._deflate=null,e&&e(new Error("The deflate stream was closed while data was being processed"))}}acceptAsServer(e){let t=this._options,r=e.find(n=>!(t.serverNoContextTakeover===!1&&n.server_no_context_takeover||n.server_max_window_bits&&(t.serverMaxWindowBits===!1||typeof t.serverMaxWindowBits=="number"&&t.serverMaxWindowBits>n.server_max_window_bits)||typeof t.clientMaxWindowBits=="number"&&!n.client_max_window_bits));if(!r)throw new Error("None of the extension offers can be accepted");return t.serverNoContextTakeover&&(r.server_no_context_takeover=!0),t.clientNoContextTakeover&&(r.client_no_context_takeover=!0),typeof t.serverMaxWindowBits=="number"&&(r.server_max_window_bits=t.serverMaxWindowBits),typeof t.clientMaxWindowBits=="number"?r.client_max_window_bits=t.clientMaxWindowBits:(r.client_max_window_bits===!0||t.clientMaxWindowBits===!1)&&delete r.client_max_window_bits,r}acceptAsClient(e){let t=e[0];if(this._options.clientNoContextTakeover===!1&&t.client_no_context_takeover)throw new Error('Unexpected parameter "client_no_context_takeover"');if(!t.client_max_window_bits)typeof this._options.clientMaxWindowBits=="number"&&(t.client_max_window_bits=this._options.clientMaxWindowBits);else if(this._options.clientMaxWindowBits===!1||typeof this._options.clientMaxWindowBits=="number"&&t.client_max_window_bits>this._options.clientMaxWindowBits)throw new Error('Unexpected or invalid parameter "client_max_window_bits"');return t}normalizeParams(e){return e.forEach(t=>{Object.keys(t).forEach(r=>{let n=t[r];if(n.length>1)throw new Error(`Parameter "${r}" must have only a single value`);if(n=n[0],r==="client_max_window_bits"){if(n!==!0){let i=+n;if(!Number.isInteger(i)||i<8||i>15)throw new TypeError(`Invalid value for parameter "${r}": ${n}`);n=i}else if(!this._isServer)throw new TypeError(`Invalid value for parameter "${r}": ${n}`)}else if(r==="server_max_window_bits"){let i=+n;if(!Number.isInteger(i)||i<8||i>15)throw new TypeError(`Invalid value for parameter "${r}": ${n}`);n=i}else if(r==="client_no_context_takeover"||r==="server_no_context_takeover"){if(n!==!0)throw new TypeError(`Invalid value for parameter "${r}": ${n}`)}else throw new Error(`Unknown parameter "${r}"`);t[r]=n})}),e}decompress(e,t,r){pe.add(n=>{this._decompress(e,t,(i,o)=>{n(),r(i,o)})})}compress(e,t,r){pe.add(n=>{this._compress(e,t,(i,o)=>{n(),r(i,o)})})}_decompress(e,t,r){let n=this._isServer?"client":"server";if(!this._inflate){let i=`${n}_max_window_bits`,o=typeof this.params[i]!="number"?se.Z_DEFAULT_WINDOWBITS:this.params[i];this._inflate=se.createInflateRaw({...this._options.zlibInflateOptions,windowBits:o}),this._inflate[ge]=this,this._inflate[T]=0,this._inflate[B]=[],this._inflate.on("error",Pr),this._inflate.on("data",gt)}this._inflate[V]=r,this._inflate.write(e),t&&this._inflate.write(Cr),this._inflate.flush(()=>{let i=this._inflate[G];if(i){this._inflate.close(),this._inflate=null,r(i);return}let o=ut.concat(this._inflate[B],this._inflate[T]);this._inflate._readableState.endEmitted?(this._inflate.close(),this._inflate=null):(this._inflate[T]=0,this._inflate[B]=[],t&&this.params[`${n}_no_context_takeover`]&&this._inflate.reset()),r(null,o)})}_compress(e,t,r){let n=this._isServer?"server":"client";if(!this._deflate){let i=`${n}_max_window_bits`,o=typeof this.params[i]!="number"?se.Z_DEFAULT_WINDOWBITS:this.params[i];this._deflate=se.createDeflateRaw({...this._options.zlibDeflateOptions,windowBits:o}),this._deflate[T]=0,this._deflate[B]=[],this._deflate.on("data",$r)}this._deflate[V]=r,this._deflate.write(e),this._deflate.flush(se.Z_SYNC_FLUSH,()=>{if(!this._deflate)return;let i=ut.concat(this._deflate[B],this._deflate[T]);t&&(i=new Er(i.buffer,i.byteOffset,i.length-4)),this._deflate[V]=null,this._deflate[T]=0,this._deflate[B]=[],t&&this.params[`${n}_no_context_takeover`]&&this._deflate.reset(),r(null,i)})}};mt.exports=Le;function $r(s){this[B].push(s),this[T]+=s.length}function gt(s){if(this[T]+=s.length,this[ge]._maxPayload<1||this[T]<=this[ge]._maxPayload){this[B].push(s);return}this[G]=new RangeError("Max payload size exceeded"),this[G].code="WS_ERR_UNSUPPORTED_MESSAGE_LENGTH",this[G][pt]=1009,this.removeListener("data",gt),this.reset()}function Pr(s){if(this[ge]._inflate=null,this[G]){this[V](this[G]);return}s[pt]=1007,this[V](s)}});var H=x((Zs,me)=>{"use strict";var{isUtf8:vt}=require("buffer"),{hasBlob:Mr}=O(),Or=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,0,0,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0];function Tr(s){return s>=1e3&&s<=1014&&s!==1004&&s!==1005&&s!==1006||s>=3e3&&s<=4999}function Be(s){let e=s.length,t=0;for(;t<e;)if(!(s[t]&128))t++;else if((s[t]&224)===192){if(t+1===e||(s[t+1]&192)!==128||(s[t]&254)===192)return!1;t+=2}else if((s[t]&240)===224){if(t+2>=e||(s[t+1]&192)!==128||(s[t+2]&192)!==128||s[t]===224&&(s[t+1]&224)===128||s[t]===237&&(s[t+1]&224)===160)return!1;t+=3}else if((s[t]&248)===240){if(t+3>=e||(s[t+1]&192)!==128||(s[t+2]&192)!==128||(s[t+3]&192)!==128||s[t]===240&&(s[t+1]&240)===128||s[t]===244&&s[t+1]>143||s[t]>244)return!1;t+=4}else return!1;return!0}function Ir(s){return Mr&&typeof s=="object"&&typeof s.arrayBuffer=="function"&&typeof s.type=="string"&&typeof s.stream=="function"&&(s[Symbol.toStringTag]==="Blob"||s[Symbol.toStringTag]==="File")}me.exports={isBlob:Ir,isValidStatusCode:Tr,isValidUTF8:Be,tokenChars:Or};if(vt)me.exports.isValidUTF8=function(s){return s.length<24?Be(s):vt(s)};else if(!process.env.WS_NO_UTF_8_VALIDATE)try{let s=require("utf-8-validate");me.exports.isValidUTF8=function(e){return e.length<32?Be(e):s(e)}}catch{}});var De=x((en,kt)=>{"use strict";var{Writable:Lr}=require("stream"),yt=ne(),{BINARY_TYPES:Br,EMPTY_BUFFER:bt,kStatusCode:Ur,kWebSocket:Nr}=O(),{concat:Ue,toArrayBuffer:Rr,unmask:Ar}=re(),{isValidStatusCode:Dr,isValidUTF8:_t}=H(),ve=Buffer[Symbol.species],E=0,St=1,xt=2,wt=3,Ne=4,Re=5,ye=6,Ae=class extends Lr{constructor(e={}){super(),this._allowSynchronousEvents=e.allowSynchronousEvents!==void 0?e.allowSynchronousEvents:!0,this._binaryType=e.binaryType||Br[0],this._extensions=e.extensions||{},this._isServer=!!e.isServer,this._maxPayload=e.maxPayload|0,this._skipUTF8Validation=!!e.skipUTF8Validation,this[Nr]=void 0,this._bufferedBytes=0,this._buffers=[],this._compressed=!1,this._payloadLength=0,this._mask=void 0,this._fragmented=0,this._masked=!1,this._fin=!1,this._opcode=0,this._totalPayloadLength=0,this._messageLength=0,this._fragments=[],this._errored=!1,this._loop=!1,this._state=E}_write(e,t,r){if(this._opcode===8&&this._state==E)return r();this._bufferedBytes+=e.length,this._buffers.push(e),this.startLoop(r)}consume(e){if(this._bufferedBytes-=e,e===this._buffers[0].length)return this._buffers.shift();if(e<this._buffers[0].length){let r=this._buffers[0];return this._buffers[0]=new ve(r.buffer,r.byteOffset+e,r.length-e),new ve(r.buffer,r.byteOffset,e)}let t=Buffer.allocUnsafe(e);do{let r=this._buffers[0],n=t.length-e;e>=r.length?t.set(this._buffers.shift(),n):(t.set(new Uint8Array(r.buffer,r.byteOffset,e),n),this._buffers[0]=new ve(r.buffer,r.byteOffset+e,r.length-e)),e-=r.length}while(e>0);return t}startLoop(e){this._loop=!0;do switch(this._state){case E:this.getInfo(e);break;case St:this.getPayloadLength16(e);break;case xt:this.getPayloadLength64(e);break;case wt:this.getMask();break;case Ne:this.getData(e);break;case Re:case ye:this._loop=!1;return}while(this._loop);this._errored||e()}getInfo(e){if(this._bufferedBytes<2){this._loop=!1;return}let t=this.consume(2);if(t[0]&48){let n=this.createError(RangeError,"RSV2 and RSV3 must be clear",!0,1002,"WS_ERR_UNEXPECTED_RSV_2_3");e(n);return}let r=(t[0]&64)===64;if(r&&!this._extensions[yt.extensionName]){let n=this.createError(RangeError,"RSV1 must be clear",!0,1002,"WS_ERR_UNEXPECTED_RSV_1");e(n);return}if(this._fin=(t[0]&128)===128,this._opcode=t[0]&15,this._payloadLength=t[1]&127,this._opcode===0){if(r){let n=this.createError(RangeError,"RSV1 must be clear",!0,1002,"WS_ERR_UNEXPECTED_RSV_1");e(n);return}if(!this._fragmented){let n=this.createError(RangeError,"invalid opcode 0",!0,1002,"WS_ERR_INVALID_OPCODE");e(n);return}this._opcode=this._fragmented}else if(this._opcode===1||this._opcode===2){if(this._fragmented){let n=this.createError(RangeError,`invalid opcode ${this._opcode}`,!0,1002,"WS_ERR_INVALID_OPCODE");e(n);return}this._compressed=r}else if(this._opcode>7&&this._opcode<11){if(!this._fin){let n=this.createError(RangeError,"FIN must be set",!0,1002,"WS_ERR_EXPECTED_FIN");e(n);return}if(r){let n=this.createError(RangeError,"RSV1 must be clear",!0,1002,"WS_ERR_UNEXPECTED_RSV_1");e(n);return}if(this._payloadLength>125||this._opcode===8&&this._payloadLength===1){let n=this.createError(RangeError,`invalid payload length ${this._payloadLength}`,!0,1002,"WS_ERR_INVALID_CONTROL_PAYLOAD_LENGTH");e(n);return}}else{let n=this.createError(RangeError,`invalid opcode ${this._opcode}`,!0,1002,"WS_ERR_INVALID_OPCODE");e(n);return}if(!this._fin&&!this._fragmented&&(this._fragmented=this._opcode),this._masked=(t[1]&128)===128,this._isServer){if(!this._masked){let n=this.createError(RangeError,"MASK must be set",!0,1002,"WS_ERR_EXPECTED_MASK");e(n);return}}else if(this._masked){let n=this.createError(RangeError,"MASK must be clear",!0,1002,"WS_ERR_UNEXPECTED_MASK");e(n);return}this._payloadLength===126?this._state=St:this._payloadLength===127?this._state=xt:this.haveLength(e)}getPayloadLength16(e){if(this._bufferedBytes<2){this._loop=!1;return}this._payloadLength=this.consume(2).readUInt16BE(0),this.haveLength(e)}getPayloadLength64(e){if(this._bufferedBytes<8){this._loop=!1;return}let t=this.consume(8),r=t.readUInt32BE(0);if(r>Math.pow(2,21)-1){let n=this.createError(RangeError,"Unsupported WebSocket frame: payload length > 2^53 - 1",!1,1009,"WS_ERR_UNSUPPORTED_DATA_PAYLOAD_LENGTH");e(n);return}this._payloadLength=r*Math.pow(2,32)+t.readUInt32BE(4),this.haveLength(e)}haveLength(e){if(this._payloadLength&&this._opcode<8&&(this._totalPayloadLength+=this._payloadLength,this._totalPayloadLength>this._maxPayload&&this._maxPayload>0)){let t=this.createError(RangeError,"Max payload size exceeded",!1,1009,"WS_ERR_UNSUPPORTED_MESSAGE_LENGTH");e(t);return}this._masked?this._state=wt:this._state=Ne}getMask(){if(this._bufferedBytes<4){this._loop=!1;return}this._mask=this.consume(4),this._state=Ne}getData(e){let t=bt;if(this._payloadLength){if(this._bufferedBytes<this._payloadLength){this._loop=!1;return}t=this.consume(this._payloadLength),this._masked&&this._mask[0]|this._mask[1]|this._mask[2]|this._mask[3]&&Ar(t,this._mask)}if(this._opcode>7){this.controlMessage(t,e);return}if(this._compressed){this._state=Re,this.decompress(t,e);return}t.length&&(this._messageLength=this._totalPayloadLength,this._fragments.push(t)),this.dataMessage(e)}decompress(e,t){this._extensions[yt.extensionName].decompress(e,this._fin,(n,i)=>{if(n)return t(n);if(i.length){if(this._messageLength+=i.length,this._messageLength>this._maxPayload&&this._maxPayload>0){let o=this.createError(RangeError,"Max payload size exceeded",!1,1009,"WS_ERR_UNSUPPORTED_MESSAGE_LENGTH");t(o);return}this._fragments.push(i)}this.dataMessage(t),this._state===E&&this.startLoop(t)})}dataMessage(e){if(!this._fin){this._state=E;return}let t=this._messageLength,r=this._fragments;if(this._totalPayloadLength=0,this._messageLength=0,this._fragmented=0,this._fragments=[],this._opcode===2){let n;this._binaryType==="nodebuffer"?n=Ue(r,t):this._binaryType==="arraybuffer"?n=Rr(Ue(r,t)):this._binaryType==="blob"?n=new Blob(r):n=r,this._allowSynchronousEvents?(this.emit("message",n,!0),this._state=E):(this._state=ye,setImmediate(()=>{this.emit("message",n,!0),this._state=E,this.startLoop(e)}))}else{let n=Ue(r,t);if(!this._skipUTF8Validation&&!_t(n)){let i=this.createError(Error,"invalid UTF-8 sequence",!0,1007,"WS_ERR_INVALID_UTF8");e(i);return}this._state===Re||this._allowSynchronousEvents?(this.emit("message",n,!1),this._state=E):(this._state=ye,setImmediate(()=>{this.emit("message",n,!1),this._state=E,this.startLoop(e)}))}}controlMessage(e,t){if(this._opcode===8){if(e.length===0)this._loop=!1,this.emit("conclude",1005,bt),this.end();else{let r=e.readUInt16BE(0);if(!Dr(r)){let i=this.createError(RangeError,`invalid status code ${r}`,!0,1002,"WS_ERR_INVALID_CLOSE_CODE");t(i);return}let n=new ve(e.buffer,e.byteOffset+2,e.length-2);if(!this._skipUTF8Validation&&!_t(n)){let i=this.createError(Error,"invalid UTF-8 sequence",!0,1007,"WS_ERR_INVALID_UTF8");t(i);return}this._loop=!1,this.emit("conclude",r,n),this.end()}this._state=E;return}this._allowSynchronousEvents?(this.emit(this._opcode===9?"ping":"pong",e),this._state=E):(this._state=ye,setImmediate(()=>{this.emit(this._opcode===9?"ping":"pong",e),this._state=E,this.startLoop(t)}))}createError(e,t,r,n,i){this._loop=!1,this._errored=!0;let o=new e(r?`Invalid WebSocket frame: ${t}`:t);return Error.captureStackTrace(o,this.createError),o.code=i,o[Ur]=n,o}};kt.exports=Ae});var qe=x((rn,$t)=>{"use strict";var{Duplex:tn}=require("stream"),{randomFillSync:Fr}=require("crypto"),Et=ne(),{EMPTY_BUFFER:Wr,kWebSocket:qr,NOOP:jr}=O(),{isBlob:K,isValidStatusCode:zr}=H(),{mask:Ct,toBuffer:R}=re(),C=Symbol("kByteLength"),Vr=Buffer.alloc(4),be=8*1024,A,Y=be,P=0,Gr=1,Hr=2,Fe=class s{constructor(e,t,r){this._extensions=t||{},r&&(this._generateMask=r,this._maskBuffer=Buffer.alloc(4)),this._socket=e,this._firstFragment=!0,this._compress=!1,this._bufferedBytes=0,this._queue=[],this._state=P,this.onerror=jr,this[qr]=void 0}static frame(e,t){let r,n=!1,i=2,o=!1;t.mask&&(r=t.maskBuffer||Vr,t.generateMask?t.generateMask(r):(Y===be&&(A===void 0&&(A=Buffer.alloc(be)),Fr(A,0,be),Y=0),r[0]=A[Y++],r[1]=A[Y++],r[2]=A[Y++],r[3]=A[Y++]),o=(r[0]|r[1]|r[2]|r[3])===0,i=6);let a;typeof e=="string"?(!t.mask||o)&&t[C]!==void 0?a=t[C]:(e=Buffer.from(e),a=e.length):(a=e.length,n=t.mask&&t.readOnly&&!o);let l=a;a>=65536?(i+=8,l=127):a>125&&(i+=2,l=126);let c=Buffer.allocUnsafe(n?a+i:i);return c[0]=t.fin?t.opcode|128:t.opcode,t.rsv1&&(c[0]|=64),c[1]=l,l===126?c.writeUInt16BE(a,2):l===127&&(c[2]=c[3]=0,c.writeUIntBE(a,4,6)),t.mask?(c[1]|=128,c[i-4]=r[0],c[i-3]=r[1],c[i-2]=r[2],c[i-1]=r[3],o?[c,e]:n?(Ct(e,r,c,i,a),[c]):(Ct(e,r,e,0,a),[c,e])):[c,e]}close(e,t,r,n){let i;if(e===void 0)i=Wr;else{if(typeof e!="number"||!zr(e))throw new TypeError("First argument must be a valid error code number");if(t===void 0||!t.length)i=Buffer.allocUnsafe(2),i.writeUInt16BE(e,0);else{let a=Buffer.byteLength(t);if(a>123)throw new RangeError("The message must not be greater than 123 bytes");i=Buffer.allocUnsafe(2+a),i.writeUInt16BE(e,0),typeof t=="string"?i.write(t,2):i.set(t,2)}}let o={[C]:i.length,fin:!0,generateMask:this._generateMask,mask:r,maskBuffer:this._maskBuffer,opcode:8,readOnly:!1,rsv1:!1};this._state!==P?this.enqueue([this.dispatch,i,!1,o,n]):this.sendFrame(s.frame(i,o),n)}ping(e,t,r){let n,i;if(typeof e=="string"?(n=Buffer.byteLength(e),i=!1):K(e)?(n=e.size,i=!1):(e=R(e),n=e.length,i=R.readOnly),n>125)throw new RangeError("The data size must not be greater than 125 bytes");let o={[C]:n,fin:!0,generateMask:this._generateMask,mask:t,maskBuffer:this._maskBuffer,opcode:9,readOnly:i,rsv1:!1};K(e)?this._state!==P?this.enqueue([this.getBlobData,e,!1,o,r]):this.getBlobData(e,!1,o,r):this._state!==P?this.enqueue([this.dispatch,e,!1,o,r]):this.sendFrame(s.frame(e,o),r)}pong(e,t,r){let n,i;if(typeof e=="string"?(n=Buffer.byteLength(e),i=!1):K(e)?(n=e.size,i=!1):(e=R(e),n=e.length,i=R.readOnly),n>125)throw new RangeError("The data size must not be greater than 125 bytes");let o={[C]:n,fin:!0,generateMask:this._generateMask,mask:t,maskBuffer:this._maskBuffer,opcode:10,readOnly:i,rsv1:!1};K(e)?this._state!==P?this.enqueue([this.getBlobData,e,!1,o,r]):this.getBlobData(e,!1,o,r):this._state!==P?this.enqueue([this.dispatch,e,!1,o,r]):this.sendFrame(s.frame(e,o),r)}send(e,t,r){let n=this._extensions[Et.extensionName],i=t.binary?2:1,o=t.compress,a,l;typeof e=="string"?(a=Buffer.byteLength(e),l=!1):K(e)?(a=e.size,l=!1):(e=R(e),a=e.length,l=R.readOnly),this._firstFragment?(this._firstFragment=!1,o&&n&&n.params[n._isServer?"server_no_context_takeover":"client_no_context_takeover"]&&(o=a>=n._threshold),this._compress=o):(o=!1,i=0),t.fin&&(this._firstFragment=!0);let c={[C]:a,fin:t.fin,generateMask:this._generateMask,mask:t.mask,maskBuffer:this._maskBuffer,opcode:i,readOnly:l,rsv1:o};K(e)?this._state!==P?this.enqueue([this.getBlobData,e,this._compress,c,r]):this.getBlobData(e,this._compress,c,r):this._state!==P?this.enqueue([this.dispatch,e,this._compress,c,r]):this.dispatch(e,this._compress,c,r)}getBlobData(e,t,r,n){this._bufferedBytes+=r[C],this._state=Hr,e.arrayBuffer().then(i=>{if(this._socket.destroyed){let a=new Error("The socket was closed while the blob was being read");process.nextTick(We,this,a,n);return}this._bufferedBytes-=r[C];let o=R(i);t?this.dispatch(o,t,r,n):(this._state=P,this.sendFrame(s.frame(o,r),n),this.dequeue())}).catch(i=>{process.nextTick(Kr,this,i,n)})}dispatch(e,t,r,n){if(!t){this.sendFrame(s.frame(e,r),n);return}let i=this._extensions[Et.extensionName];this._bufferedBytes+=r[C],this._state=Gr,i.compress(e,r.fin,(o,a)=>{if(this._socket.destroyed){let l=new Error("The socket was closed while data was being compressed");We(this,l,n);return}this._bufferedBytes-=r[C],this._state=P,r.readOnly=!1,this.sendFrame(s.frame(a,r),n),this.dequeue()})}dequeue(){for(;this._state===P&&this._queue.length;){let e=this._queue.shift();this._bufferedBytes-=e[3][C],Reflect.apply(e[0],this,e.slice(1))}}enqueue(e){this._bufferedBytes+=e[3][C],this._queue.push(e)}sendFrame(e,t){e.length===2?(this._socket.cork(),this._socket.write(e[0]),this._socket.write(e[1],t),this._socket.uncork()):this._socket.write(e[0],t)}};$t.exports=Fe;function We(s,e,t){typeof t=="function"&&t(e);for(let r=0;r<s._queue.length;r++){let n=s._queue[r],i=n[n.length-1];typeof i=="function"&&i(e)}}function Kr(s,e,t){We(s,e,t),s.onerror(e)}});var Nt=x((sn,Ut)=>{"use strict";var{kForOnEventAttribute:ie,kListener:je}=O(),Pt=Symbol("kCode"),Mt=Symbol("kData"),Ot=Symbol("kError"),Tt=Symbol("kMessage"),It=Symbol("kReason"),J=Symbol("kTarget"),Lt=Symbol("kType"),Bt=Symbol("kWasClean"),I=class{constructor(e){this[J]=null,this[Lt]=e}get target(){return this[J]}get type(){return this[Lt]}};Object.defineProperty(I.prototype,"target",{enumerable:!0});Object.defineProperty(I.prototype,"type",{enumerable:!0});var D=class extends I{constructor(e,t={}){super(e),this[Pt]=t.code===void 0?0:t.code,this[It]=t.reason===void 0?"":t.reason,this[Bt]=t.wasClean===void 0?!1:t.wasClean}get code(){return this[Pt]}get reason(){return this[It]}get wasClean(){return this[Bt]}};Object.defineProperty(D.prototype,"code",{enumerable:!0});Object.defineProperty(D.prototype,"reason",{enumerable:!0});Object.defineProperty(D.prototype,"wasClean",{enumerable:!0});var X=class extends I{constructor(e,t={}){super(e),this[Ot]=t.error===void 0?null:t.error,this[Tt]=t.message===void 0?"":t.message}get error(){return this[Ot]}get message(){return this[Tt]}};Object.defineProperty(X.prototype,"error",{enumerable:!0});Object.defineProperty(X.prototype,"message",{enumerable:!0});var oe=class extends I{constructor(e,t={}){super(e),this[Mt]=t.data===void 0?null:t.data}get data(){return this[Mt]}};Object.defineProperty(oe.prototype,"data",{enumerable:!0});var Yr={addEventListener(s,e,t={}){for(let n of this.listeners(s))if(!t[ie]&&n[je]===e&&!n[ie])return;let r;if(s==="message")r=function(i,o){let a=new oe("message",{data:o?i:i.toString()});a[J]=this,_e(e,this,a)};else if(s==="close")r=function(i,o){let a=new D("close",{code:i,reason:o.toString(),wasClean:this._closeFrameReceived&&this._closeFrameSent});a[J]=this,_e(e,this,a)};else if(s==="error")r=function(i){let o=new X("error",{error:i,message:i.message});o[J]=this,_e(e,this,o)};else if(s==="open")r=function(){let i=new I("open");i[J]=this,_e(e,this,i)};else return;r[ie]=!!t[ie],r[je]=e,t.once?this.once(s,r):this.on(s,r)},removeEventListener(s,e){for(let t of this.listeners(s))if(t[je]===e&&!t[ie]){this.removeListener(s,t);break}}};Ut.exports={CloseEvent:D,ErrorEvent:X,Event:I,EventTarget:Yr,MessageEvent:oe};function _e(s,e,t){typeof s=="object"&&s.handleEvent?s.handleEvent.call(s,t):s.call(e,t)}});var ze=x((nn,Rt)=>{"use strict";var{tokenChars:ae}=H();function M(s,e,t){s[e]===void 0?s[e]=[t]:s[e].push(t)}function Jr(s){let e=Object.create(null),t=Object.create(null),r=!1,n=!1,i=!1,o,a,l=-1,c=-1,h=-1,f=0;for(;f<s.length;f++)if(c=s.charCodeAt(f),o===void 0)if(h===-1&&ae[c]===1)l===-1&&(l=f);else if(f!==0&&(c===32||c===9))h===-1&&l!==-1&&(h=f);else if(c===59||c===44){if(l===-1)throw new SyntaxError(`Unexpected character at index ${f}`);h===-1&&(h=f);let y=s.slice(l,h);c===44?(M(e,y,t),t=Object.create(null)):o=y,l=h=-1}else throw new SyntaxError(`Unexpected character at index ${f}`);else if(a===void 0)if(h===-1&&ae[c]===1)l===-1&&(l=f);else if(c===32||c===9)h===-1&&l!==-1&&(h=f);else if(c===59||c===44){if(l===-1)throw new SyntaxError(`Unexpected character at index ${f}`);h===-1&&(h=f),M(t,s.slice(l,h),!0),c===44&&(M(e,o,t),t=Object.create(null),o=void 0),l=h=-1}else if(c===61&&l!==-1&&h===-1)a=s.slice(l,f),l=h=-1;else throw new SyntaxError(`Unexpected character at index ${f}`);else if(n){if(ae[c]!==1)throw new SyntaxError(`Unexpected character at index ${f}`);l===-1?l=f:r||(r=!0),n=!1}else if(i)if(ae[c]===1)l===-1&&(l=f);else if(c===34&&l!==-1)i=!1,h=f;else if(c===92)n=!0;else throw new SyntaxError(`Unexpected character at index ${f}`);else if(c===34&&s.charCodeAt(f-1)===61)i=!0;else if(h===-1&&ae[c]===1)l===-1&&(l=f);else if(l!==-1&&(c===32||c===9))h===-1&&(h=f);else if(c===59||c===44){if(l===-1)throw new SyntaxError(`Unexpected character at index ${f}`);h===-1&&(h=f);let y=s.slice(l,h);r&&(y=y.replace(/\\/g,""),r=!1),M(t,a,y),c===44&&(M(e,o,t),t=Object.create(null),o=void 0),a=void 0,l=h=-1}else throw new SyntaxError(`Unexpected character at index ${f}`);if(l===-1||i||c===32||c===9)throw new SyntaxError("Unexpected end of input");h===-1&&(h=f);let p=s.slice(l,h);return o===void 0?M(e,p,t):(a===void 0?M(t,p,!0):r?M(t,a,p.replace(/\\/g,"")):M(t,a,p),M(e,o,t)),e}function Xr(s){return Object.keys(s).map(e=>{let t=s[e];return Array.isArray(t)||(t=[t]),t.map(r=>[e].concat(Object.keys(r).map(n=>{let i=r[n];return Array.isArray(i)||(i=[i]),i.map(o=>o===!0?n:`${n}=${o}`).join("; ")})).join("; ")).join(", ")}).join(", ")}Rt.exports={format:Xr,parse:Jr}});var ke=x((ln,Yt)=>{"use strict";var Qr=require("events"),Zr=require("https"),es=require("http"),Ft=require("net"),ts=require("tls"),{randomBytes:rs,createHash:ss}=require("crypto"),{Duplex:on,Readable:an}=require("stream"),{URL:Ve}=require("url"),U=ne(),ns=De(),is=qe(),{isBlob:os}=H(),{BINARY_TYPES:At,CLOSE_TIMEOUT:as,EMPTY_BUFFER:Se,GUID:ls,kForOnEventAttribute:Ge,kListener:cs,kStatusCode:ds,kWebSocket:b,NOOP:Wt}=O(),{EventTarget:{addEventListener:hs,removeEventListener:fs}}=Nt(),{format:us,parse:ps}=ze(),{toBuffer:gs}=re(),qt=Symbol("kAborted"),He=[8,13],L=["CONNECTING","OPEN","CLOSING","CLOSED"],ms=/^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/,g=class s extends Qr{constructor(e,t,r){super(),this._binaryType=At[0],this._closeCode=1006,this._closeFrameReceived=!1,this._closeFrameSent=!1,this._closeMessage=Se,this._closeTimer=null,this._errorEmitted=!1,this._extensions={},this._paused=!1,this._protocol="",this._readyState=s.CONNECTING,this._receiver=null,this._sender=null,this._socket=null,e!==null?(this._bufferedAmount=0,this._isServer=!1,this._redirects=0,t===void 0?t=[]:Array.isArray(t)||(typeof t=="object"&&t!==null?(r=t,t=[]):t=[t]),jt(this,e,t,r)):(this._autoPong=r.autoPong,this._closeTimeout=r.closeTimeout,this._isServer=!0)}get binaryType(){return this._binaryType}set binaryType(e){At.includes(e)&&(this._binaryType=e,this._receiver&&(this._receiver._binaryType=e))}get bufferedAmount(){return this._socket?this._socket._writableState.length+this._sender._bufferedBytes:this._bufferedAmount}get extensions(){return Object.keys(this._extensions).join()}get isPaused(){return this._paused}get onclose(){return null}get onerror(){return null}get onopen(){return null}get onmessage(){return null}get protocol(){return this._protocol}get readyState(){return this._readyState}get url(){return this._url}setSocket(e,t,r){let n=new ns({allowSynchronousEvents:r.allowSynchronousEvents,binaryType:this.binaryType,extensions:this._extensions,isServer:this._isServer,maxPayload:r.maxPayload,skipUTF8Validation:r.skipUTF8Validation}),i=new is(e,this._extensions,r.generateMask);this._receiver=n,this._sender=i,this._socket=e,n[b]=this,i[b]=this,e[b]=this,n.on("conclude",bs),n.on("drain",_s),n.on("error",Ss),n.on("message",xs),n.on("ping",ws),n.on("pong",ks),i.onerror=Es,e.setTimeout&&e.setTimeout(0),e.setNoDelay&&e.setNoDelay(),t.length>0&&e.unshift(t),e.on("close",Gt),e.on("data",we),e.on("end",Ht),e.on("error",Kt),this._readyState=s.OPEN,this.emit("open")}emitClose(){if(!this._socket){this._readyState=s.CLOSED,this.emit("close",this._closeCode,this._closeMessage);return}this._extensions[U.extensionName]&&this._extensions[U.extensionName].cleanup(),this._receiver.removeAllListeners(),this._readyState=s.CLOSED,this.emit("close",this._closeCode,this._closeMessage)}close(e,t){if(this.readyState!==s.CLOSED){if(this.readyState===s.CONNECTING){w(this,this._req,"WebSocket was closed before the connection was established");return}if(this.readyState===s.CLOSING){this._closeFrameSent&&(this._closeFrameReceived||this._receiver._writableState.errorEmitted)&&this._socket.end();return}this._readyState=s.CLOSING,this._sender.close(e,t,!this._isServer,r=>{r||(this._closeFrameSent=!0,(this._closeFrameReceived||this._receiver._writableState.errorEmitted)&&this._socket.end())}),Vt(this)}}pause(){this.readyState===s.CONNECTING||this.readyState===s.CLOSED||(this._paused=!0,this._socket.pause())}ping(e,t,r){if(this.readyState===s.CONNECTING)throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");if(typeof e=="function"?(r=e,e=t=void 0):typeof t=="function"&&(r=t,t=void 0),typeof e=="number"&&(e=e.toString()),this.readyState!==s.OPEN){Ke(this,e,r);return}t===void 0&&(t=!this._isServer),this._sender.ping(e||Se,t,r)}pong(e,t,r){if(this.readyState===s.CONNECTING)throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");if(typeof e=="function"?(r=e,e=t=void 0):typeof t=="function"&&(r=t,t=void 0),typeof e=="number"&&(e=e.toString()),this.readyState!==s.OPEN){Ke(this,e,r);return}t===void 0&&(t=!this._isServer),this._sender.pong(e||Se,t,r)}resume(){this.readyState===s.CONNECTING||this.readyState===s.CLOSED||(this._paused=!1,this._receiver._writableState.needDrain||this._socket.resume())}send(e,t,r){if(this.readyState===s.CONNECTING)throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");if(typeof t=="function"&&(r=t,t={}),typeof e=="number"&&(e=e.toString()),this.readyState!==s.OPEN){Ke(this,e,r);return}let n={binary:typeof e!="string",mask:!this._isServer,compress:!0,fin:!0,...t};this._extensions[U.extensionName]||(n.compress=!1),this._sender.send(e||Se,n,r)}terminate(){if(this.readyState!==s.CLOSED){if(this.readyState===s.CONNECTING){w(this,this._req,"WebSocket was closed before the connection was established");return}this._socket&&(this._readyState=s.CLOSING,this._socket.destroy())}}};Object.defineProperty(g,"CONNECTING",{enumerable:!0,value:L.indexOf("CONNECTING")});Object.defineProperty(g.prototype,"CONNECTING",{enumerable:!0,value:L.indexOf("CONNECTING")});Object.defineProperty(g,"OPEN",{enumerable:!0,value:L.indexOf("OPEN")});Object.defineProperty(g.prototype,"OPEN",{enumerable:!0,value:L.indexOf("OPEN")});Object.defineProperty(g,"CLOSING",{enumerable:!0,value:L.indexOf("CLOSING")});Object.defineProperty(g.prototype,"CLOSING",{enumerable:!0,value:L.indexOf("CLOSING")});Object.defineProperty(g,"CLOSED",{enumerable:!0,value:L.indexOf("CLOSED")});Object.defineProperty(g.prototype,"CLOSED",{enumerable:!0,value:L.indexOf("CLOSED")});["binaryType","bufferedAmount","extensions","isPaused","protocol","readyState","url"].forEach(s=>{Object.defineProperty(g.prototype,s,{enumerable:!0})});["open","error","close","message"].forEach(s=>{Object.defineProperty(g.prototype,`on${s}`,{enumerable:!0,get(){for(let e of this.listeners(s))if(e[Ge])return e[cs];return null},set(e){for(let t of this.listeners(s))if(t[Ge]){this.removeListener(s,t);break}typeof e=="function"&&this.addEventListener(s,e,{[Ge]:!0})}})});g.prototype.addEventListener=hs;g.prototype.removeEventListener=fs;Yt.exports=g;function jt(s,e,t,r){let n={allowSynchronousEvents:!0,autoPong:!0,closeTimeout:as,protocolVersion:He[1],maxPayload:104857600,skipUTF8Validation:!1,perMessageDeflate:!0,followRedirects:!1,maxRedirects:10,...r,socketPath:void 0,hostname:void 0,protocol:void 0,timeout:void 0,method:"GET",host:void 0,path:void 0,port:void 0};if(s._autoPong=n.autoPong,s._closeTimeout=n.closeTimeout,!He.includes(n.protocolVersion))throw new RangeError(`Unsupported protocol version: ${n.protocolVersion} (supported versions: ${He.join(", ")})`);let i;if(e instanceof Ve)i=e;else try{i=new Ve(e)}catch{throw new SyntaxError(`Invalid URL: ${e}`)}i.protocol==="http:"?i.protocol="ws:":i.protocol==="https:"&&(i.protocol="wss:"),s._url=i.href;let o=i.protocol==="wss:",a=i.protocol==="ws+unix:",l;if(i.protocol!=="ws:"&&!o&&!a?l=`The URL's protocol must be one of "ws:", "wss:", "http:", "https:", or "ws+unix:"`:a&&!i.pathname?l="The URL's pathname is empty":i.hash&&(l="The URL contains a fragment identifier"),l){let u=new SyntaxError(l);if(s._redirects===0)throw u;xe(s,u);return}let c=o?443:80,h=rs(16).toString("base64"),f=o?Zr.request:es.request,p=new Set,y;if(n.createConnection=n.createConnection||(o?ys:vs),n.defaultPort=n.defaultPort||c,n.port=i.port||c,n.host=i.hostname.startsWith("[")?i.hostname.slice(1,-1):i.hostname,n.headers={...n.headers,"Sec-WebSocket-Version":n.protocolVersion,"Sec-WebSocket-Key":h,Connection:"Upgrade",Upgrade:"websocket"},n.path=i.pathname+i.search,n.timeout=n.handshakeTimeout,n.perMessageDeflate&&(y=new U(n.perMessageDeflate!==!0?n.perMessageDeflate:{},!1,n.maxPayload),n.headers["Sec-WebSocket-Extensions"]=us({[U.extensionName]:y.offer()})),t.length){for(let u of t){if(typeof u!="string"||!ms.test(u)||p.has(u))throw new SyntaxError("An invalid or duplicated subprotocol was specified");p.add(u)}n.headers["Sec-WebSocket-Protocol"]=t.join(",")}if(n.origin&&(n.protocolVersion<13?n.headers["Sec-WebSocket-Origin"]=n.origin:n.headers.Origin=n.origin),(i.username||i.password)&&(n.auth=`${i.username}:${i.password}`),a){let u=n.path.split(":");n.socketPath=u[0],n.path=u[1]}let m;if(n.followRedirects){if(s._redirects===0){s._originalIpc=a,s._originalSecure=o,s._originalHostOrSocketPath=a?n.socketPath:i.host;let u=r&&r.headers;if(r={...r,headers:{}},u)for(let[_,j]of Object.entries(u))r.headers[_.toLowerCase()]=j}else if(s.listenerCount("redirect")===0){let u=a?s._originalIpc?n.socketPath===s._originalHostOrSocketPath:!1:s._originalIpc?!1:i.host===s._originalHostOrSocketPath;(!u||s._originalSecure&&!o)&&(delete n.headers.authorization,delete n.headers.cookie,u||delete n.headers.host,n.auth=void 0)}n.auth&&!r.headers.authorization&&(r.headers.authorization="Basic "+Buffer.from(n.auth).toString("base64")),m=s._req=f(n),s._redirects&&s.emit("redirect",s.url,m)}else m=s._req=f(n);n.timeout&&m.on("timeout",()=>{w(s,m,"Opening handshake has timed out")}),m.on("error",u=>{m===null||m[qt]||(m=s._req=null,xe(s,u))}),m.on("response",u=>{let _=u.headers.location,j=u.statusCode;if(_&&n.followRedirects&&j>=300&&j<400){if(++s._redirects>n.maxRedirects){w(s,m,"Maximum redirects exceeded");return}m.abort();let ee;try{ee=new Ve(_,e)}catch{let z=new SyntaxError(`Invalid URL: ${_}`);xe(s,z);return}jt(s,ee,t,r)}else s.emit("unexpected-response",m,u)||w(s,m,`Unexpected server response: ${u.statusCode}`)}),m.on("upgrade",(u,_,j)=>{if(s.emit("upgrade",u),s.readyState!==g.CONNECTING)return;m=s._req=null;let ee=u.headers.upgrade;if(ee===void 0||ee.toLowerCase()!=="websocket"){w(s,_,"Invalid Upgrade header");return}let tt=ss("sha1").update(h+ls).digest("base64");if(u.headers["sec-websocket-accept"]!==tt){w(s,_,"Invalid Sec-WebSocket-Accept header");return}let z=u.headers["sec-websocket-protocol"],te;if(z!==void 0?p.size?p.has(z)||(te="Server sent an invalid subprotocol"):te="Server sent a subprotocol but none was requested":p.size&&(te="Server sent no subprotocol"),te){w(s,_,te);return}z&&(s._protocol=z);let rt=u.headers["sec-websocket-extensions"];if(rt!==void 0){if(!y){w(s,_,"Server sent a Sec-WebSocket-Extensions header but no extension was requested");return}let $e;try{$e=ps(rt)}catch{w(s,_,"Invalid Sec-WebSocket-Extensions header");return}let st=Object.keys($e);if(st.length!==1||st[0]!==U.extensionName){w(s,_,"Server indicated an extension that was not requested");return}try{y.accept($e[U.extensionName])}catch{w(s,_,"Invalid Sec-WebSocket-Extensions header");return}s._extensions[U.extensionName]=y}s.setSocket(_,j,{allowSynchronousEvents:n.allowSynchronousEvents,generateMask:n.generateMask,maxPayload:n.maxPayload,skipUTF8Validation:n.skipUTF8Validation})}),n.finishRequest?n.finishRequest(m,s):m.end()}function xe(s,e){s._readyState=g.CLOSING,s._errorEmitted=!0,s.emit("error",e),s.emitClose()}function vs(s){return s.path=s.socketPath,Ft.connect(s)}function ys(s){return s.path=void 0,!s.servername&&s.servername!==""&&(s.servername=Ft.isIP(s.host)?"":s.host),ts.connect(s)}function w(s,e,t){s._readyState=g.CLOSING;let r=new Error(t);Error.captureStackTrace(r,w),e.setHeader?(e[qt]=!0,e.abort(),e.socket&&!e.socket.destroyed&&e.socket.destroy(),process.nextTick(xe,s,r)):(e.destroy(r),e.once("error",s.emit.bind(s,"error")),e.once("close",s.emitClose.bind(s)))}function Ke(s,e,t){if(e){let r=os(e)?e.size:gs(e).length;s._socket?s._sender._bufferedBytes+=r:s._bufferedAmount+=r}if(t){let r=new Error(`WebSocket is not open: readyState ${s.readyState} (${L[s.readyState]})`);process.nextTick(t,r)}}function bs(s,e){let t=this[b];t._closeFrameReceived=!0,t._closeMessage=e,t._closeCode=s,t._socket[b]!==void 0&&(t._socket.removeListener("data",we),process.nextTick(zt,t._socket),s===1005?t.close():t.close(s,e))}function _s(){let s=this[b];s.isPaused||s._socket.resume()}function Ss(s){let e=this[b];e._socket[b]!==void 0&&(e._socket.removeListener("data",we),process.nextTick(zt,e._socket),e.close(s[ds])),e._errorEmitted||(e._errorEmitted=!0,e.emit("error",s))}function Dt(){this[b].emitClose()}function xs(s,e){this[b].emit("message",s,e)}function ws(s){let e=this[b];e._autoPong&&e.pong(s,!this._isServer,Wt),e.emit("ping",s)}function ks(s){this[b].emit("pong",s)}function zt(s){s.resume()}function Es(s){let e=this[b];e.readyState!==g.CLOSED&&(e.readyState===g.OPEN&&(e._readyState=g.CLOSING,Vt(e)),this._socket.end(),e._errorEmitted||(e._errorEmitted=!0,e.emit("error",s)))}function Vt(s){s._closeTimer=setTimeout(s._socket.destroy.bind(s._socket),s._closeTimeout)}function Gt(){let s=this[b];if(this.removeListener("close",Gt),this.removeListener("data",we),this.removeListener("end",Ht),s._readyState=g.CLOSING,!this._readableState.endEmitted&&!s._closeFrameReceived&&!s._receiver._writableState.errorEmitted&&this._readableState.length!==0){let e=this.read(this._readableState.length);s._receiver.write(e)}s._receiver.end(),this[b]=void 0,clearTimeout(s._closeTimer),s._receiver._writableState.finished||s._receiver._writableState.errorEmitted?s.emitClose():(s._receiver.on("error",Dt),s._receiver.on("finish",Dt))}function we(s){this[b]._receiver.write(s)||this.pause()}function Ht(){let s=this[b];s._readyState=g.CLOSING,s._receiver.end(),this.end()}function Kt(){let s=this[b];this.removeListener("error",Kt),this.on("error",Wt),s&&(s._readyState=g.CLOSING,this.destroy())}});var Zt=x((dn,Qt)=>{"use strict";var cn=ke(),{Duplex:Cs}=require("stream");function Jt(s){s.emit("close")}function $s(){!this.destroyed&&this._writableState.finished&&this.destroy()}function Xt(s){this.removeListener("error",Xt),this.destroy(),this.listenerCount("error")===0&&this.emit("error",s)}function Ps(s,e){let t=!0,r=new Cs({...e,autoDestroy:!1,emitClose:!1,objectMode:!1,writableObjectMode:!1});return s.on("message",function(i,o){let a=!o&&r._readableState.objectMode?i.toString():i;r.push(a)||s.pause()}),s.once("error",function(i){r.destroyed||(t=!1,r.destroy(i))}),s.once("close",function(){r.destroyed||r.push(null)}),r._destroy=function(n,i){if(s.readyState===s.CLOSED){i(n),process.nextTick(Jt,r);return}let o=!1;s.once("error",function(l){o=!0,i(l)}),s.once("close",function(){o||i(n),process.nextTick(Jt,r)}),t&&s.terminate()},r._final=function(n){if(s.readyState===s.CONNECTING){s.once("open",function(){r._final(n)});return}s._socket!==null&&(s._socket._writableState.finished?(n(),r._readableState.endEmitted&&r.destroy()):(s._socket.once("finish",function(){n()}),s.close()))},r._read=function(){s.isPaused&&s.resume()},r._write=function(n,i,o){if(s.readyState===s.CONNECTING){s.once("open",function(){r._write(n,i,o)});return}s.send(n,o)},r.on("end",$s),r.on("error",Xt),r}Qt.exports=Ps});var tr=x((hn,er)=>{"use strict";var{tokenChars:Ms}=H();function Os(s){let e=new Set,t=-1,r=-1,n=0;for(n;n<s.length;n++){let o=s.charCodeAt(n);if(r===-1&&Ms[o]===1)t===-1&&(t=n);else if(n!==0&&(o===32||o===9))r===-1&&t!==-1&&(r=n);else if(o===44){if(t===-1)throw new SyntaxError(`Unexpected character at index ${n}`);r===-1&&(r=n);let a=s.slice(t,r);if(e.has(a))throw new SyntaxError(`The "${a}" subprotocol is duplicated`);e.add(a),t=r=-1}else throw new SyntaxError(`Unexpected character at index ${n}`)}if(t===-1||r!==-1)throw new SyntaxError("Unexpected end of input");let i=s.slice(t,n);if(e.has(i))throw new SyntaxError(`The "${i}" subprotocol is duplicated`);return e.add(i),e}er.exports={parse:Os}});var lr=x((un,ar)=>{"use strict";var Ts=require("events"),Ee=require("http"),{Duplex:fn}=require("stream"),{createHash:Is}=require("crypto"),rr=ze(),F=ne(),Ls=tr(),Bs=ke(),{CLOSE_TIMEOUT:Us,GUID:Ns,kWebSocket:Rs}=O(),As=/^[+/0-9A-Za-z]{22}==$/,sr=0,nr=1,or=2,Ye=class extends Ts{constructor(e,t){if(super(),e={allowSynchronousEvents:!0,autoPong:!0,maxPayload:100*1024*1024,skipUTF8Validation:!1,perMessageDeflate:!1,handleProtocols:null,clientTracking:!0,closeTimeout:Us,verifyClient:null,noServer:!1,backlog:null,server:null,host:null,path:null,port:null,WebSocket:Bs,...e},e.port==null&&!e.server&&!e.noServer||e.port!=null&&(e.server||e.noServer)||e.server&&e.noServer)throw new TypeError('One and only one of the "port", "server", or "noServer" options must be specified');if(e.port!=null?(this._server=Ee.createServer((r,n)=>{let i=Ee.STATUS_CODES[426];n.writeHead(426,{"Content-Length":i.length,"Content-Type":"text/plain"}),n.end(i)}),this._server.listen(e.port,e.host,e.backlog,t)):e.server&&(this._server=e.server),this._server){let r=this.emit.bind(this,"connection");this._removeListeners=Ds(this._server,{listening:this.emit.bind(this,"listening"),error:this.emit.bind(this,"error"),upgrade:(n,i,o)=>{this.handleUpgrade(n,i,o,r)}})}e.perMessageDeflate===!0&&(e.perMessageDeflate={}),e.clientTracking&&(this.clients=new Set,this._shouldEmitClose=!1),this.options=e,this._state=sr}address(){if(this.options.noServer)throw new Error('The server is operating in "noServer" mode');return this._server?this._server.address():null}close(e){if(this._state===or){e&&this.once("close",()=>{e(new Error("The server is not running"))}),process.nextTick(le,this);return}if(e&&this.once("close",e),this._state!==nr)if(this._state=nr,this.options.noServer||this.options.server)this._server&&(this._removeListeners(),this._removeListeners=this._server=null),this.clients?this.clients.size?this._shouldEmitClose=!0:process.nextTick(le,this):process.nextTick(le,this);else{let t=this._server;this._removeListeners(),this._removeListeners=this._server=null,t.close(()=>{le(this)})}}shouldHandle(e){if(this.options.path){let t=e.url.indexOf("?");if((t!==-1?e.url.slice(0,t):e.url)!==this.options.path)return!1}return!0}handleUpgrade(e,t,r,n){t.on("error",ir);let i=e.headers["sec-websocket-key"],o=e.headers.upgrade,a=+e.headers["sec-websocket-version"];if(e.method!=="GET"){W(this,e,t,405,"Invalid HTTP method");return}if(o===void 0||o.toLowerCase()!=="websocket"){W(this,e,t,400,"Invalid Upgrade header");return}if(i===void 0||!As.test(i)){W(this,e,t,400,"Missing or invalid Sec-WebSocket-Key header");return}if(a!==13&&a!==8){W(this,e,t,400,"Missing or invalid Sec-WebSocket-Version header",{"Sec-WebSocket-Version":"13, 8"});return}if(!this.shouldHandle(e)){ce(t,400);return}let l=e.headers["sec-websocket-protocol"],c=new Set;if(l!==void 0)try{c=Ls.parse(l)}catch{W(this,e,t,400,"Invalid Sec-WebSocket-Protocol header");return}let h=e.headers["sec-websocket-extensions"],f={};if(this.options.perMessageDeflate&&h!==void 0){let p=new F(this.options.perMessageDeflate,!0,this.options.maxPayload);try{let y=rr.parse(h);y[F.extensionName]&&(p.accept(y[F.extensionName]),f[F.extensionName]=p)}catch{W(this,e,t,400,"Invalid or unacceptable Sec-WebSocket-Extensions header");return}}if(this.options.verifyClient){let p={origin:e.headers[`${a===8?"sec-websocket-origin":"origin"}`],secure:!!(e.socket.authorized||e.socket.encrypted),req:e};if(this.options.verifyClient.length===2){this.options.verifyClient(p,(y,m,u,_)=>{if(!y)return ce(t,m||401,u,_);this.completeUpgrade(f,i,c,e,t,r,n)});return}if(!this.options.verifyClient(p))return ce(t,401)}this.completeUpgrade(f,i,c,e,t,r,n)}completeUpgrade(e,t,r,n,i,o,a){if(!i.readable||!i.writable)return i.destroy();if(i[Rs])throw new Error("server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration");if(this._state>sr)return ce(i,503);let c=["HTTP/1.1 101 Switching Protocols","Upgrade: websocket","Connection: Upgrade",`Sec-WebSocket-Accept: ${Is("sha1").update(t+Ns).digest("base64")}`],h=new this.options.WebSocket(null,void 0,this.options);if(r.size){let f=this.options.handleProtocols?this.options.handleProtocols(r,n):r.values().next().value;f&&(c.push(`Sec-WebSocket-Protocol: ${f}`),h._protocol=f)}if(e[F.extensionName]){let f=e[F.extensionName].params,p=rr.format({[F.extensionName]:[f]});c.push(`Sec-WebSocket-Extensions: ${p}`),h._extensions=e}this.emit("headers",c,n),i.write(c.concat(`\r
-`).join(`\r
-`)),i.removeListener("error",ir),h.setSocket(i,o,{allowSynchronousEvents:this.options.allowSynchronousEvents,maxPayload:this.options.maxPayload,skipUTF8Validation:this.options.skipUTF8Validation}),this.clients&&(this.clients.add(h),h.on("close",()=>{this.clients.delete(h),this._shouldEmitClose&&!this.clients.size&&process.nextTick(le,this)})),a(h,n)}};ar.exports=Ye;function Ds(s,e){for(let t of Object.keys(e))s.on(t,e[t]);return function(){for(let r of Object.keys(e))s.removeListener(r,e[r])}}function le(s){s._state=or,s.emit("close")}function ir(){this.destroy()}function ce(s,e,t,r){t=t||Ee.STATUS_CODES[e],r={Connection:"close","Content-Type":"text/html","Content-Length":Buffer.byteLength(t),...r},s.once("finish",s.destroy),s.end(`HTTP/1.1 ${e} ${Ee.STATUS_CODES[e]}\r
-`+Object.keys(r).map(n=>`${n}: ${r[n]}`).join(`\r
-`)+`\r
-\r
-`+t)}function W(s,e,t,r,n,i){if(s.listenerCount("wsClientError")){let o=new Error(n);Error.captureStackTrace(o,W),s.emit("wsClientError",o,t,e)}else ce(t,r,n,i)}});var Hs={};br(Hs,{activate:()=>Vs,deactivate:()=>Gs});module.exports=_r(Hs);var $=k(require("vscode"));var d=k(require("vscode"));var Fs=k(Zt(),1),Ws=k(De(),1),qs=k(qe(),1),js=k(ke(),1),Je=k(lr(),1);var dr=k(require("http")),v=k(require("fs")),S=k(require("path")),N=k(require("os")),q=require("child_process");function Z(s){return process.platform==="win32"&&s.startsWith("\\\\")}function hr(s){if(Z(s)){try{(0,q.execSync)(`mkdir "${s}"`,{shell:"cmd.exe",stdio:"pipe",timeout:1e4})}catch{}return}v.mkdirSync(s,{recursive:!0})}function Q(s){if(Z(s))try{return(0,q.execSync)(`dir /b "${s}"`,{shell:"cmd.exe",stdio:"pipe",timeout:5e3}),!0}catch{return!1}return v.existsSync(s)}function de(s){if(Z(s)){let e=S.join(N.tmpdir(),`bba-rd-${Date.now()}-${Math.random().toString(36).slice(2,6)}.tmp`);try{(0,q.execSync)(`copy /Y "${s}" "${e}"`,{shell:"cmd.exe",stdio:"pipe",timeout:15e3});let t=v.readFileSync(e,"utf-8");try{v.unlinkSync(e)}catch{}return t}catch(t){try{v.unlinkSync(e)}catch{}throw t}}return v.readFileSync(s,"utf-8")}function fr(s,e){if(Z(s)){let t=S.join(N.tmpdir(),`bba-wr-${Date.now()}-${Math.random().toString(36).slice(2,6)}.tmp`);try{v.writeFileSync(t,e,"utf-8"),(0,q.execSync)(`copy /Y "${t}" "${s}"`,{shell:"cmd.exe",stdio:"pipe",timeout:15e3});try{v.unlinkSync(t)}catch{}}catch(r){try{v.unlinkSync(t)}catch{}throw r}return}v.writeFileSync(s,e)}function Xe(s){if(Z(s)){try{(0,q.execSync)(`del /F /Q "${s}"`,{shell:"cmd.exe",stdio:"pipe",timeout:5e3})}catch{}return}v.unlinkSync(s)}function cr(s){if(Z(s))try{return(0,q.execSync)(`dir /b "${s}"`,{shell:"cmd.exe",timeout:1e4}).toString("utf-8").split(/\r?\n/).filter(t=>t.trim().length>0)}catch{return[]}return v.readdirSync(s)}var Qe=class{syncPath="";serverKey="";backlogPollInterval=null;onBacklogResponse=null;recentBacklogEntries=[];onBacklogArrived=null;configure(e,t,r,n){this.syncPath=e,this.serverKey=t,this.onBacklogResponse=r,this.onBacklogArrived=n??null}get isConfigured(){return!!this.syncPath}get syncPathValue(){return this.syncPath}scanRegisteredClients(){if(!this.isConfigured)return[];let e=S.join(this.syncPath,"clients",this.serverKey);if(!Q(e))return[];let t=[];try{let r=cr(e).filter(n=>n.endsWith(".json"));for(let n of r)try{let i=JSON.parse(de(S.join(e,n)));i.clientKey&&i.clientLabel&&t.push(i)}catch{console.warn(`[ServerFallback] Skipping malformed presence file: ${n}`)}}catch(r){console.warn("[ServerFallback] Error scanning clients dir:",r)}return t}startPolling(){this.stopPolling(),this.isConfigured&&(this.backlogPollInterval=setInterval(()=>this.pollServerBacklog(),15e3),console.log(`[ServerFallback] Polling server-backlog from: ${this.syncPath}`))}stopPolling(){this.backlogPollInterval&&(clearInterval(this.backlogPollInterval),this.backlogPollInterval=null)}enqueueCommand(e,t,r,n){if(!this.isConfigured)throw new Error("Sync path is not configured. Set serverMonitor.syncPath in settings.");try{let i=S.join(this.syncPath,"queue");hr(i);let o=S.join(i,`${e}.json`),a=[];if(Q(o))try{a=JSON.parse(de(o))}catch{a=[]}let l=`${Date.now()}-${Math.random().toString(36).substring(2,8)}`,c={id:l,clientKey:t,clientLabel:e,command:r,payload:n,timestamp:Date.now(),serverKey:this.serverKey};return a.push(c),fr(o,JSON.stringify(a,null,2)),console.log(`[ServerFallback] Enqueued command "${r}" for ${e} \u2192 ${o}`),l}catch(i){throw new Error(`Failed to write queue file at "${this.syncPath}\\queue\\${e}.json": ${i?.message||i}`)}}dequeueCommands(e){if(!this.isConfigured)return[];let t=S.join(this.syncPath,"queue",`${e}.json`);if(!Q(t))return[];try{let r=JSON.parse(de(t));return Xe(t),console.log(`[ServerFallback] Dequeued ${r.length} command(s) for ${e}`),r}catch(r){return console.error(`[ServerFallback] Error reading queue for ${e}:`,r),[]}}pollServerBacklog(){if(!(!this.isConfigured||!this.onBacklogResponse))try{let e=S.join(this.syncPath,"server-backlog");if(!Q(e))return;let t=cr(e).filter(n=>n.endsWith(".json")),r=[];for(let n of t){let i=S.join(e,n);try{let o=JSON.parse(de(i)),a=n.replace(/\.json$/,"");for(let l of o)console.log(`[ServerFallback] Got server-backlog entry from ${a}: ${l.command}`),r.push({...l,clientLabel:a}),this.onBacklogResponse(a,l);Xe(i)}catch(o){console.error(`[ServerFallback] Error reading backlog file ${n}:`,o)}}r.length>0&&(this.recentBacklogEntries.push(...r),this.onBacklogArrived&&this.onBacklogArrived(r))}catch(e){console.error("[ServerFallback] Backlog poll error:",e)}}getRecentBacklog(){return this.recentBacklogEntries}clearRecentBacklog(){this.recentBacklogEntries=[]}},Ce=class{wss=null;server=null;clients=new Map;provider=null;context=null;running=!1;port=54321;serverId="default";heartbeatCheckInterval=null;syncScanInterval=null;offlineTimeoutMs=3e5;fallback=new Qe;clientReleasePath="";serverPresenceInterval=null;version="1.0.0";configuredPort=54321;initialize(e){this.context=e,this.version=e.extension?.packageJSON?.version||"1.0.0";let t=d.workspace.getConfiguration("serverMonitor"),r=e.globalState.get("serverKey");this.serverId=r||t.get("serverId")||"default";let n=e.globalState.get("serverPort");this.configuredPort=n||t.get("port")||54321,this.port=this.configuredPort,console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`),this.loadPersistentClients(),this.setupFallback(),console.log(`[MonitorServer] Loaded ${this.clients.size} persistent clients`)}setupFallback(){let e=d.workspace.getConfiguration("serverMonitor"),t=e.get("syncPath")||"";this.clientReleasePath=e.get("clientReleasePath")||"",t&&(this.fallback.configure(t,this.serverId,(r,n)=>{this.handleBacklogResponse(r,n)},r=>{let n=r.length;d.window.showInformationMessage(`${n} backlog result${n===1?"":"s"} received from offline clients`,"View Backlog").then(i=>{i==="View Backlog"&&this.showBacklogWebview()})}),this.fallback.startPolling(),this.syncScanInterval&&clearInterval(this.syncScanInterval),this.syncScanInterval=setInterval(()=>this.importSyncClients(),6e4))}async changeServerKey(e){!e||!this.context||(this.removeServerPresenceFile(),this.serverId=e,await this.context.globalState.update("serverKey",e),this.running&&this.writeServerPresenceFile("online"),console.log(`[MonitorServer] Server key changed to: ${e}`),d.window.showInformationMessage(`Server key changed to: ${e}`),this.triggerUpdate())}async changePort(e){!e||e<1024||e>65535||!this.context||(this.configuredPort=e,await this.context.globalState.update("serverPort",e),console.log(`[MonitorServer] Port changed to: ${e}`),this.running?(d.window.showInformationMessage(`Port changed to ${e} \u2014 restarting server...`),this.stop(),await new Promise(t=>setTimeout(t,500)),await this.start()):(this.port=e,this.triggerUpdate(),d.window.showInformationMessage(`Port set to ${e} \u2014 will be used on next server start`)))}serverPresenceFilePath(){let e=this.fallback.syncPathValue;return S.join(e,"servers",`${this.serverId}-${N.hostname()}.json`)}writeServerPresenceFile(e){if(this.fallback.isConfigured)try{let t=S.join(this.fallback.syncPathValue,"servers");hr(t);let r=this.serverPresenceFilePath(),n=Date.now();if(e==="online"&&Q(r))try{let l=JSON.parse(de(r));l.status==="online"&&(n=l.startedAt)}catch{}let i=Array.from(this.clients.values()).map(l=>({key:l.key,label:l.clientLabel,status:l.status})),o=N.hostname(),a={key:this.serverId,machine:o,port:this.port,username:N.userInfo().username,version:this.version,clients:i,startedAt:n,lastSeen:Date.now(),status:e};fr(r,JSON.stringify(a,null,2)),console.log(`[MonitorServer] Server presence file written (${e}): ${r}`)}catch(t){console.warn(`[MonitorServer] Could not write server presence file: ${t?.message||t}`)}}removeServerPresenceFile(){if(this.fallback.isConfigured)try{let e=this.serverPresenceFilePath();Q(e)&&(Xe(e),console.log(`[MonitorServer] Server presence file removed: ${e}`))}catch(e){console.warn(`[MonitorServer] Could not remove server presence file: ${e?.message||e}`)}}showBacklogWebview(){let e=o=>String(o).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"),t=this.fallback.getRecentBacklog(),r={};for(let o of t){let a=o.clientLabel||"unknown";r[a]||(r[a]=[]),r[a].push(o)}let n=d.window.createWebviewPanel("serverBacklog",`Server Backlog (${t.length})`,d.ViewColumn.Beside,{enableScripts:!0}),i=Object.entries(r).map(([o,a])=>{let l=a.map(c=>`
+"use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// node_modules/ws/lib/constants.js
+var require_constants = __commonJS({
+  "node_modules/ws/lib/constants.js"(exports2, module2) {
+    "use strict";
+    var BINARY_TYPES = ["nodebuffer", "arraybuffer", "fragments"];
+    var hasBlob = typeof Blob !== "undefined";
+    if (hasBlob)
+      BINARY_TYPES.push("blob");
+    module2.exports = {
+      BINARY_TYPES,
+      CLOSE_TIMEOUT: 3e4,
+      EMPTY_BUFFER: Buffer.alloc(0),
+      GUID: "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+      hasBlob,
+      kForOnEventAttribute: Symbol("kIsForOnEventAttribute"),
+      kListener: Symbol("kListener"),
+      kStatusCode: Symbol("status-code"),
+      kWebSocket: Symbol("websocket"),
+      NOOP: () => {
+      }
+    };
+  }
+});
+
+// node_modules/ws/lib/buffer-util.js
+var require_buffer_util = __commonJS({
+  "node_modules/ws/lib/buffer-util.js"(exports2, module2) {
+    "use strict";
+    var { EMPTY_BUFFER } = require_constants();
+    var FastBuffer = Buffer[Symbol.species];
+    function concat(list, totalLength) {
+      if (list.length === 0)
+        return EMPTY_BUFFER;
+      if (list.length === 1)
+        return list[0];
+      const target = Buffer.allocUnsafe(totalLength);
+      let offset = 0;
+      for (let i = 0; i < list.length; i++) {
+        const buf = list[i];
+        target.set(buf, offset);
+        offset += buf.length;
+      }
+      if (offset < totalLength) {
+        return new FastBuffer(target.buffer, target.byteOffset, offset);
+      }
+      return target;
+    }
+    function _mask(source, mask, output, offset, length) {
+      for (let i = 0; i < length; i++) {
+        output[offset + i] = source[i] ^ mask[i & 3];
+      }
+    }
+    function _unmask(buffer, mask) {
+      for (let i = 0; i < buffer.length; i++) {
+        buffer[i] ^= mask[i & 3];
+      }
+    }
+    function toArrayBuffer(buf) {
+      if (buf.length === buf.buffer.byteLength) {
+        return buf.buffer;
+      }
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length);
+    }
+    function toBuffer(data) {
+      toBuffer.readOnly = true;
+      if (Buffer.isBuffer(data))
+        return data;
+      let buf;
+      if (data instanceof ArrayBuffer) {
+        buf = new FastBuffer(data);
+      } else if (ArrayBuffer.isView(data)) {
+        buf = new FastBuffer(data.buffer, data.byteOffset, data.byteLength);
+      } else {
+        buf = Buffer.from(data);
+        toBuffer.readOnly = false;
+      }
+      return buf;
+    }
+    module2.exports = {
+      concat,
+      mask: _mask,
+      toArrayBuffer,
+      toBuffer,
+      unmask: _unmask
+    };
+    if (!process.env.WS_NO_BUFFER_UTIL) {
+      try {
+        const bufferUtil = require("bufferutil");
+        module2.exports.mask = function(source, mask, output, offset, length) {
+          if (length < 48)
+            _mask(source, mask, output, offset, length);
+          else
+            bufferUtil.mask(source, mask, output, offset, length);
+        };
+        module2.exports.unmask = function(buffer, mask) {
+          if (buffer.length < 32)
+            _unmask(buffer, mask);
+          else
+            bufferUtil.unmask(buffer, mask);
+        };
+      } catch (e) {
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/limiter.js
+var require_limiter = __commonJS({
+  "node_modules/ws/lib/limiter.js"(exports2, module2) {
+    "use strict";
+    var kDone = Symbol("kDone");
+    var kRun = Symbol("kRun");
+    var Limiter = class {
+      /**
+       * Creates a new `Limiter`.
+       *
+       * @param {Number} [concurrency=Infinity] The maximum number of jobs allowed
+       *     to run concurrently
+       */
+      constructor(concurrency) {
+        this[kDone] = () => {
+          this.pending--;
+          this[kRun]();
+        };
+        this.concurrency = concurrency || Infinity;
+        this.jobs = [];
+        this.pending = 0;
+      }
+      /**
+       * Adds a job to the queue.
+       *
+       * @param {Function} job The job to run
+       * @public
+       */
+      add(job) {
+        this.jobs.push(job);
+        this[kRun]();
+      }
+      /**
+       * Removes a job from the queue and runs it if possible.
+       *
+       * @private
+       */
+      [kRun]() {
+        if (this.pending === this.concurrency)
+          return;
+        if (this.jobs.length) {
+          const job = this.jobs.shift();
+          this.pending++;
+          job(this[kDone]);
+        }
+      }
+    };
+    module2.exports = Limiter;
+  }
+});
+
+// node_modules/ws/lib/permessage-deflate.js
+var require_permessage_deflate = __commonJS({
+  "node_modules/ws/lib/permessage-deflate.js"(exports2, module2) {
+    "use strict";
+    var zlib = require("zlib");
+    var bufferUtil = require_buffer_util();
+    var Limiter = require_limiter();
+    var { kStatusCode } = require_constants();
+    var FastBuffer = Buffer[Symbol.species];
+    var TRAILER = Buffer.from([0, 0, 255, 255]);
+    var kPerMessageDeflate = Symbol("permessage-deflate");
+    var kTotalLength = Symbol("total-length");
+    var kCallback = Symbol("callback");
+    var kBuffers = Symbol("buffers");
+    var kError = Symbol("error");
+    var zlibLimiter;
+    var PerMessageDeflate = class {
+      /**
+       * Creates a PerMessageDeflate instance.
+       *
+       * @param {Object} [options] Configuration options
+       * @param {(Boolean|Number)} [options.clientMaxWindowBits] Advertise support
+       *     for, or request, a custom client window size
+       * @param {Boolean} [options.clientNoContextTakeover=false] Advertise/
+       *     acknowledge disabling of client context takeover
+       * @param {Number} [options.concurrencyLimit=10] The number of concurrent
+       *     calls to zlib
+       * @param {(Boolean|Number)} [options.serverMaxWindowBits] Request/confirm the
+       *     use of a custom server window size
+       * @param {Boolean} [options.serverNoContextTakeover=false] Request/accept
+       *     disabling of server context takeover
+       * @param {Number} [options.threshold=1024] Size (in bytes) below which
+       *     messages should not be compressed if context takeover is disabled
+       * @param {Object} [options.zlibDeflateOptions] Options to pass to zlib on
+       *     deflate
+       * @param {Object} [options.zlibInflateOptions] Options to pass to zlib on
+       *     inflate
+       * @param {Boolean} [isServer=false] Create the instance in either server or
+       *     client mode
+       * @param {Number} [maxPayload=0] The maximum allowed message length
+       */
+      constructor(options, isServer, maxPayload) {
+        this._maxPayload = maxPayload | 0;
+        this._options = options || {};
+        this._threshold = this._options.threshold !== void 0 ? this._options.threshold : 1024;
+        this._isServer = !!isServer;
+        this._deflate = null;
+        this._inflate = null;
+        this.params = null;
+        if (!zlibLimiter) {
+          const concurrency = this._options.concurrencyLimit !== void 0 ? this._options.concurrencyLimit : 10;
+          zlibLimiter = new Limiter(concurrency);
+        }
+      }
+      /**
+       * @type {String}
+       */
+      static get extensionName() {
+        return "permessage-deflate";
+      }
+      /**
+       * Create an extension negotiation offer.
+       *
+       * @return {Object} Extension parameters
+       * @public
+       */
+      offer() {
+        const params = {};
+        if (this._options.serverNoContextTakeover) {
+          params.server_no_context_takeover = true;
+        }
+        if (this._options.clientNoContextTakeover) {
+          params.client_no_context_takeover = true;
+        }
+        if (this._options.serverMaxWindowBits) {
+          params.server_max_window_bits = this._options.serverMaxWindowBits;
+        }
+        if (this._options.clientMaxWindowBits) {
+          params.client_max_window_bits = this._options.clientMaxWindowBits;
+        } else if (this._options.clientMaxWindowBits == null) {
+          params.client_max_window_bits = true;
+        }
+        return params;
+      }
+      /**
+       * Accept an extension negotiation offer/response.
+       *
+       * @param {Array} configurations The extension negotiation offers/reponse
+       * @return {Object} Accepted configuration
+       * @public
+       */
+      accept(configurations) {
+        configurations = this.normalizeParams(configurations);
+        this.params = this._isServer ? this.acceptAsServer(configurations) : this.acceptAsClient(configurations);
+        return this.params;
+      }
+      /**
+       * Releases all resources used by the extension.
+       *
+       * @public
+       */
+      cleanup() {
+        if (this._inflate) {
+          this._inflate.close();
+          this._inflate = null;
+        }
+        if (this._deflate) {
+          const callback = this._deflate[kCallback];
+          this._deflate.close();
+          this._deflate = null;
+          if (callback) {
+            callback(
+              new Error(
+                "The deflate stream was closed while data was being processed"
+              )
+            );
+          }
+        }
+      }
+      /**
+       *  Accept an extension negotiation offer.
+       *
+       * @param {Array} offers The extension negotiation offers
+       * @return {Object} Accepted configuration
+       * @private
+       */
+      acceptAsServer(offers) {
+        const opts = this._options;
+        const accepted = offers.find((params) => {
+          if (opts.serverNoContextTakeover === false && params.server_no_context_takeover || params.server_max_window_bits && (opts.serverMaxWindowBits === false || typeof opts.serverMaxWindowBits === "number" && opts.serverMaxWindowBits > params.server_max_window_bits) || typeof opts.clientMaxWindowBits === "number" && !params.client_max_window_bits) {
+            return false;
+          }
+          return true;
+        });
+        if (!accepted) {
+          throw new Error("None of the extension offers can be accepted");
+        }
+        if (opts.serverNoContextTakeover) {
+          accepted.server_no_context_takeover = true;
+        }
+        if (opts.clientNoContextTakeover) {
+          accepted.client_no_context_takeover = true;
+        }
+        if (typeof opts.serverMaxWindowBits === "number") {
+          accepted.server_max_window_bits = opts.serverMaxWindowBits;
+        }
+        if (typeof opts.clientMaxWindowBits === "number") {
+          accepted.client_max_window_bits = opts.clientMaxWindowBits;
+        } else if (accepted.client_max_window_bits === true || opts.clientMaxWindowBits === false) {
+          delete accepted.client_max_window_bits;
+        }
+        return accepted;
+      }
+      /**
+       * Accept the extension negotiation response.
+       *
+       * @param {Array} response The extension negotiation response
+       * @return {Object} Accepted configuration
+       * @private
+       */
+      acceptAsClient(response) {
+        const params = response[0];
+        if (this._options.clientNoContextTakeover === false && params.client_no_context_takeover) {
+          throw new Error('Unexpected parameter "client_no_context_takeover"');
+        }
+        if (!params.client_max_window_bits) {
+          if (typeof this._options.clientMaxWindowBits === "number") {
+            params.client_max_window_bits = this._options.clientMaxWindowBits;
+          }
+        } else if (this._options.clientMaxWindowBits === false || typeof this._options.clientMaxWindowBits === "number" && params.client_max_window_bits > this._options.clientMaxWindowBits) {
+          throw new Error(
+            'Unexpected or invalid parameter "client_max_window_bits"'
+          );
+        }
+        return params;
+      }
+      /**
+       * Normalize parameters.
+       *
+       * @param {Array} configurations The extension negotiation offers/reponse
+       * @return {Array} The offers/response with normalized parameters
+       * @private
+       */
+      normalizeParams(configurations) {
+        configurations.forEach((params) => {
+          Object.keys(params).forEach((key) => {
+            let value = params[key];
+            if (value.length > 1) {
+              throw new Error(`Parameter "${key}" must have only a single value`);
+            }
+            value = value[0];
+            if (key === "client_max_window_bits") {
+              if (value !== true) {
+                const num = +value;
+                if (!Number.isInteger(num) || num < 8 || num > 15) {
+                  throw new TypeError(
+                    `Invalid value for parameter "${key}": ${value}`
+                  );
+                }
+                value = num;
+              } else if (!this._isServer) {
+                throw new TypeError(
+                  `Invalid value for parameter "${key}": ${value}`
+                );
+              }
+            } else if (key === "server_max_window_bits") {
+              const num = +value;
+              if (!Number.isInteger(num) || num < 8 || num > 15) {
+                throw new TypeError(
+                  `Invalid value for parameter "${key}": ${value}`
+                );
+              }
+              value = num;
+            } else if (key === "client_no_context_takeover" || key === "server_no_context_takeover") {
+              if (value !== true) {
+                throw new TypeError(
+                  `Invalid value for parameter "${key}": ${value}`
+                );
+              }
+            } else {
+              throw new Error(`Unknown parameter "${key}"`);
+            }
+            params[key] = value;
+          });
+        });
+        return configurations;
+      }
+      /**
+       * Decompress data. Concurrency limited.
+       *
+       * @param {Buffer} data Compressed data
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @public
+       */
+      decompress(data, fin, callback) {
+        zlibLimiter.add((done) => {
+          this._decompress(data, fin, (err, result) => {
+            done();
+            callback(err, result);
+          });
+        });
+      }
+      /**
+       * Compress data. Concurrency limited.
+       *
+       * @param {(Buffer|String)} data Data to compress
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @public
+       */
+      compress(data, fin, callback) {
+        zlibLimiter.add((done) => {
+          this._compress(data, fin, (err, result) => {
+            done();
+            callback(err, result);
+          });
+        });
+      }
+      /**
+       * Decompress data.
+       *
+       * @param {Buffer} data Compressed data
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @private
+       */
+      _decompress(data, fin, callback) {
+        const endpoint = this._isServer ? "client" : "server";
+        if (!this._inflate) {
+          const key = `${endpoint}_max_window_bits`;
+          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._inflate = zlib.createInflateRaw({
+            ...this._options.zlibInflateOptions,
+            windowBits
+          });
+          this._inflate[kPerMessageDeflate] = this;
+          this._inflate[kTotalLength] = 0;
+          this._inflate[kBuffers] = [];
+          this._inflate.on("error", inflateOnError);
+          this._inflate.on("data", inflateOnData);
+        }
+        this._inflate[kCallback] = callback;
+        this._inflate.write(data);
+        if (fin)
+          this._inflate.write(TRAILER);
+        this._inflate.flush(() => {
+          const err = this._inflate[kError];
+          if (err) {
+            this._inflate.close();
+            this._inflate = null;
+            callback(err);
+            return;
+          }
+          const data2 = bufferUtil.concat(
+            this._inflate[kBuffers],
+            this._inflate[kTotalLength]
+          );
+          if (this._inflate._readableState.endEmitted) {
+            this._inflate.close();
+            this._inflate = null;
+          } else {
+            this._inflate[kTotalLength] = 0;
+            this._inflate[kBuffers] = [];
+            if (fin && this.params[`${endpoint}_no_context_takeover`]) {
+              this._inflate.reset();
+            }
+          }
+          callback(null, data2);
+        });
+      }
+      /**
+       * Compress data.
+       *
+       * @param {(Buffer|String)} data Data to compress
+       * @param {Boolean} fin Specifies whether or not this is the last fragment
+       * @param {Function} callback Callback
+       * @private
+       */
+      _compress(data, fin, callback) {
+        const endpoint = this._isServer ? "server" : "client";
+        if (!this._deflate) {
+          const key = `${endpoint}_max_window_bits`;
+          const windowBits = typeof this.params[key] !== "number" ? zlib.Z_DEFAULT_WINDOWBITS : this.params[key];
+          this._deflate = zlib.createDeflateRaw({
+            ...this._options.zlibDeflateOptions,
+            windowBits
+          });
+          this._deflate[kTotalLength] = 0;
+          this._deflate[kBuffers] = [];
+          this._deflate.on("data", deflateOnData);
+        }
+        this._deflate[kCallback] = callback;
+        this._deflate.write(data);
+        this._deflate.flush(zlib.Z_SYNC_FLUSH, () => {
+          if (!this._deflate) {
+            return;
+          }
+          let data2 = bufferUtil.concat(
+            this._deflate[kBuffers],
+            this._deflate[kTotalLength]
+          );
+          if (fin) {
+            data2 = new FastBuffer(data2.buffer, data2.byteOffset, data2.length - 4);
+          }
+          this._deflate[kCallback] = null;
+          this._deflate[kTotalLength] = 0;
+          this._deflate[kBuffers] = [];
+          if (fin && this.params[`${endpoint}_no_context_takeover`]) {
+            this._deflate.reset();
+          }
+          callback(null, data2);
+        });
+      }
+    };
+    module2.exports = PerMessageDeflate;
+    function deflateOnData(chunk) {
+      this[kBuffers].push(chunk);
+      this[kTotalLength] += chunk.length;
+    }
+    function inflateOnData(chunk) {
+      this[kTotalLength] += chunk.length;
+      if (this[kPerMessageDeflate]._maxPayload < 1 || this[kTotalLength] <= this[kPerMessageDeflate]._maxPayload) {
+        this[kBuffers].push(chunk);
+        return;
+      }
+      this[kError] = new RangeError("Max payload size exceeded");
+      this[kError].code = "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH";
+      this[kError][kStatusCode] = 1009;
+      this.removeListener("data", inflateOnData);
+      this.reset();
+    }
+    function inflateOnError(err) {
+      this[kPerMessageDeflate]._inflate = null;
+      if (this[kError]) {
+        this[kCallback](this[kError]);
+        return;
+      }
+      err[kStatusCode] = 1007;
+      this[kCallback](err);
+    }
+  }
+});
+
+// node_modules/ws/lib/validation.js
+var require_validation = __commonJS({
+  "node_modules/ws/lib/validation.js"(exports2, module2) {
+    "use strict";
+    var { isUtf8 } = require("buffer");
+    var { hasBlob } = require_constants();
+    var tokenChars = [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      // 0 - 15
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      // 16 - 31
+      0,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      1,
+      1,
+      0,
+      1,
+      1,
+      0,
+      // 32 - 47
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      // 48 - 63
+      0,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      // 64 - 79
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      1,
+      // 80 - 95
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      // 96 - 111
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      1,
+      0,
+      1,
+      0
+      // 112 - 127
+    ];
+    function isValidStatusCode(code) {
+      return code >= 1e3 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006 || code >= 3e3 && code <= 4999;
+    }
+    function _isValidUTF8(buf) {
+      const len = buf.length;
+      let i = 0;
+      while (i < len) {
+        if ((buf[i] & 128) === 0) {
+          i++;
+        } else if ((buf[i] & 224) === 192) {
+          if (i + 1 === len || (buf[i + 1] & 192) !== 128 || (buf[i] & 254) === 192) {
+            return false;
+          }
+          i += 2;
+        } else if ((buf[i] & 240) === 224) {
+          if (i + 2 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || buf[i] === 224 && (buf[i + 1] & 224) === 128 || // Overlong
+          buf[i] === 237 && (buf[i + 1] & 224) === 160) {
+            return false;
+          }
+          i += 3;
+        } else if ((buf[i] & 248) === 240) {
+          if (i + 3 >= len || (buf[i + 1] & 192) !== 128 || (buf[i + 2] & 192) !== 128 || (buf[i + 3] & 192) !== 128 || buf[i] === 240 && (buf[i + 1] & 240) === 128 || // Overlong
+          buf[i] === 244 && buf[i + 1] > 143 || buf[i] > 244) {
+            return false;
+          }
+          i += 4;
+        } else {
+          return false;
+        }
+      }
+      return true;
+    }
+    function isBlob(value) {
+      return hasBlob && typeof value === "object" && typeof value.arrayBuffer === "function" && typeof value.type === "string" && typeof value.stream === "function" && (value[Symbol.toStringTag] === "Blob" || value[Symbol.toStringTag] === "File");
+    }
+    module2.exports = {
+      isBlob,
+      isValidStatusCode,
+      isValidUTF8: _isValidUTF8,
+      tokenChars
+    };
+    if (isUtf8) {
+      module2.exports.isValidUTF8 = function(buf) {
+        return buf.length < 24 ? _isValidUTF8(buf) : isUtf8(buf);
+      };
+    } else if (!process.env.WS_NO_UTF_8_VALIDATE) {
+      try {
+        const isValidUTF8 = require("utf-8-validate");
+        module2.exports.isValidUTF8 = function(buf) {
+          return buf.length < 32 ? _isValidUTF8(buf) : isValidUTF8(buf);
+        };
+      } catch (e) {
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/receiver.js
+var require_receiver = __commonJS({
+  "node_modules/ws/lib/receiver.js"(exports2, module2) {
+    "use strict";
+    var { Writable } = require("stream");
+    var PerMessageDeflate = require_permessage_deflate();
+    var {
+      BINARY_TYPES,
+      EMPTY_BUFFER,
+      kStatusCode,
+      kWebSocket
+    } = require_constants();
+    var { concat, toArrayBuffer, unmask } = require_buffer_util();
+    var { isValidStatusCode, isValidUTF8 } = require_validation();
+    var FastBuffer = Buffer[Symbol.species];
+    var GET_INFO = 0;
+    var GET_PAYLOAD_LENGTH_16 = 1;
+    var GET_PAYLOAD_LENGTH_64 = 2;
+    var GET_MASK = 3;
+    var GET_DATA = 4;
+    var INFLATING = 5;
+    var DEFER_EVENT = 6;
+    var Receiver2 = class extends Writable {
+      /**
+       * Creates a Receiver instance.
+       *
+       * @param {Object} [options] Options object
+       * @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
+       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+       *     multiple times in the same tick
+       * @param {String} [options.binaryType=nodebuffer] The type for binary data
+       * @param {Object} [options.extensions] An object containing the negotiated
+       *     extensions
+       * @param {Boolean} [options.isServer=false] Specifies whether to operate in
+       *     client or server mode
+       * @param {Number} [options.maxPayload=0] The maximum allowed message length
+       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+       *     not to skip UTF-8 validation for text and close messages
+       */
+      constructor(options = {}) {
+        super();
+        this._allowSynchronousEvents = options.allowSynchronousEvents !== void 0 ? options.allowSynchronousEvents : true;
+        this._binaryType = options.binaryType || BINARY_TYPES[0];
+        this._extensions = options.extensions || {};
+        this._isServer = !!options.isServer;
+        this._maxPayload = options.maxPayload | 0;
+        this._skipUTF8Validation = !!options.skipUTF8Validation;
+        this[kWebSocket] = void 0;
+        this._bufferedBytes = 0;
+        this._buffers = [];
+        this._compressed = false;
+        this._payloadLength = 0;
+        this._mask = void 0;
+        this._fragmented = 0;
+        this._masked = false;
+        this._fin = false;
+        this._opcode = 0;
+        this._totalPayloadLength = 0;
+        this._messageLength = 0;
+        this._fragments = [];
+        this._errored = false;
+        this._loop = false;
+        this._state = GET_INFO;
+      }
+      /**
+       * Implements `Writable.prototype._write()`.
+       *
+       * @param {Buffer} chunk The chunk of data to write
+       * @param {String} encoding The character encoding of `chunk`
+       * @param {Function} cb Callback
+       * @private
+       */
+      _write(chunk, encoding, cb) {
+        if (this._opcode === 8 && this._state == GET_INFO)
+          return cb();
+        this._bufferedBytes += chunk.length;
+        this._buffers.push(chunk);
+        this.startLoop(cb);
+      }
+      /**
+       * Consumes `n` bytes from the buffered data.
+       *
+       * @param {Number} n The number of bytes to consume
+       * @return {Buffer} The consumed bytes
+       * @private
+       */
+      consume(n) {
+        this._bufferedBytes -= n;
+        if (n === this._buffers[0].length)
+          return this._buffers.shift();
+        if (n < this._buffers[0].length) {
+          const buf = this._buffers[0];
+          this._buffers[0] = new FastBuffer(
+            buf.buffer,
+            buf.byteOffset + n,
+            buf.length - n
+          );
+          return new FastBuffer(buf.buffer, buf.byteOffset, n);
+        }
+        const dst = Buffer.allocUnsafe(n);
+        do {
+          const buf = this._buffers[0];
+          const offset = dst.length - n;
+          if (n >= buf.length) {
+            dst.set(this._buffers.shift(), offset);
+          } else {
+            dst.set(new Uint8Array(buf.buffer, buf.byteOffset, n), offset);
+            this._buffers[0] = new FastBuffer(
+              buf.buffer,
+              buf.byteOffset + n,
+              buf.length - n
+            );
+          }
+          n -= buf.length;
+        } while (n > 0);
+        return dst;
+      }
+      /**
+       * Starts the parsing loop.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      startLoop(cb) {
+        this._loop = true;
+        do {
+          switch (this._state) {
+            case GET_INFO:
+              this.getInfo(cb);
+              break;
+            case GET_PAYLOAD_LENGTH_16:
+              this.getPayloadLength16(cb);
+              break;
+            case GET_PAYLOAD_LENGTH_64:
+              this.getPayloadLength64(cb);
+              break;
+            case GET_MASK:
+              this.getMask();
+              break;
+            case GET_DATA:
+              this.getData(cb);
+              break;
+            case INFLATING:
+            case DEFER_EVENT:
+              this._loop = false;
+              return;
+          }
+        } while (this._loop);
+        if (!this._errored)
+          cb();
+      }
+      /**
+       * Reads the first two bytes of a frame.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getInfo(cb) {
+        if (this._bufferedBytes < 2) {
+          this._loop = false;
+          return;
+        }
+        const buf = this.consume(2);
+        if ((buf[0] & 48) !== 0) {
+          const error = this.createError(
+            RangeError,
+            "RSV2 and RSV3 must be clear",
+            true,
+            1002,
+            "WS_ERR_UNEXPECTED_RSV_2_3"
+          );
+          cb(error);
+          return;
+        }
+        const compressed = (buf[0] & 64) === 64;
+        if (compressed && !this._extensions[PerMessageDeflate.extensionName]) {
+          const error = this.createError(
+            RangeError,
+            "RSV1 must be clear",
+            true,
+            1002,
+            "WS_ERR_UNEXPECTED_RSV_1"
+          );
+          cb(error);
+          return;
+        }
+        this._fin = (buf[0] & 128) === 128;
+        this._opcode = buf[0] & 15;
+        this._payloadLength = buf[1] & 127;
+        if (this._opcode === 0) {
+          if (compressed) {
+            const error = this.createError(
+              RangeError,
+              "RSV1 must be clear",
+              true,
+              1002,
+              "WS_ERR_UNEXPECTED_RSV_1"
+            );
+            cb(error);
+            return;
+          }
+          if (!this._fragmented) {
+            const error = this.createError(
+              RangeError,
+              "invalid opcode 0",
+              true,
+              1002,
+              "WS_ERR_INVALID_OPCODE"
+            );
+            cb(error);
+            return;
+          }
+          this._opcode = this._fragmented;
+        } else if (this._opcode === 1 || this._opcode === 2) {
+          if (this._fragmented) {
+            const error = this.createError(
+              RangeError,
+              `invalid opcode ${this._opcode}`,
+              true,
+              1002,
+              "WS_ERR_INVALID_OPCODE"
+            );
+            cb(error);
+            return;
+          }
+          this._compressed = compressed;
+        } else if (this._opcode > 7 && this._opcode < 11) {
+          if (!this._fin) {
+            const error = this.createError(
+              RangeError,
+              "FIN must be set",
+              true,
+              1002,
+              "WS_ERR_EXPECTED_FIN"
+            );
+            cb(error);
+            return;
+          }
+          if (compressed) {
+            const error = this.createError(
+              RangeError,
+              "RSV1 must be clear",
+              true,
+              1002,
+              "WS_ERR_UNEXPECTED_RSV_1"
+            );
+            cb(error);
+            return;
+          }
+          if (this._payloadLength > 125 || this._opcode === 8 && this._payloadLength === 1) {
+            const error = this.createError(
+              RangeError,
+              `invalid payload length ${this._payloadLength}`,
+              true,
+              1002,
+              "WS_ERR_INVALID_CONTROL_PAYLOAD_LENGTH"
+            );
+            cb(error);
+            return;
+          }
+        } else {
+          const error = this.createError(
+            RangeError,
+            `invalid opcode ${this._opcode}`,
+            true,
+            1002,
+            "WS_ERR_INVALID_OPCODE"
+          );
+          cb(error);
+          return;
+        }
+        if (!this._fin && !this._fragmented)
+          this._fragmented = this._opcode;
+        this._masked = (buf[1] & 128) === 128;
+        if (this._isServer) {
+          if (!this._masked) {
+            const error = this.createError(
+              RangeError,
+              "MASK must be set",
+              true,
+              1002,
+              "WS_ERR_EXPECTED_MASK"
+            );
+            cb(error);
+            return;
+          }
+        } else if (this._masked) {
+          const error = this.createError(
+            RangeError,
+            "MASK must be clear",
+            true,
+            1002,
+            "WS_ERR_UNEXPECTED_MASK"
+          );
+          cb(error);
+          return;
+        }
+        if (this._payloadLength === 126)
+          this._state = GET_PAYLOAD_LENGTH_16;
+        else if (this._payloadLength === 127)
+          this._state = GET_PAYLOAD_LENGTH_64;
+        else
+          this.haveLength(cb);
+      }
+      /**
+       * Gets extended payload length (7+16).
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getPayloadLength16(cb) {
+        if (this._bufferedBytes < 2) {
+          this._loop = false;
+          return;
+        }
+        this._payloadLength = this.consume(2).readUInt16BE(0);
+        this.haveLength(cb);
+      }
+      /**
+       * Gets extended payload length (7+64).
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getPayloadLength64(cb) {
+        if (this._bufferedBytes < 8) {
+          this._loop = false;
+          return;
+        }
+        const buf = this.consume(8);
+        const num = buf.readUInt32BE(0);
+        if (num > Math.pow(2, 53 - 32) - 1) {
+          const error = this.createError(
+            RangeError,
+            "Unsupported WebSocket frame: payload length > 2^53 - 1",
+            false,
+            1009,
+            "WS_ERR_UNSUPPORTED_DATA_PAYLOAD_LENGTH"
+          );
+          cb(error);
+          return;
+        }
+        this._payloadLength = num * Math.pow(2, 32) + buf.readUInt32BE(4);
+        this.haveLength(cb);
+      }
+      /**
+       * Payload length has been read.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      haveLength(cb) {
+        if (this._payloadLength && this._opcode < 8) {
+          this._totalPayloadLength += this._payloadLength;
+          if (this._totalPayloadLength > this._maxPayload && this._maxPayload > 0) {
+            const error = this.createError(
+              RangeError,
+              "Max payload size exceeded",
+              false,
+              1009,
+              "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+            );
+            cb(error);
+            return;
+          }
+        }
+        if (this._masked)
+          this._state = GET_MASK;
+        else
+          this._state = GET_DATA;
+      }
+      /**
+       * Reads mask bytes.
+       *
+       * @private
+       */
+      getMask() {
+        if (this._bufferedBytes < 4) {
+          this._loop = false;
+          return;
+        }
+        this._mask = this.consume(4);
+        this._state = GET_DATA;
+      }
+      /**
+       * Reads data bytes.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      getData(cb) {
+        let data = EMPTY_BUFFER;
+        if (this._payloadLength) {
+          if (this._bufferedBytes < this._payloadLength) {
+            this._loop = false;
+            return;
+          }
+          data = this.consume(this._payloadLength);
+          if (this._masked && (this._mask[0] | this._mask[1] | this._mask[2] | this._mask[3]) !== 0) {
+            unmask(data, this._mask);
+          }
+        }
+        if (this._opcode > 7) {
+          this.controlMessage(data, cb);
+          return;
+        }
+        if (this._compressed) {
+          this._state = INFLATING;
+          this.decompress(data, cb);
+          return;
+        }
+        if (data.length) {
+          this._messageLength = this._totalPayloadLength;
+          this._fragments.push(data);
+        }
+        this.dataMessage(cb);
+      }
+      /**
+       * Decompresses data.
+       *
+       * @param {Buffer} data Compressed data
+       * @param {Function} cb Callback
+       * @private
+       */
+      decompress(data, cb) {
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        perMessageDeflate.decompress(data, this._fin, (err, buf) => {
+          if (err)
+            return cb(err);
+          if (buf.length) {
+            this._messageLength += buf.length;
+            if (this._messageLength > this._maxPayload && this._maxPayload > 0) {
+              const error = this.createError(
+                RangeError,
+                "Max payload size exceeded",
+                false,
+                1009,
+                "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+              );
+              cb(error);
+              return;
+            }
+            this._fragments.push(buf);
+          }
+          this.dataMessage(cb);
+          if (this._state === GET_INFO)
+            this.startLoop(cb);
+        });
+      }
+      /**
+       * Handles a data message.
+       *
+       * @param {Function} cb Callback
+       * @private
+       */
+      dataMessage(cb) {
+        if (!this._fin) {
+          this._state = GET_INFO;
+          return;
+        }
+        const messageLength = this._messageLength;
+        const fragments = this._fragments;
+        this._totalPayloadLength = 0;
+        this._messageLength = 0;
+        this._fragmented = 0;
+        this._fragments = [];
+        if (this._opcode === 2) {
+          let data;
+          if (this._binaryType === "nodebuffer") {
+            data = concat(fragments, messageLength);
+          } else if (this._binaryType === "arraybuffer") {
+            data = toArrayBuffer(concat(fragments, messageLength));
+          } else if (this._binaryType === "blob") {
+            data = new Blob(fragments);
+          } else {
+            data = fragments;
+          }
+          if (this._allowSynchronousEvents) {
+            this.emit("message", data, true);
+            this._state = GET_INFO;
+          } else {
+            this._state = DEFER_EVENT;
+            setImmediate(() => {
+              this.emit("message", data, true);
+              this._state = GET_INFO;
+              this.startLoop(cb);
+            });
+          }
+        } else {
+          const buf = concat(fragments, messageLength);
+          if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
+            const error = this.createError(
+              Error,
+              "invalid UTF-8 sequence",
+              true,
+              1007,
+              "WS_ERR_INVALID_UTF8"
+            );
+            cb(error);
+            return;
+          }
+          if (this._state === INFLATING || this._allowSynchronousEvents) {
+            this.emit("message", buf, false);
+            this._state = GET_INFO;
+          } else {
+            this._state = DEFER_EVENT;
+            setImmediate(() => {
+              this.emit("message", buf, false);
+              this._state = GET_INFO;
+              this.startLoop(cb);
+            });
+          }
+        }
+      }
+      /**
+       * Handles a control message.
+       *
+       * @param {Buffer} data Data to handle
+       * @return {(Error|RangeError|undefined)} A possible error
+       * @private
+       */
+      controlMessage(data, cb) {
+        if (this._opcode === 8) {
+          if (data.length === 0) {
+            this._loop = false;
+            this.emit("conclude", 1005, EMPTY_BUFFER);
+            this.end();
+          } else {
+            const code = data.readUInt16BE(0);
+            if (!isValidStatusCode(code)) {
+              const error = this.createError(
+                RangeError,
+                `invalid status code ${code}`,
+                true,
+                1002,
+                "WS_ERR_INVALID_CLOSE_CODE"
+              );
+              cb(error);
+              return;
+            }
+            const buf = new FastBuffer(
+              data.buffer,
+              data.byteOffset + 2,
+              data.length - 2
+            );
+            if (!this._skipUTF8Validation && !isValidUTF8(buf)) {
+              const error = this.createError(
+                Error,
+                "invalid UTF-8 sequence",
+                true,
+                1007,
+                "WS_ERR_INVALID_UTF8"
+              );
+              cb(error);
+              return;
+            }
+            this._loop = false;
+            this.emit("conclude", code, buf);
+            this.end();
+          }
+          this._state = GET_INFO;
+          return;
+        }
+        if (this._allowSynchronousEvents) {
+          this.emit(this._opcode === 9 ? "ping" : "pong", data);
+          this._state = GET_INFO;
+        } else {
+          this._state = DEFER_EVENT;
+          setImmediate(() => {
+            this.emit(this._opcode === 9 ? "ping" : "pong", data);
+            this._state = GET_INFO;
+            this.startLoop(cb);
+          });
+        }
+      }
+      /**
+       * Builds an error object.
+       *
+       * @param {function(new:Error|RangeError)} ErrorCtor The error constructor
+       * @param {String} message The error message
+       * @param {Boolean} prefix Specifies whether or not to add a default prefix to
+       *     `message`
+       * @param {Number} statusCode The status code
+       * @param {String} errorCode The exposed error code
+       * @return {(Error|RangeError)} The error
+       * @private
+       */
+      createError(ErrorCtor, message, prefix, statusCode, errorCode) {
+        this._loop = false;
+        this._errored = true;
+        const err = new ErrorCtor(
+          prefix ? `Invalid WebSocket frame: ${message}` : message
+        );
+        Error.captureStackTrace(err, this.createError);
+        err.code = errorCode;
+        err[kStatusCode] = statusCode;
+        return err;
+      }
+    };
+    module2.exports = Receiver2;
+  }
+});
+
+// node_modules/ws/lib/sender.js
+var require_sender = __commonJS({
+  "node_modules/ws/lib/sender.js"(exports2, module2) {
+    "use strict";
+    var { Duplex } = require("stream");
+    var { randomFillSync } = require("crypto");
+    var PerMessageDeflate = require_permessage_deflate();
+    var { EMPTY_BUFFER, kWebSocket, NOOP } = require_constants();
+    var { isBlob, isValidStatusCode } = require_validation();
+    var { mask: applyMask, toBuffer } = require_buffer_util();
+    var kByteLength = Symbol("kByteLength");
+    var maskBuffer = Buffer.alloc(4);
+    var RANDOM_POOL_SIZE = 8 * 1024;
+    var randomPool;
+    var randomPoolPointer = RANDOM_POOL_SIZE;
+    var DEFAULT = 0;
+    var DEFLATING = 1;
+    var GET_BLOB_DATA = 2;
+    var Sender2 = class _Sender {
+      /**
+       * Creates a Sender instance.
+       *
+       * @param {Duplex} socket The connection socket
+       * @param {Object} [extensions] An object containing the negotiated extensions
+       * @param {Function} [generateMask] The function used to generate the masking
+       *     key
+       */
+      constructor(socket, extensions, generateMask) {
+        this._extensions = extensions || {};
+        if (generateMask) {
+          this._generateMask = generateMask;
+          this._maskBuffer = Buffer.alloc(4);
+        }
+        this._socket = socket;
+        this._firstFragment = true;
+        this._compress = false;
+        this._bufferedBytes = 0;
+        this._queue = [];
+        this._state = DEFAULT;
+        this.onerror = NOOP;
+        this[kWebSocket] = void 0;
+      }
+      /**
+       * Frames a piece of data according to the HyBi WebSocket protocol.
+       *
+       * @param {(Buffer|String)} data The data to frame
+       * @param {Object} options Options object
+       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
+       *     FIN bit
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+       *     key
+       * @param {Number} options.opcode The opcode
+       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+       *     modified
+       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+       *     RSV1 bit
+       * @return {(Buffer|String)[]} The framed data
+       * @public
+       */
+      static frame(data, options) {
+        let mask;
+        let merge = false;
+        let offset = 2;
+        let skipMasking = false;
+        if (options.mask) {
+          mask = options.maskBuffer || maskBuffer;
+          if (options.generateMask) {
+            options.generateMask(mask);
+          } else {
+            if (randomPoolPointer === RANDOM_POOL_SIZE) {
+              if (randomPool === void 0) {
+                randomPool = Buffer.alloc(RANDOM_POOL_SIZE);
+              }
+              randomFillSync(randomPool, 0, RANDOM_POOL_SIZE);
+              randomPoolPointer = 0;
+            }
+            mask[0] = randomPool[randomPoolPointer++];
+            mask[1] = randomPool[randomPoolPointer++];
+            mask[2] = randomPool[randomPoolPointer++];
+            mask[3] = randomPool[randomPoolPointer++];
+          }
+          skipMasking = (mask[0] | mask[1] | mask[2] | mask[3]) === 0;
+          offset = 6;
+        }
+        let dataLength;
+        if (typeof data === "string") {
+          if ((!options.mask || skipMasking) && options[kByteLength] !== void 0) {
+            dataLength = options[kByteLength];
+          } else {
+            data = Buffer.from(data);
+            dataLength = data.length;
+          }
+        } else {
+          dataLength = data.length;
+          merge = options.mask && options.readOnly && !skipMasking;
+        }
+        let payloadLength = dataLength;
+        if (dataLength >= 65536) {
+          offset += 8;
+          payloadLength = 127;
+        } else if (dataLength > 125) {
+          offset += 2;
+          payloadLength = 126;
+        }
+        const target = Buffer.allocUnsafe(merge ? dataLength + offset : offset);
+        target[0] = options.fin ? options.opcode | 128 : options.opcode;
+        if (options.rsv1)
+          target[0] |= 64;
+        target[1] = payloadLength;
+        if (payloadLength === 126) {
+          target.writeUInt16BE(dataLength, 2);
+        } else if (payloadLength === 127) {
+          target[2] = target[3] = 0;
+          target.writeUIntBE(dataLength, 4, 6);
+        }
+        if (!options.mask)
+          return [target, data];
+        target[1] |= 128;
+        target[offset - 4] = mask[0];
+        target[offset - 3] = mask[1];
+        target[offset - 2] = mask[2];
+        target[offset - 1] = mask[3];
+        if (skipMasking)
+          return [target, data];
+        if (merge) {
+          applyMask(data, mask, target, offset, dataLength);
+          return [target];
+        }
+        applyMask(data, mask, data, 0, dataLength);
+        return [target, data];
+      }
+      /**
+       * Sends a close message to the other peer.
+       *
+       * @param {Number} [code] The status code component of the body
+       * @param {(String|Buffer)} [data] The message component of the body
+       * @param {Boolean} [mask=false] Specifies whether or not to mask the message
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      close(code, data, mask, cb) {
+        let buf;
+        if (code === void 0) {
+          buf = EMPTY_BUFFER;
+        } else if (typeof code !== "number" || !isValidStatusCode(code)) {
+          throw new TypeError("First argument must be a valid error code number");
+        } else if (data === void 0 || !data.length) {
+          buf = Buffer.allocUnsafe(2);
+          buf.writeUInt16BE(code, 0);
+        } else {
+          const length = Buffer.byteLength(data);
+          if (length > 123) {
+            throw new RangeError("The message must not be greater than 123 bytes");
+          }
+          buf = Buffer.allocUnsafe(2 + length);
+          buf.writeUInt16BE(code, 0);
+          if (typeof data === "string") {
+            buf.write(data, 2);
+          } else {
+            buf.set(data, 2);
+          }
+        }
+        const options = {
+          [kByteLength]: buf.length,
+          fin: true,
+          generateMask: this._generateMask,
+          mask,
+          maskBuffer: this._maskBuffer,
+          opcode: 8,
+          readOnly: false,
+          rsv1: false
+        };
+        if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, buf, false, options, cb]);
+        } else {
+          this.sendFrame(_Sender.frame(buf, options), cb);
+        }
+      }
+      /**
+       * Sends a ping message to the other peer.
+       *
+       * @param {*} data The message to send
+       * @param {Boolean} [mask=false] Specifies whether or not to mask `data`
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      ping(data, mask, cb) {
+        let byteLength;
+        let readOnly;
+        if (typeof data === "string") {
+          byteLength = Buffer.byteLength(data);
+          readOnly = false;
+        } else if (isBlob(data)) {
+          byteLength = data.size;
+          readOnly = false;
+        } else {
+          data = toBuffer(data);
+          byteLength = data.length;
+          readOnly = toBuffer.readOnly;
+        }
+        if (byteLength > 125) {
+          throw new RangeError("The data size must not be greater than 125 bytes");
+        }
+        const options = {
+          [kByteLength]: byteLength,
+          fin: true,
+          generateMask: this._generateMask,
+          mask,
+          maskBuffer: this._maskBuffer,
+          opcode: 9,
+          readOnly,
+          rsv1: false
+        };
+        if (isBlob(data)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data, false, options, cb]);
+          } else {
+            this.getBlobData(data, false, options, cb);
+          }
+        } else if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, data, false, options, cb]);
+        } else {
+          this.sendFrame(_Sender.frame(data, options), cb);
+        }
+      }
+      /**
+       * Sends a pong message to the other peer.
+       *
+       * @param {*} data The message to send
+       * @param {Boolean} [mask=false] Specifies whether or not to mask `data`
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      pong(data, mask, cb) {
+        let byteLength;
+        let readOnly;
+        if (typeof data === "string") {
+          byteLength = Buffer.byteLength(data);
+          readOnly = false;
+        } else if (isBlob(data)) {
+          byteLength = data.size;
+          readOnly = false;
+        } else {
+          data = toBuffer(data);
+          byteLength = data.length;
+          readOnly = toBuffer.readOnly;
+        }
+        if (byteLength > 125) {
+          throw new RangeError("The data size must not be greater than 125 bytes");
+        }
+        const options = {
+          [kByteLength]: byteLength,
+          fin: true,
+          generateMask: this._generateMask,
+          mask,
+          maskBuffer: this._maskBuffer,
+          opcode: 10,
+          readOnly,
+          rsv1: false
+        };
+        if (isBlob(data)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data, false, options, cb]);
+          } else {
+            this.getBlobData(data, false, options, cb);
+          }
+        } else if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, data, false, options, cb]);
+        } else {
+          this.sendFrame(_Sender.frame(data, options), cb);
+        }
+      }
+      /**
+       * Sends a data message to the other peer.
+       *
+       * @param {*} data The message to send
+       * @param {Object} options Options object
+       * @param {Boolean} [options.binary=false] Specifies whether `data` is binary
+       *     or text
+       * @param {Boolean} [options.compress=false] Specifies whether or not to
+       *     compress `data`
+       * @param {Boolean} [options.fin=false] Specifies whether the fragment is the
+       *     last one
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Function} [cb] Callback
+       * @public
+       */
+      send(data, options, cb) {
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        let opcode = options.binary ? 2 : 1;
+        let rsv1 = options.compress;
+        let byteLength;
+        let readOnly;
+        if (typeof data === "string") {
+          byteLength = Buffer.byteLength(data);
+          readOnly = false;
+        } else if (isBlob(data)) {
+          byteLength = data.size;
+          readOnly = false;
+        } else {
+          data = toBuffer(data);
+          byteLength = data.length;
+          readOnly = toBuffer.readOnly;
+        }
+        if (this._firstFragment) {
+          this._firstFragment = false;
+          if (rsv1 && perMessageDeflate && perMessageDeflate.params[perMessageDeflate._isServer ? "server_no_context_takeover" : "client_no_context_takeover"]) {
+            rsv1 = byteLength >= perMessageDeflate._threshold;
+          }
+          this._compress = rsv1;
+        } else {
+          rsv1 = false;
+          opcode = 0;
+        }
+        if (options.fin)
+          this._firstFragment = true;
+        const opts = {
+          [kByteLength]: byteLength,
+          fin: options.fin,
+          generateMask: this._generateMask,
+          mask: options.mask,
+          maskBuffer: this._maskBuffer,
+          opcode,
+          readOnly,
+          rsv1
+        };
+        if (isBlob(data)) {
+          if (this._state !== DEFAULT) {
+            this.enqueue([this.getBlobData, data, this._compress, opts, cb]);
+          } else {
+            this.getBlobData(data, this._compress, opts, cb);
+          }
+        } else if (this._state !== DEFAULT) {
+          this.enqueue([this.dispatch, data, this._compress, opts, cb]);
+        } else {
+          this.dispatch(data, this._compress, opts, cb);
+        }
+      }
+      /**
+       * Gets the contents of a blob as binary data.
+       *
+       * @param {Blob} blob The blob
+       * @param {Boolean} [compress=false] Specifies whether or not to compress
+       *     the data
+       * @param {Object} options Options object
+       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
+       *     FIN bit
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+       *     key
+       * @param {Number} options.opcode The opcode
+       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+       *     modified
+       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+       *     RSV1 bit
+       * @param {Function} [cb] Callback
+       * @private
+       */
+      getBlobData(blob, compress, options, cb) {
+        this._bufferedBytes += options[kByteLength];
+        this._state = GET_BLOB_DATA;
+        blob.arrayBuffer().then((arrayBuffer) => {
+          if (this._socket.destroyed) {
+            const err = new Error(
+              "The socket was closed while the blob was being read"
+            );
+            process.nextTick(callCallbacks, this, err, cb);
+            return;
+          }
+          this._bufferedBytes -= options[kByteLength];
+          const data = toBuffer(arrayBuffer);
+          if (!compress) {
+            this._state = DEFAULT;
+            this.sendFrame(_Sender.frame(data, options), cb);
+            this.dequeue();
+          } else {
+            this.dispatch(data, compress, options, cb);
+          }
+        }).catch((err) => {
+          process.nextTick(onError, this, err, cb);
+        });
+      }
+      /**
+       * Dispatches a message.
+       *
+       * @param {(Buffer|String)} data The message to send
+       * @param {Boolean} [compress=false] Specifies whether or not to compress
+       *     `data`
+       * @param {Object} options Options object
+       * @param {Boolean} [options.fin=false] Specifies whether or not to set the
+       *     FIN bit
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Boolean} [options.mask=false] Specifies whether or not to mask
+       *     `data`
+       * @param {Buffer} [options.maskBuffer] The buffer used to store the masking
+       *     key
+       * @param {Number} options.opcode The opcode
+       * @param {Boolean} [options.readOnly=false] Specifies whether `data` can be
+       *     modified
+       * @param {Boolean} [options.rsv1=false] Specifies whether or not to set the
+       *     RSV1 bit
+       * @param {Function} [cb] Callback
+       * @private
+       */
+      dispatch(data, compress, options, cb) {
+        if (!compress) {
+          this.sendFrame(_Sender.frame(data, options), cb);
+          return;
+        }
+        const perMessageDeflate = this._extensions[PerMessageDeflate.extensionName];
+        this._bufferedBytes += options[kByteLength];
+        this._state = DEFLATING;
+        perMessageDeflate.compress(data, options.fin, (_, buf) => {
+          if (this._socket.destroyed) {
+            const err = new Error(
+              "The socket was closed while data was being compressed"
+            );
+            callCallbacks(this, err, cb);
+            return;
+          }
+          this._bufferedBytes -= options[kByteLength];
+          this._state = DEFAULT;
+          options.readOnly = false;
+          this.sendFrame(_Sender.frame(buf, options), cb);
+          this.dequeue();
+        });
+      }
+      /**
+       * Executes queued send operations.
+       *
+       * @private
+       */
+      dequeue() {
+        while (this._state === DEFAULT && this._queue.length) {
+          const params = this._queue.shift();
+          this._bufferedBytes -= params[3][kByteLength];
+          Reflect.apply(params[0], this, params.slice(1));
+        }
+      }
+      /**
+       * Enqueues a send operation.
+       *
+       * @param {Array} params Send operation parameters.
+       * @private
+       */
+      enqueue(params) {
+        this._bufferedBytes += params[3][kByteLength];
+        this._queue.push(params);
+      }
+      /**
+       * Sends a frame.
+       *
+       * @param {(Buffer | String)[]} list The frame to send
+       * @param {Function} [cb] Callback
+       * @private
+       */
+      sendFrame(list, cb) {
+        if (list.length === 2) {
+          this._socket.cork();
+          this._socket.write(list[0]);
+          this._socket.write(list[1], cb);
+          this._socket.uncork();
+        } else {
+          this._socket.write(list[0], cb);
+        }
+      }
+    };
+    module2.exports = Sender2;
+    function callCallbacks(sender, err, cb) {
+      if (typeof cb === "function")
+        cb(err);
+      for (let i = 0; i < sender._queue.length; i++) {
+        const params = sender._queue[i];
+        const callback = params[params.length - 1];
+        if (typeof callback === "function")
+          callback(err);
+      }
+    }
+    function onError(sender, err, cb) {
+      callCallbacks(sender, err, cb);
+      sender.onerror(err);
+    }
+  }
+});
+
+// node_modules/ws/lib/event-target.js
+var require_event_target = __commonJS({
+  "node_modules/ws/lib/event-target.js"(exports2, module2) {
+    "use strict";
+    var { kForOnEventAttribute, kListener } = require_constants();
+    var kCode = Symbol("kCode");
+    var kData = Symbol("kData");
+    var kError = Symbol("kError");
+    var kMessage = Symbol("kMessage");
+    var kReason = Symbol("kReason");
+    var kTarget = Symbol("kTarget");
+    var kType = Symbol("kType");
+    var kWasClean = Symbol("kWasClean");
+    var Event = class {
+      /**
+       * Create a new `Event`.
+       *
+       * @param {String} type The name of the event
+       * @throws {TypeError} If the `type` argument is not specified
+       */
+      constructor(type) {
+        this[kTarget] = null;
+        this[kType] = type;
+      }
+      /**
+       * @type {*}
+       */
+      get target() {
+        return this[kTarget];
+      }
+      /**
+       * @type {String}
+       */
+      get type() {
+        return this[kType];
+      }
+    };
+    Object.defineProperty(Event.prototype, "target", { enumerable: true });
+    Object.defineProperty(Event.prototype, "type", { enumerable: true });
+    var CloseEvent = class extends Event {
+      /**
+       * Create a new `CloseEvent`.
+       *
+       * @param {String} type The name of the event
+       * @param {Object} [options] A dictionary object that allows for setting
+       *     attributes via object members of the same name
+       * @param {Number} [options.code=0] The status code explaining why the
+       *     connection was closed
+       * @param {String} [options.reason=''] A human-readable string explaining why
+       *     the connection was closed
+       * @param {Boolean} [options.wasClean=false] Indicates whether or not the
+       *     connection was cleanly closed
+       */
+      constructor(type, options = {}) {
+        super(type);
+        this[kCode] = options.code === void 0 ? 0 : options.code;
+        this[kReason] = options.reason === void 0 ? "" : options.reason;
+        this[kWasClean] = options.wasClean === void 0 ? false : options.wasClean;
+      }
+      /**
+       * @type {Number}
+       */
+      get code() {
+        return this[kCode];
+      }
+      /**
+       * @type {String}
+       */
+      get reason() {
+        return this[kReason];
+      }
+      /**
+       * @type {Boolean}
+       */
+      get wasClean() {
+        return this[kWasClean];
+      }
+    };
+    Object.defineProperty(CloseEvent.prototype, "code", { enumerable: true });
+    Object.defineProperty(CloseEvent.prototype, "reason", { enumerable: true });
+    Object.defineProperty(CloseEvent.prototype, "wasClean", { enumerable: true });
+    var ErrorEvent = class extends Event {
+      /**
+       * Create a new `ErrorEvent`.
+       *
+       * @param {String} type The name of the event
+       * @param {Object} [options] A dictionary object that allows for setting
+       *     attributes via object members of the same name
+       * @param {*} [options.error=null] The error that generated this event
+       * @param {String} [options.message=''] The error message
+       */
+      constructor(type, options = {}) {
+        super(type);
+        this[kError] = options.error === void 0 ? null : options.error;
+        this[kMessage] = options.message === void 0 ? "" : options.message;
+      }
+      /**
+       * @type {*}
+       */
+      get error() {
+        return this[kError];
+      }
+      /**
+       * @type {String}
+       */
+      get message() {
+        return this[kMessage];
+      }
+    };
+    Object.defineProperty(ErrorEvent.prototype, "error", { enumerable: true });
+    Object.defineProperty(ErrorEvent.prototype, "message", { enumerable: true });
+    var MessageEvent = class extends Event {
+      /**
+       * Create a new `MessageEvent`.
+       *
+       * @param {String} type The name of the event
+       * @param {Object} [options] A dictionary object that allows for setting
+       *     attributes via object members of the same name
+       * @param {*} [options.data=null] The message content
+       */
+      constructor(type, options = {}) {
+        super(type);
+        this[kData] = options.data === void 0 ? null : options.data;
+      }
+      /**
+       * @type {*}
+       */
+      get data() {
+        return this[kData];
+      }
+    };
+    Object.defineProperty(MessageEvent.prototype, "data", { enumerable: true });
+    var EventTarget = {
+      /**
+       * Register an event listener.
+       *
+       * @param {String} type A string representing the event type to listen for
+       * @param {(Function|Object)} handler The listener to add
+       * @param {Object} [options] An options object specifies characteristics about
+       *     the event listener
+       * @param {Boolean} [options.once=false] A `Boolean` indicating that the
+       *     listener should be invoked at most once after being added. If `true`,
+       *     the listener would be automatically removed when invoked.
+       * @public
+       */
+      addEventListener(type, handler, options = {}) {
+        for (const listener of this.listeners(type)) {
+          if (!options[kForOnEventAttribute] && listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+            return;
+          }
+        }
+        let wrapper;
+        if (type === "message") {
+          wrapper = function onMessage(data, isBinary) {
+            const event = new MessageEvent("message", {
+              data: isBinary ? data : data.toString()
+            });
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else if (type === "close") {
+          wrapper = function onClose(code, message) {
+            const event = new CloseEvent("close", {
+              code,
+              reason: message.toString(),
+              wasClean: this._closeFrameReceived && this._closeFrameSent
+            });
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else if (type === "error") {
+          wrapper = function onError(error) {
+            const event = new ErrorEvent("error", {
+              error,
+              message: error.message
+            });
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else if (type === "open") {
+          wrapper = function onOpen() {
+            const event = new Event("open");
+            event[kTarget] = this;
+            callListener(handler, this, event);
+          };
+        } else {
+          return;
+        }
+        wrapper[kForOnEventAttribute] = !!options[kForOnEventAttribute];
+        wrapper[kListener] = handler;
+        if (options.once) {
+          this.once(type, wrapper);
+        } else {
+          this.on(type, wrapper);
+        }
+      },
+      /**
+       * Remove an event listener.
+       *
+       * @param {String} type A string representing the event type to remove
+       * @param {(Function|Object)} handler The listener to remove
+       * @public
+       */
+      removeEventListener(type, handler) {
+        for (const listener of this.listeners(type)) {
+          if (listener[kListener] === handler && !listener[kForOnEventAttribute]) {
+            this.removeListener(type, listener);
+            break;
+          }
+        }
+      }
+    };
+    module2.exports = {
+      CloseEvent,
+      ErrorEvent,
+      Event,
+      EventTarget,
+      MessageEvent
+    };
+    function callListener(listener, thisArg, event) {
+      if (typeof listener === "object" && listener.handleEvent) {
+        listener.handleEvent.call(listener, event);
+      } else {
+        listener.call(thisArg, event);
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/extension.js
+var require_extension = __commonJS({
+  "node_modules/ws/lib/extension.js"(exports2, module2) {
+    "use strict";
+    var { tokenChars } = require_validation();
+    function push(dest, name, elem) {
+      if (dest[name] === void 0)
+        dest[name] = [elem];
+      else
+        dest[name].push(elem);
+    }
+    function parse(header) {
+      const offers = /* @__PURE__ */ Object.create(null);
+      let params = /* @__PURE__ */ Object.create(null);
+      let mustUnescape = false;
+      let isEscaping = false;
+      let inQuotes = false;
+      let extensionName;
+      let paramName;
+      let start = -1;
+      let code = -1;
+      let end = -1;
+      let i = 0;
+      for (; i < header.length; i++) {
+        code = header.charCodeAt(i);
+        if (extensionName === void 0) {
+          if (end === -1 && tokenChars[code] === 1) {
+            if (start === -1)
+              start = i;
+          } else if (i !== 0 && (code === 32 || code === 9)) {
+            if (end === -1 && start !== -1)
+              end = i;
+          } else if (code === 59 || code === 44) {
+            if (start === -1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (end === -1)
+              end = i;
+            const name = header.slice(start, end);
+            if (code === 44) {
+              push(offers, name, params);
+              params = /* @__PURE__ */ Object.create(null);
+            } else {
+              extensionName = name;
+            }
+            start = end = -1;
+          } else {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+        } else if (paramName === void 0) {
+          if (end === -1 && tokenChars[code] === 1) {
+            if (start === -1)
+              start = i;
+          } else if (code === 32 || code === 9) {
+            if (end === -1 && start !== -1)
+              end = i;
+          } else if (code === 59 || code === 44) {
+            if (start === -1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (end === -1)
+              end = i;
+            push(params, header.slice(start, end), true);
+            if (code === 44) {
+              push(offers, extensionName, params);
+              params = /* @__PURE__ */ Object.create(null);
+              extensionName = void 0;
+            }
+            start = end = -1;
+          } else if (code === 61 && start !== -1 && end === -1) {
+            paramName = header.slice(start, i);
+            start = end = -1;
+          } else {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+        } else {
+          if (isEscaping) {
+            if (tokenChars[code] !== 1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (start === -1)
+              start = i;
+            else if (!mustUnescape)
+              mustUnescape = true;
+            isEscaping = false;
+          } else if (inQuotes) {
+            if (tokenChars[code] === 1) {
+              if (start === -1)
+                start = i;
+            } else if (code === 34 && start !== -1) {
+              inQuotes = false;
+              end = i;
+            } else if (code === 92) {
+              isEscaping = true;
+            } else {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+          } else if (code === 34 && header.charCodeAt(i - 1) === 61) {
+            inQuotes = true;
+          } else if (end === -1 && tokenChars[code] === 1) {
+            if (start === -1)
+              start = i;
+          } else if (start !== -1 && (code === 32 || code === 9)) {
+            if (end === -1)
+              end = i;
+          } else if (code === 59 || code === 44) {
+            if (start === -1) {
+              throw new SyntaxError(`Unexpected character at index ${i}`);
+            }
+            if (end === -1)
+              end = i;
+            let value = header.slice(start, end);
+            if (mustUnescape) {
+              value = value.replace(/\\/g, "");
+              mustUnescape = false;
+            }
+            push(params, paramName, value);
+            if (code === 44) {
+              push(offers, extensionName, params);
+              params = /* @__PURE__ */ Object.create(null);
+              extensionName = void 0;
+            }
+            paramName = void 0;
+            start = end = -1;
+          } else {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+        }
+      }
+      if (start === -1 || inQuotes || code === 32 || code === 9) {
+        throw new SyntaxError("Unexpected end of input");
+      }
+      if (end === -1)
+        end = i;
+      const token = header.slice(start, end);
+      if (extensionName === void 0) {
+        push(offers, token, params);
+      } else {
+        if (paramName === void 0) {
+          push(params, token, true);
+        } else if (mustUnescape) {
+          push(params, paramName, token.replace(/\\/g, ""));
+        } else {
+          push(params, paramName, token);
+        }
+        push(offers, extensionName, params);
+      }
+      return offers;
+    }
+    function format(extensions) {
+      return Object.keys(extensions).map((extension) => {
+        let configurations = extensions[extension];
+        if (!Array.isArray(configurations))
+          configurations = [configurations];
+        return configurations.map((params) => {
+          return [extension].concat(
+            Object.keys(params).map((k) => {
+              let values = params[k];
+              if (!Array.isArray(values))
+                values = [values];
+              return values.map((v) => v === true ? k : `${k}=${v}`).join("; ");
+            })
+          ).join("; ");
+        }).join(", ");
+      }).join(", ");
+    }
+    module2.exports = { format, parse };
+  }
+});
+
+// node_modules/ws/lib/websocket.js
+var require_websocket = __commonJS({
+  "node_modules/ws/lib/websocket.js"(exports2, module2) {
+    "use strict";
+    var EventEmitter = require("events");
+    var https = require("https");
+    var http2 = require("http");
+    var net = require("net");
+    var tls = require("tls");
+    var { randomBytes, createHash } = require("crypto");
+    var { Duplex, Readable } = require("stream");
+    var { URL } = require("url");
+    var PerMessageDeflate = require_permessage_deflate();
+    var Receiver2 = require_receiver();
+    var Sender2 = require_sender();
+    var { isBlob } = require_validation();
+    var {
+      BINARY_TYPES,
+      CLOSE_TIMEOUT,
+      EMPTY_BUFFER,
+      GUID,
+      kForOnEventAttribute,
+      kListener,
+      kStatusCode,
+      kWebSocket,
+      NOOP
+    } = require_constants();
+    var {
+      EventTarget: { addEventListener, removeEventListener }
+    } = require_event_target();
+    var { format, parse } = require_extension();
+    var { toBuffer } = require_buffer_util();
+    var kAborted = Symbol("kAborted");
+    var protocolVersions = [8, 13];
+    var readyStates = ["CONNECTING", "OPEN", "CLOSING", "CLOSED"];
+    var subprotocolRegex = /^[!#$%&'*+\-.0-9A-Z^_`|a-z~]+$/;
+    var WebSocket2 = class _WebSocket extends EventEmitter {
+      /**
+       * Create a new `WebSocket`.
+       *
+       * @param {(String|URL)} address The URL to which to connect
+       * @param {(String|String[])} [protocols] The subprotocols
+       * @param {Object} [options] Connection options
+       */
+      constructor(address, protocols, options) {
+        super();
+        this._binaryType = BINARY_TYPES[0];
+        this._closeCode = 1006;
+        this._closeFrameReceived = false;
+        this._closeFrameSent = false;
+        this._closeMessage = EMPTY_BUFFER;
+        this._closeTimer = null;
+        this._errorEmitted = false;
+        this._extensions = {};
+        this._paused = false;
+        this._protocol = "";
+        this._readyState = _WebSocket.CONNECTING;
+        this._receiver = null;
+        this._sender = null;
+        this._socket = null;
+        if (address !== null) {
+          this._bufferedAmount = 0;
+          this._isServer = false;
+          this._redirects = 0;
+          if (protocols === void 0) {
+            protocols = [];
+          } else if (!Array.isArray(protocols)) {
+            if (typeof protocols === "object" && protocols !== null) {
+              options = protocols;
+              protocols = [];
+            } else {
+              protocols = [protocols];
+            }
+          }
+          initAsClient(this, address, protocols, options);
+        } else {
+          this._autoPong = options.autoPong;
+          this._closeTimeout = options.closeTimeout;
+          this._isServer = true;
+        }
+      }
+      /**
+       * For historical reasons, the custom "nodebuffer" type is used by the default
+       * instead of "blob".
+       *
+       * @type {String}
+       */
+      get binaryType() {
+        return this._binaryType;
+      }
+      set binaryType(type) {
+        if (!BINARY_TYPES.includes(type))
+          return;
+        this._binaryType = type;
+        if (this._receiver)
+          this._receiver._binaryType = type;
+      }
+      /**
+       * @type {Number}
+       */
+      get bufferedAmount() {
+        if (!this._socket)
+          return this._bufferedAmount;
+        return this._socket._writableState.length + this._sender._bufferedBytes;
+      }
+      /**
+       * @type {String}
+       */
+      get extensions() {
+        return Object.keys(this._extensions).join();
+      }
+      /**
+       * @type {Boolean}
+       */
+      get isPaused() {
+        return this._paused;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onclose() {
+        return null;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onerror() {
+        return null;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onopen() {
+        return null;
+      }
+      /**
+       * @type {Function}
+       */
+      /* istanbul ignore next */
+      get onmessage() {
+        return null;
+      }
+      /**
+       * @type {String}
+       */
+      get protocol() {
+        return this._protocol;
+      }
+      /**
+       * @type {Number}
+       */
+      get readyState() {
+        return this._readyState;
+      }
+      /**
+       * @type {String}
+       */
+      get url() {
+        return this._url;
+      }
+      /**
+       * Set up the socket and the internal resources.
+       *
+       * @param {Duplex} socket The network socket between the server and client
+       * @param {Buffer} head The first packet of the upgraded stream
+       * @param {Object} options Options object
+       * @param {Boolean} [options.allowSynchronousEvents=false] Specifies whether
+       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+       *     multiple times in the same tick
+       * @param {Function} [options.generateMask] The function used to generate the
+       *     masking key
+       * @param {Number} [options.maxPayload=0] The maximum allowed message size
+       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+       *     not to skip UTF-8 validation for text and close messages
+       * @private
+       */
+      setSocket(socket, head, options) {
+        const receiver = new Receiver2({
+          allowSynchronousEvents: options.allowSynchronousEvents,
+          binaryType: this.binaryType,
+          extensions: this._extensions,
+          isServer: this._isServer,
+          maxPayload: options.maxPayload,
+          skipUTF8Validation: options.skipUTF8Validation
+        });
+        const sender = new Sender2(socket, this._extensions, options.generateMask);
+        this._receiver = receiver;
+        this._sender = sender;
+        this._socket = socket;
+        receiver[kWebSocket] = this;
+        sender[kWebSocket] = this;
+        socket[kWebSocket] = this;
+        receiver.on("conclude", receiverOnConclude);
+        receiver.on("drain", receiverOnDrain);
+        receiver.on("error", receiverOnError);
+        receiver.on("message", receiverOnMessage);
+        receiver.on("ping", receiverOnPing);
+        receiver.on("pong", receiverOnPong);
+        sender.onerror = senderOnError;
+        if (socket.setTimeout)
+          socket.setTimeout(0);
+        if (socket.setNoDelay)
+          socket.setNoDelay();
+        if (head.length > 0)
+          socket.unshift(head);
+        socket.on("close", socketOnClose);
+        socket.on("data", socketOnData);
+        socket.on("end", socketOnEnd);
+        socket.on("error", socketOnError);
+        this._readyState = _WebSocket.OPEN;
+        this.emit("open");
+      }
+      /**
+       * Emit the `'close'` event.
+       *
+       * @private
+       */
+      emitClose() {
+        if (!this._socket) {
+          this._readyState = _WebSocket.CLOSED;
+          this.emit("close", this._closeCode, this._closeMessage);
+          return;
+        }
+        if (this._extensions[PerMessageDeflate.extensionName]) {
+          this._extensions[PerMessageDeflate.extensionName].cleanup();
+        }
+        this._receiver.removeAllListeners();
+        this._readyState = _WebSocket.CLOSED;
+        this.emit("close", this._closeCode, this._closeMessage);
+      }
+      /**
+       * Start a closing handshake.
+       *
+       *          +----------+   +-----------+   +----------+
+       *     - - -|ws.close()|-->|close frame|-->|ws.close()|- - -
+       *    |     +----------+   +-----------+   +----------+     |
+       *          +----------+   +-----------+         |
+       * CLOSING  |ws.close()|<--|close frame|<--+-----+       CLOSING
+       *          +----------+   +-----------+   |
+       *    |           |                        |   +---+        |
+       *                +------------------------+-->|fin| - - - -
+       *    |         +---+                      |   +---+
+       *     - - - - -|fin|<---------------------+
+       *              +---+
+       *
+       * @param {Number} [code] Status code explaining why the connection is closing
+       * @param {(String|Buffer)} [data] The reason why the connection is
+       *     closing
+       * @public
+       */
+      close(code, data) {
+        if (this.readyState === _WebSocket.CLOSED)
+          return;
+        if (this.readyState === _WebSocket.CONNECTING) {
+          const msg = "WebSocket was closed before the connection was established";
+          abortHandshake(this, this._req, msg);
+          return;
+        }
+        if (this.readyState === _WebSocket.CLOSING) {
+          if (this._closeFrameSent && (this._closeFrameReceived || this._receiver._writableState.errorEmitted)) {
+            this._socket.end();
+          }
+          return;
+        }
+        this._readyState = _WebSocket.CLOSING;
+        this._sender.close(code, data, !this._isServer, (err) => {
+          if (err)
+            return;
+          this._closeFrameSent = true;
+          if (this._closeFrameReceived || this._receiver._writableState.errorEmitted) {
+            this._socket.end();
+          }
+        });
+        setCloseTimer(this);
+      }
+      /**
+       * Pause the socket.
+       *
+       * @public
+       */
+      pause() {
+        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
+          return;
+        }
+        this._paused = true;
+        this._socket.pause();
+      }
+      /**
+       * Send a ping.
+       *
+       * @param {*} [data] The data to send
+       * @param {Boolean} [mask] Indicates whether or not to mask `data`
+       * @param {Function} [cb] Callback which is executed when the ping is sent
+       * @public
+       */
+      ping(data, mask, cb) {
+        if (this.readyState === _WebSocket.CONNECTING) {
+          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+        }
+        if (typeof data === "function") {
+          cb = data;
+          data = mask = void 0;
+        } else if (typeof mask === "function") {
+          cb = mask;
+          mask = void 0;
+        }
+        if (typeof data === "number")
+          data = data.toString();
+        if (this.readyState !== _WebSocket.OPEN) {
+          sendAfterClose(this, data, cb);
+          return;
+        }
+        if (mask === void 0)
+          mask = !this._isServer;
+        this._sender.ping(data || EMPTY_BUFFER, mask, cb);
+      }
+      /**
+       * Send a pong.
+       *
+       * @param {*} [data] The data to send
+       * @param {Boolean} [mask] Indicates whether or not to mask `data`
+       * @param {Function} [cb] Callback which is executed when the pong is sent
+       * @public
+       */
+      pong(data, mask, cb) {
+        if (this.readyState === _WebSocket.CONNECTING) {
+          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+        }
+        if (typeof data === "function") {
+          cb = data;
+          data = mask = void 0;
+        } else if (typeof mask === "function") {
+          cb = mask;
+          mask = void 0;
+        }
+        if (typeof data === "number")
+          data = data.toString();
+        if (this.readyState !== _WebSocket.OPEN) {
+          sendAfterClose(this, data, cb);
+          return;
+        }
+        if (mask === void 0)
+          mask = !this._isServer;
+        this._sender.pong(data || EMPTY_BUFFER, mask, cb);
+      }
+      /**
+       * Resume the socket.
+       *
+       * @public
+       */
+      resume() {
+        if (this.readyState === _WebSocket.CONNECTING || this.readyState === _WebSocket.CLOSED) {
+          return;
+        }
+        this._paused = false;
+        if (!this._receiver._writableState.needDrain)
+          this._socket.resume();
+      }
+      /**
+       * Send a data message.
+       *
+       * @param {*} data The message to send
+       * @param {Object} [options] Options object
+       * @param {Boolean} [options.binary] Specifies whether `data` is binary or
+       *     text
+       * @param {Boolean} [options.compress] Specifies whether or not to compress
+       *     `data`
+       * @param {Boolean} [options.fin=true] Specifies whether the fragment is the
+       *     last one
+       * @param {Boolean} [options.mask] Specifies whether or not to mask `data`
+       * @param {Function} [cb] Callback which is executed when data is written out
+       * @public
+       */
+      send(data, options, cb) {
+        if (this.readyState === _WebSocket.CONNECTING) {
+          throw new Error("WebSocket is not open: readyState 0 (CONNECTING)");
+        }
+        if (typeof options === "function") {
+          cb = options;
+          options = {};
+        }
+        if (typeof data === "number")
+          data = data.toString();
+        if (this.readyState !== _WebSocket.OPEN) {
+          sendAfterClose(this, data, cb);
+          return;
+        }
+        const opts = {
+          binary: typeof data !== "string",
+          mask: !this._isServer,
+          compress: true,
+          fin: true,
+          ...options
+        };
+        if (!this._extensions[PerMessageDeflate.extensionName]) {
+          opts.compress = false;
+        }
+        this._sender.send(data || EMPTY_BUFFER, opts, cb);
+      }
+      /**
+       * Forcibly close the connection.
+       *
+       * @public
+       */
+      terminate() {
+        if (this.readyState === _WebSocket.CLOSED)
+          return;
+        if (this.readyState === _WebSocket.CONNECTING) {
+          const msg = "WebSocket was closed before the connection was established";
+          abortHandshake(this, this._req, msg);
+          return;
+        }
+        if (this._socket) {
+          this._readyState = _WebSocket.CLOSING;
+          this._socket.destroy();
+        }
+      }
+    };
+    Object.defineProperty(WebSocket2, "CONNECTING", {
+      enumerable: true,
+      value: readyStates.indexOf("CONNECTING")
+    });
+    Object.defineProperty(WebSocket2.prototype, "CONNECTING", {
+      enumerable: true,
+      value: readyStates.indexOf("CONNECTING")
+    });
+    Object.defineProperty(WebSocket2, "OPEN", {
+      enumerable: true,
+      value: readyStates.indexOf("OPEN")
+    });
+    Object.defineProperty(WebSocket2.prototype, "OPEN", {
+      enumerable: true,
+      value: readyStates.indexOf("OPEN")
+    });
+    Object.defineProperty(WebSocket2, "CLOSING", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSING")
+    });
+    Object.defineProperty(WebSocket2.prototype, "CLOSING", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSING")
+    });
+    Object.defineProperty(WebSocket2, "CLOSED", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSED")
+    });
+    Object.defineProperty(WebSocket2.prototype, "CLOSED", {
+      enumerable: true,
+      value: readyStates.indexOf("CLOSED")
+    });
+    [
+      "binaryType",
+      "bufferedAmount",
+      "extensions",
+      "isPaused",
+      "protocol",
+      "readyState",
+      "url"
+    ].forEach((property) => {
+      Object.defineProperty(WebSocket2.prototype, property, { enumerable: true });
+    });
+    ["open", "error", "close", "message"].forEach((method) => {
+      Object.defineProperty(WebSocket2.prototype, `on${method}`, {
+        enumerable: true,
+        get() {
+          for (const listener of this.listeners(method)) {
+            if (listener[kForOnEventAttribute])
+              return listener[kListener];
+          }
+          return null;
+        },
+        set(handler) {
+          for (const listener of this.listeners(method)) {
+            if (listener[kForOnEventAttribute]) {
+              this.removeListener(method, listener);
+              break;
+            }
+          }
+          if (typeof handler !== "function")
+            return;
+          this.addEventListener(method, handler, {
+            [kForOnEventAttribute]: true
+          });
+        }
+      });
+    });
+    WebSocket2.prototype.addEventListener = addEventListener;
+    WebSocket2.prototype.removeEventListener = removeEventListener;
+    module2.exports = WebSocket2;
+    function initAsClient(websocket, address, protocols, options) {
+      const opts = {
+        allowSynchronousEvents: true,
+        autoPong: true,
+        closeTimeout: CLOSE_TIMEOUT,
+        protocolVersion: protocolVersions[1],
+        maxPayload: 100 * 1024 * 1024,
+        skipUTF8Validation: false,
+        perMessageDeflate: true,
+        followRedirects: false,
+        maxRedirects: 10,
+        ...options,
+        socketPath: void 0,
+        hostname: void 0,
+        protocol: void 0,
+        timeout: void 0,
+        method: "GET",
+        host: void 0,
+        path: void 0,
+        port: void 0
+      };
+      websocket._autoPong = opts.autoPong;
+      websocket._closeTimeout = opts.closeTimeout;
+      if (!protocolVersions.includes(opts.protocolVersion)) {
+        throw new RangeError(
+          `Unsupported protocol version: ${opts.protocolVersion} (supported versions: ${protocolVersions.join(", ")})`
+        );
+      }
+      let parsedUrl;
+      if (address instanceof URL) {
+        parsedUrl = address;
+      } else {
+        try {
+          parsedUrl = new URL(address);
+        } catch (e) {
+          throw new SyntaxError(`Invalid URL: ${address}`);
+        }
+      }
+      if (parsedUrl.protocol === "http:") {
+        parsedUrl.protocol = "ws:";
+      } else if (parsedUrl.protocol === "https:") {
+        parsedUrl.protocol = "wss:";
+      }
+      websocket._url = parsedUrl.href;
+      const isSecure = parsedUrl.protocol === "wss:";
+      const isIpcUrl = parsedUrl.protocol === "ws+unix:";
+      let invalidUrlMessage;
+      if (parsedUrl.protocol !== "ws:" && !isSecure && !isIpcUrl) {
+        invalidUrlMessage = `The URL's protocol must be one of "ws:", "wss:", "http:", "https:", or "ws+unix:"`;
+      } else if (isIpcUrl && !parsedUrl.pathname) {
+        invalidUrlMessage = "The URL's pathname is empty";
+      } else if (parsedUrl.hash) {
+        invalidUrlMessage = "The URL contains a fragment identifier";
+      }
+      if (invalidUrlMessage) {
+        const err = new SyntaxError(invalidUrlMessage);
+        if (websocket._redirects === 0) {
+          throw err;
+        } else {
+          emitErrorAndClose(websocket, err);
+          return;
+        }
+      }
+      const defaultPort = isSecure ? 443 : 80;
+      const key = randomBytes(16).toString("base64");
+      const request = isSecure ? https.request : http2.request;
+      const protocolSet = /* @__PURE__ */ new Set();
+      let perMessageDeflate;
+      opts.createConnection = opts.createConnection || (isSecure ? tlsConnect : netConnect);
+      opts.defaultPort = opts.defaultPort || defaultPort;
+      opts.port = parsedUrl.port || defaultPort;
+      opts.host = parsedUrl.hostname.startsWith("[") ? parsedUrl.hostname.slice(1, -1) : parsedUrl.hostname;
+      opts.headers = {
+        ...opts.headers,
+        "Sec-WebSocket-Version": opts.protocolVersion,
+        "Sec-WebSocket-Key": key,
+        Connection: "Upgrade",
+        Upgrade: "websocket"
+      };
+      opts.path = parsedUrl.pathname + parsedUrl.search;
+      opts.timeout = opts.handshakeTimeout;
+      if (opts.perMessageDeflate) {
+        perMessageDeflate = new PerMessageDeflate(
+          opts.perMessageDeflate !== true ? opts.perMessageDeflate : {},
+          false,
+          opts.maxPayload
+        );
+        opts.headers["Sec-WebSocket-Extensions"] = format({
+          [PerMessageDeflate.extensionName]: perMessageDeflate.offer()
+        });
+      }
+      if (protocols.length) {
+        for (const protocol of protocols) {
+          if (typeof protocol !== "string" || !subprotocolRegex.test(protocol) || protocolSet.has(protocol)) {
+            throw new SyntaxError(
+              "An invalid or duplicated subprotocol was specified"
+            );
+          }
+          protocolSet.add(protocol);
+        }
+        opts.headers["Sec-WebSocket-Protocol"] = protocols.join(",");
+      }
+      if (opts.origin) {
+        if (opts.protocolVersion < 13) {
+          opts.headers["Sec-WebSocket-Origin"] = opts.origin;
+        } else {
+          opts.headers.Origin = opts.origin;
+        }
+      }
+      if (parsedUrl.username || parsedUrl.password) {
+        opts.auth = `${parsedUrl.username}:${parsedUrl.password}`;
+      }
+      if (isIpcUrl) {
+        const parts = opts.path.split(":");
+        opts.socketPath = parts[0];
+        opts.path = parts[1];
+      }
+      let req;
+      if (opts.followRedirects) {
+        if (websocket._redirects === 0) {
+          websocket._originalIpc = isIpcUrl;
+          websocket._originalSecure = isSecure;
+          websocket._originalHostOrSocketPath = isIpcUrl ? opts.socketPath : parsedUrl.host;
+          const headers = options && options.headers;
+          options = { ...options, headers: {} };
+          if (headers) {
+            for (const [key2, value] of Object.entries(headers)) {
+              options.headers[key2.toLowerCase()] = value;
+            }
+          }
+        } else if (websocket.listenerCount("redirect") === 0) {
+          const isSameHost = isIpcUrl ? websocket._originalIpc ? opts.socketPath === websocket._originalHostOrSocketPath : false : websocket._originalIpc ? false : parsedUrl.host === websocket._originalHostOrSocketPath;
+          if (!isSameHost || websocket._originalSecure && !isSecure) {
+            delete opts.headers.authorization;
+            delete opts.headers.cookie;
+            if (!isSameHost)
+              delete opts.headers.host;
+            opts.auth = void 0;
+          }
+        }
+        if (opts.auth && !options.headers.authorization) {
+          options.headers.authorization = "Basic " + Buffer.from(opts.auth).toString("base64");
+        }
+        req = websocket._req = request(opts);
+        if (websocket._redirects) {
+          websocket.emit("redirect", websocket.url, req);
+        }
+      } else {
+        req = websocket._req = request(opts);
+      }
+      if (opts.timeout) {
+        req.on("timeout", () => {
+          abortHandshake(websocket, req, "Opening handshake has timed out");
+        });
+      }
+      req.on("error", (err) => {
+        if (req === null || req[kAborted])
+          return;
+        req = websocket._req = null;
+        emitErrorAndClose(websocket, err);
+      });
+      req.on("response", (res) => {
+        const location = res.headers.location;
+        const statusCode = res.statusCode;
+        if (location && opts.followRedirects && statusCode >= 300 && statusCode < 400) {
+          if (++websocket._redirects > opts.maxRedirects) {
+            abortHandshake(websocket, req, "Maximum redirects exceeded");
+            return;
+          }
+          req.abort();
+          let addr;
+          try {
+            addr = new URL(location, address);
+          } catch (e) {
+            const err = new SyntaxError(`Invalid URL: ${location}`);
+            emitErrorAndClose(websocket, err);
+            return;
+          }
+          initAsClient(websocket, addr, protocols, options);
+        } else if (!websocket.emit("unexpected-response", req, res)) {
+          abortHandshake(
+            websocket,
+            req,
+            `Unexpected server response: ${res.statusCode}`
+          );
+        }
+      });
+      req.on("upgrade", (res, socket, head) => {
+        websocket.emit("upgrade", res);
+        if (websocket.readyState !== WebSocket2.CONNECTING)
+          return;
+        req = websocket._req = null;
+        const upgrade = res.headers.upgrade;
+        if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
+          abortHandshake(websocket, socket, "Invalid Upgrade header");
+          return;
+        }
+        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        if (res.headers["sec-websocket-accept"] !== digest) {
+          abortHandshake(websocket, socket, "Invalid Sec-WebSocket-Accept header");
+          return;
+        }
+        const serverProt = res.headers["sec-websocket-protocol"];
+        let protError;
+        if (serverProt !== void 0) {
+          if (!protocolSet.size) {
+            protError = "Server sent a subprotocol but none was requested";
+          } else if (!protocolSet.has(serverProt)) {
+            protError = "Server sent an invalid subprotocol";
+          }
+        } else if (protocolSet.size) {
+          protError = "Server sent no subprotocol";
+        }
+        if (protError) {
+          abortHandshake(websocket, socket, protError);
+          return;
+        }
+        if (serverProt)
+          websocket._protocol = serverProt;
+        const secWebSocketExtensions = res.headers["sec-websocket-extensions"];
+        if (secWebSocketExtensions !== void 0) {
+          if (!perMessageDeflate) {
+            const message = "Server sent a Sec-WebSocket-Extensions header but no extension was requested";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          let extensions;
+          try {
+            extensions = parse(secWebSocketExtensions);
+          } catch (err) {
+            const message = "Invalid Sec-WebSocket-Extensions header";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          const extensionNames = Object.keys(extensions);
+          if (extensionNames.length !== 1 || extensionNames[0] !== PerMessageDeflate.extensionName) {
+            const message = "Server indicated an extension that was not requested";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          try {
+            perMessageDeflate.accept(extensions[PerMessageDeflate.extensionName]);
+          } catch (err) {
+            const message = "Invalid Sec-WebSocket-Extensions header";
+            abortHandshake(websocket, socket, message);
+            return;
+          }
+          websocket._extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+        }
+        websocket.setSocket(socket, head, {
+          allowSynchronousEvents: opts.allowSynchronousEvents,
+          generateMask: opts.generateMask,
+          maxPayload: opts.maxPayload,
+          skipUTF8Validation: opts.skipUTF8Validation
+        });
+      });
+      if (opts.finishRequest) {
+        opts.finishRequest(req, websocket);
+      } else {
+        req.end();
+      }
+    }
+    function emitErrorAndClose(websocket, err) {
+      websocket._readyState = WebSocket2.CLOSING;
+      websocket._errorEmitted = true;
+      websocket.emit("error", err);
+      websocket.emitClose();
+    }
+    function netConnect(options) {
+      options.path = options.socketPath;
+      return net.connect(options);
+    }
+    function tlsConnect(options) {
+      options.path = void 0;
+      if (!options.servername && options.servername !== "") {
+        options.servername = net.isIP(options.host) ? "" : options.host;
+      }
+      return tls.connect(options);
+    }
+    function abortHandshake(websocket, stream, message) {
+      websocket._readyState = WebSocket2.CLOSING;
+      const err = new Error(message);
+      Error.captureStackTrace(err, abortHandshake);
+      if (stream.setHeader) {
+        stream[kAborted] = true;
+        stream.abort();
+        if (stream.socket && !stream.socket.destroyed) {
+          stream.socket.destroy();
+        }
+        process.nextTick(emitErrorAndClose, websocket, err);
+      } else {
+        stream.destroy(err);
+        stream.once("error", websocket.emit.bind(websocket, "error"));
+        stream.once("close", websocket.emitClose.bind(websocket));
+      }
+    }
+    function sendAfterClose(websocket, data, cb) {
+      if (data) {
+        const length = isBlob(data) ? data.size : toBuffer(data).length;
+        if (websocket._socket)
+          websocket._sender._bufferedBytes += length;
+        else
+          websocket._bufferedAmount += length;
+      }
+      if (cb) {
+        const err = new Error(
+          `WebSocket is not open: readyState ${websocket.readyState} (${readyStates[websocket.readyState]})`
+        );
+        process.nextTick(cb, err);
+      }
+    }
+    function receiverOnConclude(code, reason) {
+      const websocket = this[kWebSocket];
+      websocket._closeFrameReceived = true;
+      websocket._closeMessage = reason;
+      websocket._closeCode = code;
+      if (websocket._socket[kWebSocket] === void 0)
+        return;
+      websocket._socket.removeListener("data", socketOnData);
+      process.nextTick(resume, websocket._socket);
+      if (code === 1005)
+        websocket.close();
+      else
+        websocket.close(code, reason);
+    }
+    function receiverOnDrain() {
+      const websocket = this[kWebSocket];
+      if (!websocket.isPaused)
+        websocket._socket.resume();
+    }
+    function receiverOnError(err) {
+      const websocket = this[kWebSocket];
+      if (websocket._socket[kWebSocket] !== void 0) {
+        websocket._socket.removeListener("data", socketOnData);
+        process.nextTick(resume, websocket._socket);
+        websocket.close(err[kStatusCode]);
+      }
+      if (!websocket._errorEmitted) {
+        websocket._errorEmitted = true;
+        websocket.emit("error", err);
+      }
+    }
+    function receiverOnFinish() {
+      this[kWebSocket].emitClose();
+    }
+    function receiverOnMessage(data, isBinary) {
+      this[kWebSocket].emit("message", data, isBinary);
+    }
+    function receiverOnPing(data) {
+      const websocket = this[kWebSocket];
+      if (websocket._autoPong)
+        websocket.pong(data, !this._isServer, NOOP);
+      websocket.emit("ping", data);
+    }
+    function receiverOnPong(data) {
+      this[kWebSocket].emit("pong", data);
+    }
+    function resume(stream) {
+      stream.resume();
+    }
+    function senderOnError(err) {
+      const websocket = this[kWebSocket];
+      if (websocket.readyState === WebSocket2.CLOSED)
+        return;
+      if (websocket.readyState === WebSocket2.OPEN) {
+        websocket._readyState = WebSocket2.CLOSING;
+        setCloseTimer(websocket);
+      }
+      this._socket.end();
+      if (!websocket._errorEmitted) {
+        websocket._errorEmitted = true;
+        websocket.emit("error", err);
+      }
+    }
+    function setCloseTimer(websocket) {
+      websocket._closeTimer = setTimeout(
+        websocket._socket.destroy.bind(websocket._socket),
+        websocket._closeTimeout
+      );
+    }
+    function socketOnClose() {
+      const websocket = this[kWebSocket];
+      this.removeListener("close", socketOnClose);
+      this.removeListener("data", socketOnData);
+      this.removeListener("end", socketOnEnd);
+      websocket._readyState = WebSocket2.CLOSING;
+      if (!this._readableState.endEmitted && !websocket._closeFrameReceived && !websocket._receiver._writableState.errorEmitted && this._readableState.length !== 0) {
+        const chunk = this.read(this._readableState.length);
+        websocket._receiver.write(chunk);
+      }
+      websocket._receiver.end();
+      this[kWebSocket] = void 0;
+      clearTimeout(websocket._closeTimer);
+      if (websocket._receiver._writableState.finished || websocket._receiver._writableState.errorEmitted) {
+        websocket.emitClose();
+      } else {
+        websocket._receiver.on("error", receiverOnFinish);
+        websocket._receiver.on("finish", receiverOnFinish);
+      }
+    }
+    function socketOnData(chunk) {
+      if (!this[kWebSocket]._receiver.write(chunk)) {
+        this.pause();
+      }
+    }
+    function socketOnEnd() {
+      const websocket = this[kWebSocket];
+      websocket._readyState = WebSocket2.CLOSING;
+      websocket._receiver.end();
+      this.end();
+    }
+    function socketOnError() {
+      const websocket = this[kWebSocket];
+      this.removeListener("error", socketOnError);
+      this.on("error", NOOP);
+      if (websocket) {
+        websocket._readyState = WebSocket2.CLOSING;
+        this.destroy();
+      }
+    }
+  }
+});
+
+// node_modules/ws/lib/stream.js
+var require_stream = __commonJS({
+  "node_modules/ws/lib/stream.js"(exports2, module2) {
+    "use strict";
+    var WebSocket2 = require_websocket();
+    var { Duplex } = require("stream");
+    function emitClose(stream) {
+      stream.emit("close");
+    }
+    function duplexOnEnd() {
+      if (!this.destroyed && this._writableState.finished) {
+        this.destroy();
+      }
+    }
+    function duplexOnError(err) {
+      this.removeListener("error", duplexOnError);
+      this.destroy();
+      if (this.listenerCount("error") === 0) {
+        this.emit("error", err);
+      }
+    }
+    function createWebSocketStream2(ws, options) {
+      let terminateOnDestroy = true;
+      const duplex = new Duplex({
+        ...options,
+        autoDestroy: false,
+        emitClose: false,
+        objectMode: false,
+        writableObjectMode: false
+      });
+      ws.on("message", function message(msg, isBinary) {
+        const data = !isBinary && duplex._readableState.objectMode ? msg.toString() : msg;
+        if (!duplex.push(data))
+          ws.pause();
+      });
+      ws.once("error", function error(err) {
+        if (duplex.destroyed)
+          return;
+        terminateOnDestroy = false;
+        duplex.destroy(err);
+      });
+      ws.once("close", function close() {
+        if (duplex.destroyed)
+          return;
+        duplex.push(null);
+      });
+      duplex._destroy = function(err, callback) {
+        if (ws.readyState === ws.CLOSED) {
+          callback(err);
+          process.nextTick(emitClose, duplex);
+          return;
+        }
+        let called = false;
+        ws.once("error", function error(err2) {
+          called = true;
+          callback(err2);
+        });
+        ws.once("close", function close() {
+          if (!called)
+            callback(err);
+          process.nextTick(emitClose, duplex);
+        });
+        if (terminateOnDestroy)
+          ws.terminate();
+      };
+      duplex._final = function(callback) {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
+            duplex._final(callback);
+          });
+          return;
+        }
+        if (ws._socket === null)
+          return;
+        if (ws._socket._writableState.finished) {
+          callback();
+          if (duplex._readableState.endEmitted)
+            duplex.destroy();
+        } else {
+          ws._socket.once("finish", function finish() {
+            callback();
+          });
+          ws.close();
+        }
+      };
+      duplex._read = function() {
+        if (ws.isPaused)
+          ws.resume();
+      };
+      duplex._write = function(chunk, encoding, callback) {
+        if (ws.readyState === ws.CONNECTING) {
+          ws.once("open", function open() {
+            duplex._write(chunk, encoding, callback);
+          });
+          return;
+        }
+        ws.send(chunk, callback);
+      };
+      duplex.on("end", duplexOnEnd);
+      duplex.on("error", duplexOnError);
+      return duplex;
+    }
+    module2.exports = createWebSocketStream2;
+  }
+});
+
+// node_modules/ws/lib/subprotocol.js
+var require_subprotocol = __commonJS({
+  "node_modules/ws/lib/subprotocol.js"(exports2, module2) {
+    "use strict";
+    var { tokenChars } = require_validation();
+    function parse(header) {
+      const protocols = /* @__PURE__ */ new Set();
+      let start = -1;
+      let end = -1;
+      let i = 0;
+      for (i; i < header.length; i++) {
+        const code = header.charCodeAt(i);
+        if (end === -1 && tokenChars[code] === 1) {
+          if (start === -1)
+            start = i;
+        } else if (i !== 0 && (code === 32 || code === 9)) {
+          if (end === -1 && start !== -1)
+            end = i;
+        } else if (code === 44) {
+          if (start === -1) {
+            throw new SyntaxError(`Unexpected character at index ${i}`);
+          }
+          if (end === -1)
+            end = i;
+          const protocol2 = header.slice(start, end);
+          if (protocols.has(protocol2)) {
+            throw new SyntaxError(`The "${protocol2}" subprotocol is duplicated`);
+          }
+          protocols.add(protocol2);
+          start = end = -1;
+        } else {
+          throw new SyntaxError(`Unexpected character at index ${i}`);
+        }
+      }
+      if (start === -1 || end !== -1) {
+        throw new SyntaxError("Unexpected end of input");
+      }
+      const protocol = header.slice(start, i);
+      if (protocols.has(protocol)) {
+        throw new SyntaxError(`The "${protocol}" subprotocol is duplicated`);
+      }
+      protocols.add(protocol);
+      return protocols;
+    }
+    module2.exports = { parse };
+  }
+});
+
+// node_modules/ws/lib/websocket-server.js
+var require_websocket_server = __commonJS({
+  "node_modules/ws/lib/websocket-server.js"(exports2, module2) {
+    "use strict";
+    var EventEmitter = require("events");
+    var http2 = require("http");
+    var { Duplex } = require("stream");
+    var { createHash } = require("crypto");
+    var extension = require_extension();
+    var PerMessageDeflate = require_permessage_deflate();
+    var subprotocol = require_subprotocol();
+    var WebSocket2 = require_websocket();
+    var { CLOSE_TIMEOUT, GUID, kWebSocket } = require_constants();
+    var keyRegex = /^[+/0-9A-Za-z]{22}==$/;
+    var RUNNING = 0;
+    var CLOSING = 1;
+    var CLOSED = 2;
+    var WebSocketServer2 = class extends EventEmitter {
+      /**
+       * Create a `WebSocketServer` instance.
+       *
+       * @param {Object} options Configuration options
+       * @param {Boolean} [options.allowSynchronousEvents=true] Specifies whether
+       *     any of the `'message'`, `'ping'`, and `'pong'` events can be emitted
+       *     multiple times in the same tick
+       * @param {Boolean} [options.autoPong=true] Specifies whether or not to
+       *     automatically send a pong in response to a ping
+       * @param {Number} [options.backlog=511] The maximum length of the queue of
+       *     pending connections
+       * @param {Boolean} [options.clientTracking=true] Specifies whether or not to
+       *     track clients
+       * @param {Number} [options.closeTimeout=30000] Duration in milliseconds to
+       *     wait for the closing handshake to finish after `websocket.close()` is
+       *     called
+       * @param {Function} [options.handleProtocols] A hook to handle protocols
+       * @param {String} [options.host] The hostname where to bind the server
+       * @param {Number} [options.maxPayload=104857600] The maximum allowed message
+       *     size
+       * @param {Boolean} [options.noServer=false] Enable no server mode
+       * @param {String} [options.path] Accept only connections matching this path
+       * @param {(Boolean|Object)} [options.perMessageDeflate=false] Enable/disable
+       *     permessage-deflate
+       * @param {Number} [options.port] The port where to bind the server
+       * @param {(http.Server|https.Server)} [options.server] A pre-created HTTP/S
+       *     server to use
+       * @param {Boolean} [options.skipUTF8Validation=false] Specifies whether or
+       *     not to skip UTF-8 validation for text and close messages
+       * @param {Function} [options.verifyClient] A hook to reject connections
+       * @param {Function} [options.WebSocket=WebSocket] Specifies the `WebSocket`
+       *     class to use. It must be the `WebSocket` class or class that extends it
+       * @param {Function} [callback] A listener for the `listening` event
+       */
+      constructor(options, callback) {
+        super();
+        options = {
+          allowSynchronousEvents: true,
+          autoPong: true,
+          maxPayload: 100 * 1024 * 1024,
+          skipUTF8Validation: false,
+          perMessageDeflate: false,
+          handleProtocols: null,
+          clientTracking: true,
+          closeTimeout: CLOSE_TIMEOUT,
+          verifyClient: null,
+          noServer: false,
+          backlog: null,
+          // use default (511 as implemented in net.js)
+          server: null,
+          host: null,
+          path: null,
+          port: null,
+          WebSocket: WebSocket2,
+          ...options
+        };
+        if (options.port == null && !options.server && !options.noServer || options.port != null && (options.server || options.noServer) || options.server && options.noServer) {
+          throw new TypeError(
+            'One and only one of the "port", "server", or "noServer" options must be specified'
+          );
+        }
+        if (options.port != null) {
+          this._server = http2.createServer((req, res) => {
+            const body = http2.STATUS_CODES[426];
+            res.writeHead(426, {
+              "Content-Length": body.length,
+              "Content-Type": "text/plain"
+            });
+            res.end(body);
+          });
+          this._server.listen(
+            options.port,
+            options.host,
+            options.backlog,
+            callback
+          );
+        } else if (options.server) {
+          this._server = options.server;
+        }
+        if (this._server) {
+          const emitConnection = this.emit.bind(this, "connection");
+          this._removeListeners = addListeners(this._server, {
+            listening: this.emit.bind(this, "listening"),
+            error: this.emit.bind(this, "error"),
+            upgrade: (req, socket, head) => {
+              this.handleUpgrade(req, socket, head, emitConnection);
+            }
+          });
+        }
+        if (options.perMessageDeflate === true)
+          options.perMessageDeflate = {};
+        if (options.clientTracking) {
+          this.clients = /* @__PURE__ */ new Set();
+          this._shouldEmitClose = false;
+        }
+        this.options = options;
+        this._state = RUNNING;
+      }
+      /**
+       * Returns the bound address, the address family name, and port of the server
+       * as reported by the operating system if listening on an IP socket.
+       * If the server is listening on a pipe or UNIX domain socket, the name is
+       * returned as a string.
+       *
+       * @return {(Object|String|null)} The address of the server
+       * @public
+       */
+      address() {
+        if (this.options.noServer) {
+          throw new Error('The server is operating in "noServer" mode');
+        }
+        if (!this._server)
+          return null;
+        return this._server.address();
+      }
+      /**
+       * Stop the server from accepting new connections and emit the `'close'` event
+       * when all existing connections are closed.
+       *
+       * @param {Function} [cb] A one-time listener for the `'close'` event
+       * @public
+       */
+      close(cb) {
+        if (this._state === CLOSED) {
+          if (cb) {
+            this.once("close", () => {
+              cb(new Error("The server is not running"));
+            });
+          }
+          process.nextTick(emitClose, this);
+          return;
+        }
+        if (cb)
+          this.once("close", cb);
+        if (this._state === CLOSING)
+          return;
+        this._state = CLOSING;
+        if (this.options.noServer || this.options.server) {
+          if (this._server) {
+            this._removeListeners();
+            this._removeListeners = this._server = null;
+          }
+          if (this.clients) {
+            if (!this.clients.size) {
+              process.nextTick(emitClose, this);
+            } else {
+              this._shouldEmitClose = true;
+            }
+          } else {
+            process.nextTick(emitClose, this);
+          }
+        } else {
+          const server = this._server;
+          this._removeListeners();
+          this._removeListeners = this._server = null;
+          server.close(() => {
+            emitClose(this);
+          });
+        }
+      }
+      /**
+       * See if a given request should be handled by this server instance.
+       *
+       * @param {http.IncomingMessage} req Request object to inspect
+       * @return {Boolean} `true` if the request is valid, else `false`
+       * @public
+       */
+      shouldHandle(req) {
+        if (this.options.path) {
+          const index = req.url.indexOf("?");
+          const pathname = index !== -1 ? req.url.slice(0, index) : req.url;
+          if (pathname !== this.options.path)
+            return false;
+        }
+        return true;
+      }
+      /**
+       * Handle a HTTP Upgrade request.
+       *
+       * @param {http.IncomingMessage} req The request object
+       * @param {Duplex} socket The network socket between the server and client
+       * @param {Buffer} head The first packet of the upgraded stream
+       * @param {Function} cb Callback
+       * @public
+       */
+      handleUpgrade(req, socket, head, cb) {
+        socket.on("error", socketOnError);
+        const key = req.headers["sec-websocket-key"];
+        const upgrade = req.headers.upgrade;
+        const version = +req.headers["sec-websocket-version"];
+        if (req.method !== "GET") {
+          const message = "Invalid HTTP method";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 405, message);
+          return;
+        }
+        if (upgrade === void 0 || upgrade.toLowerCase() !== "websocket") {
+          const message = "Invalid Upgrade header";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+          return;
+        }
+        if (key === void 0 || !keyRegex.test(key)) {
+          const message = "Missing or invalid Sec-WebSocket-Key header";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+          return;
+        }
+        if (version !== 13 && version !== 8) {
+          const message = "Missing or invalid Sec-WebSocket-Version header";
+          abortHandshakeOrEmitwsClientError(this, req, socket, 400, message, {
+            "Sec-WebSocket-Version": "13, 8"
+          });
+          return;
+        }
+        if (!this.shouldHandle(req)) {
+          abortHandshake(socket, 400);
+          return;
+        }
+        const secWebSocketProtocol = req.headers["sec-websocket-protocol"];
+        let protocols = /* @__PURE__ */ new Set();
+        if (secWebSocketProtocol !== void 0) {
+          try {
+            protocols = subprotocol.parse(secWebSocketProtocol);
+          } catch (err) {
+            const message = "Invalid Sec-WebSocket-Protocol header";
+            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+            return;
+          }
+        }
+        const secWebSocketExtensions = req.headers["sec-websocket-extensions"];
+        const extensions = {};
+        if (this.options.perMessageDeflate && secWebSocketExtensions !== void 0) {
+          const perMessageDeflate = new PerMessageDeflate(
+            this.options.perMessageDeflate,
+            true,
+            this.options.maxPayload
+          );
+          try {
+            const offers = extension.parse(secWebSocketExtensions);
+            if (offers[PerMessageDeflate.extensionName]) {
+              perMessageDeflate.accept(offers[PerMessageDeflate.extensionName]);
+              extensions[PerMessageDeflate.extensionName] = perMessageDeflate;
+            }
+          } catch (err) {
+            const message = "Invalid or unacceptable Sec-WebSocket-Extensions header";
+            abortHandshakeOrEmitwsClientError(this, req, socket, 400, message);
+            return;
+          }
+        }
+        if (this.options.verifyClient) {
+          const info = {
+            origin: req.headers[`${version === 8 ? "sec-websocket-origin" : "origin"}`],
+            secure: !!(req.socket.authorized || req.socket.encrypted),
+            req
+          };
+          if (this.options.verifyClient.length === 2) {
+            this.options.verifyClient(info, (verified, code, message, headers) => {
+              if (!verified) {
+                return abortHandshake(socket, code || 401, message, headers);
+              }
+              this.completeUpgrade(
+                extensions,
+                key,
+                protocols,
+                req,
+                socket,
+                head,
+                cb
+              );
+            });
+            return;
+          }
+          if (!this.options.verifyClient(info))
+            return abortHandshake(socket, 401);
+        }
+        this.completeUpgrade(extensions, key, protocols, req, socket, head, cb);
+      }
+      /**
+       * Upgrade the connection to WebSocket.
+       *
+       * @param {Object} extensions The accepted extensions
+       * @param {String} key The value of the `Sec-WebSocket-Key` header
+       * @param {Set} protocols The subprotocols
+       * @param {http.IncomingMessage} req The request object
+       * @param {Duplex} socket The network socket between the server and client
+       * @param {Buffer} head The first packet of the upgraded stream
+       * @param {Function} cb Callback
+       * @throws {Error} If called more than once with the same socket
+       * @private
+       */
+      completeUpgrade(extensions, key, protocols, req, socket, head, cb) {
+        if (!socket.readable || !socket.writable)
+          return socket.destroy();
+        if (socket[kWebSocket]) {
+          throw new Error(
+            "server.handleUpgrade() was called more than once with the same socket, possibly due to a misconfiguration"
+          );
+        }
+        if (this._state > RUNNING)
+          return abortHandshake(socket, 503);
+        const digest = createHash("sha1").update(key + GUID).digest("base64");
+        const headers = [
+          "HTTP/1.1 101 Switching Protocols",
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Accept: ${digest}`
+        ];
+        const ws = new this.options.WebSocket(null, void 0, this.options);
+        if (protocols.size) {
+          const protocol = this.options.handleProtocols ? this.options.handleProtocols(protocols, req) : protocols.values().next().value;
+          if (protocol) {
+            headers.push(`Sec-WebSocket-Protocol: ${protocol}`);
+            ws._protocol = protocol;
+          }
+        }
+        if (extensions[PerMessageDeflate.extensionName]) {
+          const params = extensions[PerMessageDeflate.extensionName].params;
+          const value = extension.format({
+            [PerMessageDeflate.extensionName]: [params]
+          });
+          headers.push(`Sec-WebSocket-Extensions: ${value}`);
+          ws._extensions = extensions;
+        }
+        this.emit("headers", headers, req);
+        socket.write(headers.concat("\r\n").join("\r\n"));
+        socket.removeListener("error", socketOnError);
+        ws.setSocket(socket, head, {
+          allowSynchronousEvents: this.options.allowSynchronousEvents,
+          maxPayload: this.options.maxPayload,
+          skipUTF8Validation: this.options.skipUTF8Validation
+        });
+        if (this.clients) {
+          this.clients.add(ws);
+          ws.on("close", () => {
+            this.clients.delete(ws);
+            if (this._shouldEmitClose && !this.clients.size) {
+              process.nextTick(emitClose, this);
+            }
+          });
+        }
+        cb(ws, req);
+      }
+    };
+    module2.exports = WebSocketServer2;
+    function addListeners(server, map) {
+      for (const event of Object.keys(map))
+        server.on(event, map[event]);
+      return function removeListeners() {
+        for (const event of Object.keys(map)) {
+          server.removeListener(event, map[event]);
+        }
+      };
+    }
+    function emitClose(server) {
+      server._state = CLOSED;
+      server.emit("close");
+    }
+    function socketOnError() {
+      this.destroy();
+    }
+    function abortHandshake(socket, code, message, headers) {
+      message = message || http2.STATUS_CODES[code];
+      headers = {
+        Connection: "close",
+        "Content-Type": "text/html",
+        "Content-Length": Buffer.byteLength(message),
+        ...headers
+      };
+      socket.once("finish", socket.destroy);
+      socket.end(
+        `HTTP/1.1 ${code} ${http2.STATUS_CODES[code]}\r
+` + Object.keys(headers).map((h) => `${h}: ${headers[h]}`).join("\r\n") + "\r\n\r\n" + message
+      );
+    }
+    function abortHandshakeOrEmitwsClientError(server, req, socket, code, message, headers) {
+      if (server.listenerCount("wsClientError")) {
+        const err = new Error(message);
+        Error.captureStackTrace(err, abortHandshakeOrEmitwsClientError);
+        server.emit("wsClientError", err, socket, req);
+      } else {
+        abortHandshake(socket, code, message, headers);
+      }
+    }
+  }
+});
+
+// src/backend/extension.ts
+var extension_exports = {};
+__export(extension_exports, {
+  activate: () => activate,
+  deactivate: () => deactivate
+});
+module.exports = __toCommonJS(extension_exports);
+var vscode3 = __toESM(require("vscode"));
+
+// src/backend/MonitorServer.ts
+var vscode = __toESM(require("vscode"));
+
+// node_modules/ws/wrapper.mjs
+var import_stream = __toESM(require_stream(), 1);
+var import_receiver = __toESM(require_receiver(), 1);
+var import_sender = __toESM(require_sender(), 1);
+var import_websocket = __toESM(require_websocket(), 1);
+var import_websocket_server = __toESM(require_websocket_server(), 1);
+
+// src/backend/MonitorServer.ts
+var http = __toESM(require("http"));
+var fs = __toESM(require("fs"));
+var path = __toESM(require("path"));
+var os = __toESM(require("os"));
+var import_child_process = require("child_process");
+function isUncPath(p) {
+  return process.platform === "win32" && p.startsWith("\\\\");
+}
+function fsEnsureDir(dirPath) {
+  if (isUncPath(dirPath)) {
+    try {
+      (0, import_child_process.execSync)(`mkdir "${dirPath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 1e4 });
+    } catch {
+    }
+    return;
+  }
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+function fsPathExists(p) {
+  if (isUncPath(p)) {
+    try {
+      (0, import_child_process.execSync)(`dir /b "${p}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 5e3 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return fs.existsSync(p);
+}
+function fsReadText(filePath) {
+  if (isUncPath(filePath)) {
+    const tmp = path.join(os.tmpdir(), `bba-rd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.tmp`);
+    try {
+      (0, import_child_process.execSync)(`copy /Y "${filePath}" "${tmp}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 15e3 });
+      const data = fs.readFileSync(tmp, "utf-8");
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+      }
+      return data;
+    } catch (e) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+      }
+      throw e;
+    }
+  }
+  return fs.readFileSync(filePath, "utf-8");
+}
+function fsWriteText(filePath, content) {
+  if (isUncPath(filePath)) {
+    const tmp = path.join(os.tmpdir(), `bba-wr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.tmp`);
+    try {
+      fs.writeFileSync(tmp, content, "utf-8");
+      (0, import_child_process.execSync)(`copy /Y "${tmp}" "${filePath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 15e3 });
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+      }
+    } catch (e) {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+      }
+      throw e;
+    }
+    return;
+  }
+  fs.writeFileSync(filePath, content);
+}
+function fsDeleteFile(filePath) {
+  if (isUncPath(filePath)) {
+    try {
+      (0, import_child_process.execSync)(`del /F /Q "${filePath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 5e3 });
+    } catch {
+    }
+    return;
+  }
+  fs.unlinkSync(filePath);
+}
+function fsListDir(dirPath) {
+  if (isUncPath(dirPath)) {
+    try {
+      const buf = (0, import_child_process.execSync)(`dir /b "${dirPath}"`, { shell: "cmd.exe", timeout: 1e4 });
+      return buf.toString("utf-8").split(/\r?\n/).filter((f) => f.trim().length > 0);
+    } catch {
+      return [];
+    }
+  }
+  return fs.readdirSync(dirPath);
+}
+var ServerFallbackManager = class {
+  syncPath = "";
+  serverKey = "";
+  backlogPollInterval = null;
+  onBacklogResponse = null;
+  recentBacklogEntries = [];
+  onBacklogArrived = null;
+  configure(syncPath, serverKey, onBacklogResponse, onBacklogArrived) {
+    this.syncPath = syncPath;
+    this.serverKey = serverKey;
+    this.onBacklogResponse = onBacklogResponse;
+    this.onBacklogArrived = onBacklogArrived ?? null;
+  }
+  get isConfigured() {
+    return !!this.syncPath;
+  }
+  get syncPathValue() {
+    return this.syncPath;
+  }
+  // Scan <syncPath>/clients/<serverKey>/ for presence files written by clients on activation
+  scanRegisteredClients() {
+    if (!this.isConfigured) {
+      return [];
+    }
+    const clientsDir = path.join(this.syncPath, "clients", this.serverKey);
+    if (!fsPathExists(clientsDir)) {
+      return [];
+    }
+    const results = [];
+    try {
+      const files = fsListDir(clientsDir).filter((f) => f.endsWith(".json"));
+      for (const file of files) {
+        try {
+          const entry = JSON.parse(fsReadText(path.join(clientsDir, file)));
+          if (entry.clientKey && entry.clientLabel) {
+            results.push(entry);
+          }
+        } catch (e) {
+          console.warn(`[ServerFallback] Skipping malformed presence file: ${file}`);
+        }
+      }
+    } catch (e) {
+      console.warn("[ServerFallback] Error scanning clients dir:", e);
+    }
+    return results;
+  }
+  startPolling() {
+    this.stopPolling();
+    if (!this.isConfigured) {
+      return;
+    }
+    this.backlogPollInterval = setInterval(() => this.pollServerBacklog(), 15e3);
+    console.log(`[ServerFallback] Polling server-backlog from: ${this.syncPath}`);
+  }
+  stopPolling() {
+    if (this.backlogPollInterval) {
+      clearInterval(this.backlogPollInterval);
+      this.backlogPollInterval = null;
+    }
+  }
+  // Append a command to <syncPath>/queue/<username-hostname>.json
+  enqueueCommand(clientLabel, clientKey, command, payload) {
+    if (!this.isConfigured) {
+      throw new Error(`Sync path is not configured. Set serverMonitor.syncPath in settings.`);
+    }
+    try {
+      const queueDir = path.join(this.syncPath, "queue");
+      fsEnsureDir(queueDir);
+      const queueFile = path.join(queueDir, `${clientLabel}.json`);
+      let existing = [];
+      if (fsPathExists(queueFile)) {
+        try {
+          existing = JSON.parse(fsReadText(queueFile));
+        } catch {
+          existing = [];
+        }
+      }
+      const id = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const entry = { id, clientKey, clientLabel, command, payload, timestamp: Date.now(), serverKey: this.serverKey };
+      existing.push(entry);
+      fsWriteText(queueFile, JSON.stringify(existing, null, 2));
+      console.log(`[ServerFallback] Enqueued command "${command}" for ${clientLabel} \u2192 ${queueFile}`);
+      return id;
+    } catch (e) {
+      throw new Error(`Failed to write queue file at "${this.syncPath}\\queue\\${clientLabel}.json": ${e?.message || e}`);
+    }
+  }
+  // Read the queue file for a client WITHOUT deleting it (used for UI display on startup)
+  peekQueuedCommands(clientLabel) {
+    if (!this.isConfigured) {
+      return [];
+    }
+    const queueFile = path.join(this.syncPath, "queue", `${clientLabel}.json`);
+    if (!fsPathExists(queueFile)) {
+      return [];
+    }
+    try {
+      return JSON.parse(fsReadText(queueFile));
+    } catch {
+      return [];
+    }
+  }
+  // List all client labels that have a pending queue file
+  listQueuedClients() {
+    if (!this.isConfigured) {
+      return [];
+    }
+    const queueDir = path.join(this.syncPath, "queue");
+    if (!fsPathExists(queueDir)) {
+      return [];
+    }
+    return fsListDir(queueDir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
+  }
+  // Read and clear the queue file for a client (called when client comes online)
+  dequeueCommands(clientLabel) {
+    if (!this.isConfigured) {
+      return [];
+    }
+    const queueFile = path.join(this.syncPath, "queue", `${clientLabel}.json`);
+    if (!fsPathExists(queueFile)) {
+      return [];
+    }
+    try {
+      const cmds = JSON.parse(fsReadText(queueFile));
+      fsDeleteFile(queueFile);
+      console.log(`[ServerFallback] Dequeued ${cmds.length} command(s) for ${clientLabel}`);
+      return cmds;
+    } catch (e) {
+      console.error(`[ServerFallback] Error reading queue for ${clientLabel}:`, e);
+      return [];
+    }
+  }
+  // Poll <syncPath>/server-backlog/ for results written by clients that were offline
+  pollServerBacklog() {
+    if (!this.isConfigured || !this.onBacklogResponse) {
+      return;
+    }
+    try {
+      const backlogDir = path.join(this.syncPath, "server-backlog");
+      if (!fsPathExists(backlogDir)) {
+        return;
+      }
+      const files = fsListDir(backlogDir).filter((f) => f.endsWith(".json"));
+      const newEntries = [];
+      for (const file of files) {
+        const filePath = path.join(backlogDir, file);
+        try {
+          const entries = JSON.parse(fsReadText(filePath));
+          const clientLabel = file.replace(/\.json$/, "");
+          for (const entry of entries) {
+            console.log(`[ServerFallback] Got server-backlog entry from ${clientLabel}: ${entry.command}`);
+            newEntries.push({ ...entry, clientLabel });
+            this.onBacklogResponse(clientLabel, entry);
+          }
+          fsDeleteFile(filePath);
+        } catch (e) {
+          console.error(`[ServerFallback] Error reading backlog file ${file}:`, e);
+        }
+      }
+      if (newEntries.length > 0) {
+        this.recentBacklogEntries.push(...newEntries);
+        if (this.onBacklogArrived) {
+          this.onBacklogArrived(newEntries);
+        }
+      }
+    } catch (e) {
+      console.error("[ServerFallback] Backlog poll error:", e);
+    }
+  }
+  getRecentBacklog() {
+    return this.recentBacklogEntries;
+  }
+  clearRecentBacklog() {
+    this.recentBacklogEntries = [];
+  }
+};
+var MonitorServer = class {
+  wss = null;
+  server = null;
+  clients = /* @__PURE__ */ new Map();
+  provider = null;
+  context = null;
+  running = false;
+  port = 54321;
+  serverId = "default";
+  heartbeatCheckInterval = null;
+  syncScanInterval = null;
+  offlineTimeoutMs = 3e5;
+  // 5 minutes
+  fallback = new ServerFallbackManager();
+  clientReleasePath = "";
+  serverPresenceInterval = null;
+  version = "1.0.0";
+  configuredPort = 54321;
+  initialize(context) {
+    this.context = context;
+    this.version = context.extension?.packageJSON?.version || "1.0.0";
+    const config = vscode.workspace.getConfiguration("serverMonitor");
+    const persistedKey = context.globalState.get("serverKey");
+    this.serverId = persistedKey || config.get("serverId") || "default";
+    const persistedPort = context.globalState.get("serverPort");
+    this.configuredPort = persistedPort || config.get("port") || 54321;
+    this.port = this.configuredPort;
+    console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`);
+    this.loadPersistentClients();
+    this.setupFallback();
+    console.log(`[MonitorServer] Loaded ${this.clients.size} persistent clients`);
+  }
+  setupFallback() {
+    const config = vscode.workspace.getConfiguration("serverMonitor");
+    const syncPath = config.get("syncPath") || "";
+    this.clientReleasePath = config.get("clientReleasePath") || "";
+    if (syncPath) {
+      this.fallback.configure(syncPath, this.serverId, (clientLabel, entry) => {
+        this.handleBacklogResponse(clientLabel, entry);
+      }, (newEntries) => {
+        const count = newEntries.length;
+        vscode.window.showInformationMessage(
+          `${count} backlog result${count === 1 ? "" : "s"} received from offline clients`,
+          "View Backlog"
+        ).then((selection) => {
+          if (selection === "View Backlog") {
+            this.showBacklogWebview();
+          }
+        });
+      });
+      this.fallback.startPolling();
+      if (this.syncScanInterval) {
+        clearInterval(this.syncScanInterval);
+      }
+      this.syncScanInterval = setInterval(() => this.importSyncClients(), 6e4);
+    }
+  }
+  async changeServerKey(newKey) {
+    if (!newKey || !this.context) {
+      return;
+    }
+    this.removeServerPresenceFile();
+    this.serverId = newKey;
+    await this.context.globalState.update("serverKey", newKey);
+    if (this.running) {
+      this.writeServerPresenceFile("online");
+    }
+    console.log(`[MonitorServer] Server key changed to: ${newKey}`);
+    vscode.window.showInformationMessage(`Server key changed to: ${newKey}`);
+    this.triggerUpdate();
+  }
+  async changePort(newPort) {
+    if (!newPort || newPort < 1024 || newPort > 65535 || !this.context) {
+      return;
+    }
+    this.configuredPort = newPort;
+    await this.context.globalState.update("serverPort", newPort);
+    console.log(`[MonitorServer] Port changed to: ${newPort}`);
+    if (this.running) {
+      vscode.window.showInformationMessage(`Port changed to ${newPort} \u2014 restarting server...`);
+      this.stop();
+      await new Promise((r) => setTimeout(r, 500));
+      await this.start();
+    } else {
+      this.port = newPort;
+      this.triggerUpdate();
+      vscode.window.showInformationMessage(`Port set to ${newPort} \u2014 will be used on next server start`);
+    }
+  }
+  serverPresenceFilePath() {
+    const syncPath = this.fallback.syncPathValue;
+    return path.join(syncPath, "servers", `${this.serverId}-${os.hostname()}.json`);
+  }
+  writeServerPresenceFile(status) {
+    if (!this.fallback.isConfigured) {
+      return;
+    }
+    try {
+      const serversDir = path.join(this.fallback.syncPathValue, "servers");
+      fsEnsureDir(serversDir);
+      const filePath = this.serverPresenceFilePath();
+      let startedAt = Date.now();
+      if (status === "online" && fsPathExists(filePath)) {
+        try {
+          const existing = JSON.parse(fsReadText(filePath));
+          if (existing.status === "online") {
+            startedAt = existing.startedAt;
+          }
+        } catch {
+        }
+      }
+      const clientsSnapshot = Array.from(this.clients.values()).map((c) => ({
+        key: c.key,
+        label: c.clientLabel,
+        status: c.status
+      }));
+      const machine = os.hostname();
+      const entry = {
+        key: this.serverId,
+        machine,
+        port: this.port,
+        username: os.userInfo().username,
+        version: this.version,
+        clients: clientsSnapshot,
+        startedAt,
+        lastSeen: Date.now(),
+        status
+      };
+      fsWriteText(filePath, JSON.stringify(entry, null, 2));
+      console.log(`[MonitorServer] Server presence file written (${status}): ${filePath}`);
+    } catch (e) {
+      console.warn(`[MonitorServer] Could not write server presence file: ${e?.message || e}`);
+    }
+  }
+  removeServerPresenceFile() {
+    if (!this.fallback.isConfigured) {
+      return;
+    }
+    try {
+      const filePath = this.serverPresenceFilePath();
+      if (fsPathExists(filePath)) {
+        fsDeleteFile(filePath);
+        console.log(`[MonitorServer] Server presence file removed: ${filePath}`);
+      }
+    } catch (e) {
+      console.warn(`[MonitorServer] Could not remove server presence file: ${e?.message || e}`);
+    }
+  }
+  showBacklogWebview() {
+    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const entries = this.fallback.getRecentBacklog();
+    const grouped = {};
+    for (const e of entries) {
+      const label = e.clientLabel || "unknown";
+      if (!grouped[label]) {
+        grouped[label] = [];
+      }
+      grouped[label].push(e);
+    }
+    const panel = vscode.window.createWebviewPanel(
+      "serverBacklog",
+      `Server Backlog (${entries.length})`,
+      vscode.ViewColumn.Beside,
+      { enableScripts: true }
+    );
+    const sections = Object.entries(grouped).map(([label, ents]) => {
+      const rows = ents.map((e) => `
                 <tr>
-                    <td class="cell time">${e(new Date(c.timestamp||Date.now()).toLocaleString())}</td>
-                    <td class="cell cmd">${e(c.command||"")}</td>
-                    <td class="cell result"><pre>${e(JSON.stringify(c.payload??c.result??null,null,2))}</pre></td>
-                </tr>`).join("");return`<div class="section"><h3>${e(o)}</h3>
+                    <td class="cell time">${esc(new Date(e.timestamp || Date.now()).toLocaleString())}</td>
+                    <td class="cell cmd">${esc(e.command || "")}</td>
+                    <td class="cell result"><pre>${esc(JSON.stringify(e.payload ?? e.result ?? null, null, 2))}</pre></td>
+                </tr>`).join("");
+      return `<div class="section"><h3>${esc(label)}</h3>
                     <table><thead><tr><th>Time</th><th>Command</th><th>Result</th></tr></thead>
-                    <tbody>${l}</tbody></table></div>`}).join("");n.webview.html=`<!DOCTYPE html><html lang="en">
+                    <tbody>${rows}</tbody></table></div>`;
+    }).join("");
+    panel.webview.html = `<!DOCTYPE html><html lang="en">
 <head><meta charset="UTF-8"><style>
 body{background:#1e1e2e;color:#cdd6f4;font-family:ui-sans-serif,system-ui,sans-serif;padding:24px;margin:0}
 h2{margin:0 0 4px;font-size:1.1rem}h3{color:#a6e3a1;font-size:.85rem;border-bottom:1px solid #313244;padding-bottom:6px;margin:0 0 8px}
@@ -27,16 +4219,488 @@ button:hover{background:#45475a}
 </style></head>
 <body>
 <div class="toolbar">
-  <h2>Server Backlog \u2014 ${t.length} result${t.length===1?"":"s"}</h2>
+  <h2>Server Backlog \u2014 ${entries.length} result${entries.length === 1 ? "" : "s"}</h2>
   <button onclick="clearAll()">Clear All</button>
 </div>
-${t.length===0?'<p class="empty">No backlog entries.</p>':i}
+${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
 <script>const vscode=acquireVsCodeApi();function clearAll(){vscode.postMessage({action:'clearBacklog'});}</script>
-</body></html>`,n.webview.onDidReceiveMessage(o=>{o.action==="clearBacklog"&&(this.fallback.clearRecentBacklog(),n.dispose(),this.triggerUpdate())})}handleBacklogResponse(e,t){let r=Array.from(this.clients.values()).find(i=>i.clientLabel===e);if(!r){console.warn(`[MonitorServer] Backlog response for unknown clientLabel: ${e}`);return}let n=r.commandLog.find(i=>i.id===t.id);n?(n.status="executed",n.result=t.payload):r.commandLog.push({id:t.id,command:t.command,status:"executed",timestamp:t.timestamp,result:t.payload}),r.lastResponse={command:t.command,data:t.payload,timestamp:Date.now()},t.command==="checkBBrainy"&&t.payload&&(r.info||(r.info={}),r.info.bbrainyStatus=t.payload),t.command==="getUsageReport"&&t.payload?.success&&t.payload?.agents&&this.showUsageReportWebview(t.payload,r.info?.username,r.info?.hostname),console.log(`[MonitorServer] Processed server-backlog entry for ${e}: ${t.command}`),this.triggerUpdate()}importSyncClients(){let e=this.fallback.scanRegisteredClients();if(e.length===0)return;let t=0;for(let r of e){if(this.clients.has(r.clientKey)){let n=this.clients.get(r.clientKey);n.extensionStatus=r.status??"active";continue}this.clients.set(r.clientKey,{key:r.clientKey,ws:null,info:{username:r.username,hostname:r.hostname},lastSeen:r.lastSeen,status:"offline",clientLabel:r.clientLabel,commandLog:[],extensionStatus:r.status??"active"}),console.log(`[MonitorServer] Discovered new client via presence file: ${r.clientLabel} (${r.clientKey})`),t++}t>0&&(this.savePersistentClients(),this.triggerUpdate(),console.log(`[MonitorServer] Imported ${t} new client(s) from sync folder`))}loadPersistentClients(){if(!this.context||!this.serverId){console.warn(`[MonitorServer] Cannot load persistent clients: context=${!!this.context}, serverId=${this.serverId}`);return}let t=(this.context.globalState.get("persistentAssets")||{})[this.serverId]||[];console.log(`[MonitorServer] Loading ${t.length} persistent clients for serverId: ${this.serverId}`),t.forEach(r=>{this.clients.set(r.key,{...r,ws:null,status:"offline",clientLabel:r.clientLabel||`${r.info?.username||"unknown"}-${r.info?.hostname||"unknown"}`,commandLog:r.commandLog||[]})})}deduplicateClients(){let e=new Set,t=[];for(let[r,n]of this.clients){let i=`${n.info?.hostname}:${n.info?.username}`;e.has(i)?(t.push(r),console.log(`[MonitorServer] Found duplicate client: ${r} (${n.info?.username}@${n.info?.hostname})`)):e.add(i)}t.forEach(r=>this.clients.delete(r)),t.length>0&&(this.savePersistentClients(),console.log(`[MonitorServer] Removed ${t.length} duplicate client entries`),d.window.showInformationMessage(`Cleaned up ${t.length} duplicate clients on startup`))}savePersistentClients(){if(!this.context||!this.serverId){console.error(`[MonitorServer] Cannot save persistent clients: context=${!!this.context}, serverId=${this.serverId}`);return}let e=this.context.globalState.get("persistentAssets")||{};e[this.serverId]=Array.from(this.clients.values()).map(t=>({key:t.key,info:t.info,lastSeen:t.lastSeen,clientLabel:t.clientLabel,commandLog:t.commandLog.slice(-100)})),this.context.globalState.update("persistentAssets",e),console.debug(`[MonitorServer] Saved ${this.clients.size} clients to persistent storage`)}setProvider(e){this.provider=e}async start(){if(this.running){console.warn("[MonitorServer] Already running, ignoring start request");return}if(!this.context){console.error("[MonitorServer] Cannot start: context not initialized"),d.window.showErrorMessage("Server not initialized with Context");return}let e=d.workspace.getConfiguration("serverMonitor"),r=this.context.globalState.get("serverPort")||this.configuredPort||e.get("port")||54321,n=this.context.globalState.get("serverKey");this.serverId=n||e.get("serverId")||"default",console.log(`[MonitorServer] Starting server with serverId: ${this.serverId} on port: ${r}`),this.clients.clear(),this.loadPersistentClients(),this.deduplicateClients(),this.setupFallback(),this.importSyncClients(),this.server=dr.createServer(),this.wss=new Je.default({server:this.server}),this.wss.on("connection",i=>{console.log("[MonitorServer] New WebSocket connection established"),i.on("message",o=>this.handleClientMessage(i,o)),i.on("close",()=>this.handleClientDisconnect(i)),i.on("error",o=>{console.error(`[MonitorServer] WebSocket error: ${o.message}`)})}),this.listenWithRetry(r)}startHeartbeatCheck(){this.heartbeatCheckInterval&&clearInterval(this.heartbeatCheckInterval),this.heartbeatCheckInterval=setInterval(()=>{this.checkHeartbeats()},3e4)}listenWithRetry(e,t=0){if(t>=10){console.error(`[MonitorServer] Failed to start: Ports ${e-10} to ${e-1} are busy`),d.window.showErrorMessage(`Failed to start server: Ports ${e-10} to ${e-1} are busy.`);return}this.server?.listen(e,()=>{this.port=e,this.running=!0,this.startHeartbeatCheck(),this.writeServerPresenceFile("online"),this.serverPresenceInterval&&clearInterval(this.serverPresenceInterval),this.serverPresenceInterval=setInterval(()=>this.writeServerPresenceFile("online"),3e4),this.triggerUpdate(),console.log(`[MonitorServer] \u2705 Server started successfully on port ${this.port}`),d.window.showInformationMessage(`Monitor server [${this.serverId}] running on port ${this.port}`)}).on("error",r=>{r.code==="EADDRINUSE"?(console.log(`[MonitorServer] Port ${e} is in use, trying ${e+1}...`),this.listenWithRetry(e+1,t+1)):(console.error(`[MonitorServer] Server error: ${r.message}`),d.window.showErrorMessage(`Server error: ${r.message}`))})}stop(){if(!this.running){console.warn("[MonitorServer] Not running, ignoring stop request");return}console.log("[MonitorServer] Stopping server"),this.heartbeatCheckInterval&&(clearInterval(this.heartbeatCheckInterval),this.heartbeatCheckInterval=null),this.syncScanInterval&&(clearInterval(this.syncScanInterval),this.syncScanInterval=null),this.writeServerPresenceFile("offline"),this.serverPresenceInterval&&(clearInterval(this.serverPresenceInterval),this.serverPresenceInterval=null),this.fallback.stopPolling(),this.wss?.close(),this.server?.close(),this.wss=null,this.server=null,this.running=!1;for(let e of this.clients.values())e.status="offline",e.ws=null;this.triggerUpdate(),console.log("[MonitorServer] \u2705 Server stopped"),d.window.showInformationMessage("Monitor server stopped")}handleClientMessage(e,t){let r;try{r=JSON.parse(t.toString())}catch(i){console.error("[MonitorServer] Failed to parse message:",i);return}console.log(`[MonitorServer] Received message type: ${r.type} from client: ${r.clientKey}`);let n=r.serverKey||r.serverId;if(r.type==="register"){if(n!==this.serverId){console.warn(`[MonitorServer] Client ${r.clientKey} attempted to register with wrong Server Key: ${n} (expected: ${this.serverId})`),e.send(JSON.stringify({type:"error",message:"Invalid Server Key"}));return}this.registerClient(e,r)}else r.type==="response"?(console.log(`[MonitorServer] Response from ${r.clientKey} for command: ${r.command}`),this.handleResponse(r)):r.type==="heartbeat"?(console.debug(`[MonitorServer] Heartbeat from ${r.clientKey}`),this.updateHeartbeat(r.clientKey)):console.warn(`[MonitorServer] Unknown message type: ${r.type} from ${r.clientKey}`);this.triggerUpdate()}registerClient(e,t){let r=`${t.payload?.username||"unknown"}-${t.payload?.hostname||"unknown"}`,n=this.clients.get(t.clientKey);if(n)console.log(`[MonitorServer] Updating existing client: ${t.clientKey} (${r})`),n.ws=e,n.status="online",n.info=t.payload,n.lastSeen=Date.now(),n.clientLabel=r;else{console.log(`[MonitorServer] Registering new client: ${t.clientKey} (${r})`);let i={key:t.clientKey,ws:e,info:t.payload,lastSeen:Date.now(),status:"online",clientLabel:r,commandLog:[]};this.clients.set(t.clientKey,i)}this.savePersistentClients(),console.log(`[MonitorServer] Total clients: ${this.clients.size}`),d.window.showInformationMessage(`Client registered: ${t.payload?.username}@${t.payload?.hostname}`),this.dequeueAndSend(t.clientKey,r)}async dequeueAndSend(e,t){if(!this.fallback.isConfigured)return;let r=this.fallback.dequeueCommands(t);if(r.length===0)return;let n=this.clients.get(e);if(n){console.log(`[MonitorServer] Delivering ${r.length} queued command(s) to ${t} via WebSocket`),d.window.showInformationMessage(`Client ${t} is back online \u2014 delivering ${r.length} queued command(s)`);for(let i of r){let o=n.commandLog.find(a=>a.id===i.id);o&&(o.status="sent"),n.ws?.readyState===1&&(n.ws.send(JSON.stringify({command:i.command,payload:i.payload,timestamp:Date.now(),queuedCommandId:i.id})),console.log(`[MonitorServer] Delivered queued command "${i.command}" (${i.id}) to ${t}`)),await new Promise(a=>setTimeout(a,100))}this.triggerUpdate()}}handleClientDisconnect(e){let t=null;for(let[r,n]of this.clients)if(n.ws===e){n.status="offline",n.ws=null,t=r,console.log(`[MonitorServer] Client disconnected: ${r} (${n.info?.username}@${n.info?.hostname})`),this.triggerUpdate();break}t||console.warn("[MonitorServer] Disconnect event received but no matching client found")}updateHeartbeat(e){let t=this.clients.get(e);t?(t.lastSeen=Date.now(),t.status="online",this.savePersistentClients(),console.debug(`[MonitorServer] Updated heartbeat for ${e}`)):console.warn(`[MonitorServer] Heartbeat from unknown client: ${e}`)}checkHeartbeats(){let e=Date.now(),t=[];for(let[r,n]of this.clients)n.status==="online"&&e-n.lastSeen>9e4?(n.status="offline",n.ws=null,console.log(`[MonitorServer] Client marked offline due to missed heartbeat: ${r} (${n.info?.username}@${n.info?.hostname})`)):n.status==="offline"&&e-n.lastSeen>this.offlineTimeoutMs&&(t.push(r),console.log(`[MonitorServer] Removing stale offline client: ${r} (${n.info?.username}@${n.info?.hostname})`));t.forEach(r=>this.clients.delete(r)),t.length>0&&(console.log(`[MonitorServer] Removed ${t.length} stale client(s)`),this.savePersistentClients(),this.triggerUpdate())}handleResponse(e){let t=this.clients.get(e.clientKey);if(t){if(t.lastResponse={command:e.command||"unknown",data:e.payload,timestamp:Date.now()},console.log(`[MonitorServer] Stored response for ${e.clientKey} (${e.command})`,{success:e.payload?.success,totalEntries:e.payload?.totalEntries,agents:e.payload?.agents?.length}),e.queuedCommandId){let r=t.commandLog.find(n=>n.id===e.queuedCommandId);r&&(r.status="executed",r.result=e.payload)}e.command==="checkBBrainy"&&e.payload&&(t.info||(t.info={}),t.info.bbrainyStatus=e.payload),e.command==="getUsageReport"&&e.payload?.success&&e.payload?.agents&&this.showUsageReportWebview(e.payload,t.info?.username,t.info?.hostname),this.triggerUpdate()}else console.warn(`[MonitorServer] Response from unknown client: ${e.clientKey}`)}showUsageReportWebview(e,t="Unknown",r="Unknown"){try{let n={labels:e.agents.map(o=>o.name),datasets:[{label:"Usage Count",data:e.agents.map(o=>o.count),backgroundColor:["rgba(59, 130, 246, 0.2)","rgba(16, 185, 129, 0.2)","rgba(168, 85, 247, 0.2)","rgba(251, 146, 60, 0.2)","rgba(244, 63, 94, 0.2)","rgba(236, 72, 153, 0.2)"],borderColor:["rgba(59, 130, 246, 1)","rgba(16, 185, 129, 1)","rgba(168, 85, 247, 1)","rgba(251, 146, 60, 1)","rgba(244, 63, 94, 1)","rgba(236, 72, 153, 1)"],borderWidth:2}]},i=d.window.createWebviewPanel("bbrainyUsageReport",`BBrainy Usage: ${e.timeframe}`,d.ViewColumn.One,{enableScripts:!0,retainContextWhenHidden:!0});i.webview.html=this.getUsageReportHtml(e,n,t,r),console.log(`[MonitorServer] Opened usage report webview for ${t}@${r}: ${e.timeframe}`)}catch(n){console.error("[MonitorServer] Failed to show usage report:",n),d.window.showErrorMessage(`Failed to show usage report: ${n}`)}}getUsageReportHtml(e,t,r,n){let i=e.agents.map(o=>`<tr>
-                <td><span class="agent-name">${o.name}</span></td>
-                <td class="count">${o.count}</td>
-                <td class="percentage">${o.percentage}%</td>
-            </tr>`).join("");return`
+</body></html>`;
+    panel.webview.onDidReceiveMessage((msg) => {
+      if (msg.action === "clearBacklog") {
+        this.fallback.clearRecentBacklog();
+        panel.dispose();
+        this.triggerUpdate();
+      }
+    });
+  }
+  // Called when server-backlog file is found — client wrote results while server was offline
+  handleBacklogResponse(clientLabel, entry) {
+    const client = Array.from(this.clients.values()).find((c) => c.clientLabel === clientLabel);
+    if (!client) {
+      console.warn(`[MonitorServer] Backlog response for unknown clientLabel: ${clientLabel}`);
+      return;
+    }
+    const logEntry = client.commandLog.find((e) => e.id === entry.id);
+    if (logEntry) {
+      logEntry.status = "executed";
+      logEntry.result = entry.payload;
+    } else {
+      client.commandLog.push({ id: entry.id, command: entry.command, status: "executed", timestamp: entry.timestamp, result: entry.payload });
+    }
+    if (entry.command === "checkBBrainy" && entry.payload) {
+      if (!client.info) {
+        client.info = {};
+      }
+      client.info.bbrainyStatus = entry.payload;
+    }
+    console.log(`[MonitorServer] Processed server-backlog entry for ${clientLabel}: ${entry.command}`);
+    this.triggerUpdate();
+  }
+  // Discover clients that wrote a presence file to the sync folder but have never connected via WS.
+  // Adds them as offline stubs and persists them to globalState so they survive restarts.
+  importSyncClients() {
+    const entries = this.fallback.scanRegisteredClients();
+    if (entries.length === 0) {
+      return;
+    }
+    const INACTIVE_GRACE_MS = 2 * 60 * 60 * 1e3;
+    const effectiveExtStatus = (entry) => {
+      if (entry.status === "inactive" && Date.now() - entry.lastSeen < INACTIVE_GRACE_MS) {
+        return "active";
+      }
+      return entry.status ?? "active";
+    };
+    let added = 0;
+    for (const entry of entries) {
+      if (this.clients.has(entry.clientKey)) {
+        const existing = this.clients.get(entry.clientKey);
+        if (existing.status !== "online") {
+          existing.extensionStatus = effectiveExtStatus(entry);
+        }
+        continue;
+      }
+      this.clients.set(entry.clientKey, {
+        key: entry.clientKey,
+        ws: null,
+        info: { username: entry.username, hostname: entry.hostname },
+        lastSeen: entry.lastSeen,
+        status: "offline",
+        clientLabel: entry.clientLabel,
+        commandLog: [],
+        extensionStatus: effectiveExtStatus(entry)
+      });
+      console.log(`[MonitorServer] Discovered new client via presence file: ${entry.clientLabel} (${entry.clientKey})`);
+      added++;
+    }
+    if (added > 0) {
+      this.savePersistentClients();
+      this.triggerUpdate();
+      console.log(`[MonitorServer] Imported ${added} new client(s) from sync folder`);
+    }
+  }
+  loadPersistentClients() {
+    if (!this.context || !this.serverId) {
+      console.warn(`[MonitorServer] Cannot load persistent clients: context=${!!this.context}, serverId=${this.serverId}`);
+      return;
+    }
+    const allSaved = this.context.globalState.get("persistentAssets") || {};
+    const savedClients = allSaved[this.serverId] || [];
+    console.log(`[MonitorServer] Loading ${savedClients.length} persistent clients for serverId: ${this.serverId}`);
+    savedClients.forEach((c) => {
+      this.clients.set(c.key, {
+        ...c,
+        ws: null,
+        status: "offline",
+        clientLabel: c.clientLabel || `${c.info?.username || "unknown"}-${c.info?.hostname || "unknown"}`,
+        commandLog: []
+        // reset log on each new VS Code session
+      });
+    });
+  }
+  // After loadPersistentClients + setupFallback: scan disk queue files and show pending commands in the log
+  restorePendingQueueToLog() {
+    if (!this.fallback.isConfigured) {
+      return;
+    }
+    const pendingLabels = this.fallback.listQueuedClients();
+    for (const label of pendingLabels) {
+      const client = Array.from(this.clients.values()).find((c) => c.clientLabel === label);
+      if (!client) {
+        continue;
+      }
+      const cmds = this.fallback.peekQueuedCommands(label);
+      for (const cmd of cmds) {
+        if (!client.commandLog.find((e) => e.id === cmd.id)) {
+          client.commandLog.push({ id: cmd.id, command: cmd.command, status: "queued", timestamp: cmd.timestamp });
+        }
+      }
+      console.log(`[MonitorServer] Restored ${cmds.length} pending queued command(s) to log for ${label}`);
+    }
+  }
+  deduplicateClients() {
+    const seenKeys = /* @__PURE__ */ new Set();
+    const keysToRemove = [];
+    for (const [key, client] of this.clients) {
+      const uniqueId = `${client.info?.hostname}:${client.info?.username}`;
+      if (seenKeys.has(uniqueId)) {
+        keysToRemove.push(key);
+        console.log(`[MonitorServer] Found duplicate client: ${key} (${client.info?.username}@${client.info?.hostname})`);
+      } else {
+        seenKeys.add(uniqueId);
+      }
+    }
+    keysToRemove.forEach((key) => this.clients.delete(key));
+    if (keysToRemove.length > 0) {
+      this.savePersistentClients();
+      console.log(`[MonitorServer] Removed ${keysToRemove.length} duplicate client entries`);
+      vscode.window.showInformationMessage(`Cleaned up ${keysToRemove.length} duplicate clients on startup`);
+    }
+  }
+  savePersistentClients() {
+    if (!this.context || !this.serverId) {
+      console.error(`[MonitorServer] Cannot save persistent clients: context=${!!this.context}, serverId=${this.serverId}`);
+      return;
+    }
+    const allSaved = this.context.globalState.get("persistentAssets") || {};
+    allSaved[this.serverId] = Array.from(this.clients.values()).map((c) => ({
+      key: c.key,
+      info: c.info,
+      lastSeen: c.lastSeen,
+      clientLabel: c.clientLabel,
+      commandLog: c.commandLog.slice(-100)
+      // keep last 100 log entries
+    }));
+    this.context.globalState.update("persistentAssets", allSaved);
+    console.debug(`[MonitorServer] Saved ${this.clients.size} clients to persistent storage`);
+  }
+  setProvider(provider) {
+    this.provider = provider;
+  }
+  async start() {
+    if (this.running) {
+      console.warn(`[MonitorServer] Already running, ignoring start request`);
+      return;
+    }
+    if (!this.context) {
+      console.error(`[MonitorServer] Cannot start: context not initialized`);
+      vscode.window.showErrorMessage("Server not initialized with Context");
+      return;
+    }
+    const config = vscode.workspace.getConfiguration("serverMonitor");
+    const persistedPort = this.context.globalState.get("serverPort");
+    const basePort = persistedPort || this.configuredPort || config.get("port") || 54321;
+    const persistedKey = this.context.globalState.get("serverKey");
+    this.serverId = persistedKey || config.get("serverId") || "default";
+    console.log(`[MonitorServer] Starting server with serverId: ${this.serverId} on port: ${basePort}`);
+    this.clients.clear();
+    this.loadPersistentClients();
+    this.deduplicateClients();
+    this.setupFallback();
+    this.importSyncClients();
+    this.restorePendingQueueToLog();
+    this.server = http.createServer();
+    this.wss = new import_websocket_server.default({ server: this.server });
+    this.wss.on("connection", (ws) => {
+      console.log(`[MonitorServer] New WebSocket connection established`);
+      ws.on("message", (data) => this.handleClientMessage(ws, data));
+      ws.on("close", () => this.handleClientDisconnect(ws));
+      ws.on("error", (err) => {
+        console.error(`[MonitorServer] WebSocket error: ${err.message}`);
+      });
+    });
+    this.listenWithRetry(basePort);
+  }
+  startHeartbeatCheck() {
+    if (this.heartbeatCheckInterval) {
+      clearInterval(this.heartbeatCheckInterval);
+    }
+    this.heartbeatCheckInterval = setInterval(() => {
+      this.checkHeartbeats();
+    }, 3e4);
+  }
+  listenWithRetry(port, attempt = 0) {
+    if (attempt >= 10) {
+      console.error(`[MonitorServer] Failed to start: Ports ${port - 10} to ${port - 1} are busy`);
+      vscode.window.showErrorMessage(`Failed to start server: Ports ${port - 10} to ${port - 1} are busy.`);
+      return;
+    }
+    this.server?.listen(port, () => {
+      this.port = port;
+      this.running = true;
+      this.startHeartbeatCheck();
+      this.writeServerPresenceFile("online");
+      if (this.serverPresenceInterval) {
+        clearInterval(this.serverPresenceInterval);
+      }
+      this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile("online"), 3e4);
+      this.triggerUpdate();
+      console.log(`[MonitorServer] \u2705 Server started successfully on port ${this.port}`);
+      vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running on port ${this.port}`);
+    }).on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        console.log(`[MonitorServer] Port ${port} is in use, trying ${port + 1}...`);
+        this.listenWithRetry(port + 1, attempt + 1);
+      } else {
+        console.error(`[MonitorServer] Server error: ${err.message}`);
+        vscode.window.showErrorMessage(`Server error: ${err.message}`);
+      }
+    });
+  }
+  stop() {
+    if (!this.running) {
+      console.warn(`[MonitorServer] Not running, ignoring stop request`);
+      return;
+    }
+    console.log(`[MonitorServer] Stopping server`);
+    if (this.heartbeatCheckInterval) {
+      clearInterval(this.heartbeatCheckInterval);
+      this.heartbeatCheckInterval = null;
+    }
+    if (this.syncScanInterval) {
+      clearInterval(this.syncScanInterval);
+      this.syncScanInterval = null;
+    }
+    this.writeServerPresenceFile("offline");
+    if (this.serverPresenceInterval) {
+      clearInterval(this.serverPresenceInterval);
+      this.serverPresenceInterval = null;
+    }
+    this.fallback.stopPolling();
+    this.wss?.close();
+    this.server?.close();
+    this.wss = null;
+    this.server = null;
+    this.running = false;
+    for (const client of this.clients.values()) {
+      client.status = "offline";
+      client.ws = null;
+    }
+    this.triggerUpdate();
+    console.log(`[MonitorServer] \u2705 Server stopped`);
+    vscode.window.showInformationMessage("Monitor server stopped");
+  }
+  handleClientMessage(ws, data) {
+    let message;
+    try {
+      message = JSON.parse(data.toString());
+    } catch (e) {
+      console.error(`[MonitorServer] Failed to parse message:`, e);
+      return;
+    }
+    console.log(`[MonitorServer] Received message type: ${message.type} from client: ${message.clientKey}`);
+    const clientServerKey = message.serverKey || message.serverId;
+    if (message.type === "register") {
+      if (clientServerKey !== this.serverId) {
+        console.warn(`[MonitorServer] Client ${message.clientKey} attempted to register with wrong Server Key: ${clientServerKey} (expected: ${this.serverId})`);
+        ws.send(JSON.stringify({ type: "error", message: "Invalid Server Key" }));
+        return;
+      }
+      this.registerClient(ws, message);
+    } else if (message.type === "response") {
+      console.log(`[MonitorServer] Response from ${message.clientKey} for command: ${message.command}`);
+      this.handleResponse(message);
+    } else if (message.type === "heartbeat") {
+      console.debug(`[MonitorServer] Heartbeat from ${message.clientKey}`);
+      this.updateHeartbeat(message.clientKey);
+    } else {
+      console.warn(`[MonitorServer] Unknown message type: ${message.type} from ${message.clientKey}`);
+    }
+    this.triggerUpdate();
+  }
+  registerClient(ws, message) {
+    const clientLabel = `${message.payload?.username || "unknown"}-${message.payload?.hostname || "unknown"}`;
+    const existingClient = this.clients.get(message.clientKey);
+    if (existingClient) {
+      console.log(`[MonitorServer] Updating existing client: ${message.clientKey} (${clientLabel})`);
+      existingClient.ws = ws;
+      existingClient.status = "online";
+      existingClient.info = message.payload;
+      existingClient.lastSeen = Date.now();
+      existingClient.clientLabel = clientLabel;
+      existingClient.extensionStatus = "active";
+    } else {
+      console.log(`[MonitorServer] Registering new client: ${message.clientKey} (${clientLabel})`);
+      const client = {
+        key: message.clientKey,
+        ws,
+        info: message.payload,
+        lastSeen: Date.now(),
+        status: "online",
+        clientLabel,
+        commandLog: []
+      };
+      this.clients.set(message.clientKey, client);
+    }
+    this.savePersistentClients();
+    console.log(`[MonitorServer] Total clients: ${this.clients.size}`);
+    vscode.window.showInformationMessage(`Client registered: ${message.payload?.username}@${message.payload?.hostname}`);
+    this.dequeueAndSend(message.clientKey, clientLabel);
+  }
+  async dequeueAndSend(clientKey, clientLabel) {
+    if (!this.fallback.isConfigured) {
+      return;
+    }
+    const pending = this.fallback.dequeueCommands(clientLabel);
+    if (pending.length === 0) {
+      return;
+    }
+    const client = this.clients.get(clientKey);
+    if (!client) {
+      return;
+    }
+    console.log(`[MonitorServer] Delivering ${pending.length} queued command(s) to ${clientLabel} via WebSocket`);
+    vscode.window.showInformationMessage(`Client ${clientLabel} is back online \u2014 delivering ${pending.length} queued command(s)`);
+    for (const cmd of pending) {
+      const logEntry = client.commandLog.find((e) => e.id === cmd.id);
+      if (logEntry) {
+        logEntry.status = "sent";
+      }
+      if (client.ws?.readyState === 1) {
+        client.ws.send(JSON.stringify({ command: cmd.command, payload: cmd.payload, timestamp: Date.now(), queuedCommandId: cmd.id }));
+        console.log(`[MonitorServer] Delivered queued command "${cmd.command}" (${cmd.id}) to ${clientLabel}`);
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    this.triggerUpdate();
+  }
+  handleClientDisconnect(ws) {
+    let disconnectedClient = null;
+    for (const [key, client] of this.clients) {
+      if (client.ws === ws) {
+        client.status = "offline";
+        client.ws = null;
+        disconnectedClient = key;
+        console.log(`[MonitorServer] Client disconnected: ${key} (${client.info?.username}@${client.info?.hostname})`);
+        this.triggerUpdate();
+        break;
+      }
+    }
+    if (!disconnectedClient) {
+      console.warn(`[MonitorServer] Disconnect event received but no matching client found`);
+    }
+  }
+  updateHeartbeat(clientKey) {
+    const client = this.clients.get(clientKey);
+    if (client) {
+      client.lastSeen = Date.now();
+      client.status = "online";
+      this.savePersistentClients();
+      console.debug(`[MonitorServer] Updated heartbeat for ${clientKey}`);
+    } else {
+      console.warn(`[MonitorServer] Heartbeat from unknown client: ${clientKey}`);
+    }
+  }
+  checkHeartbeats() {
+    const now = Date.now();
+    const keysToRemove = [];
+    for (const [key, client] of this.clients) {
+      if (client.status === "online" && now - client.lastSeen > 9e4) {
+        client.status = "offline";
+        client.ws = null;
+        console.log(`[MonitorServer] Client marked offline due to missed heartbeat: ${key} (${client.info?.username}@${client.info?.hostname})`);
+      } else if (client.status === "offline" && now - client.lastSeen > this.offlineTimeoutMs) {
+        keysToRemove.push(key);
+        console.log(`[MonitorServer] Removing stale offline client: ${key} (${client.info?.username}@${client.info?.hostname})`);
+      }
+    }
+    keysToRemove.forEach((key) => this.clients.delete(key));
+    if (keysToRemove.length > 0) {
+      console.log(`[MonitorServer] Removed ${keysToRemove.length} stale client(s)`);
+      this.savePersistentClients();
+      this.triggerUpdate();
+    }
+  }
+  handleResponse(message) {
+    const client = this.clients.get(message.clientKey);
+    if (client) {
+      client.lastResponse = {
+        command: message.command || "unknown",
+        data: message.payload,
+        timestamp: Date.now()
+      };
+      console.log(`[MonitorServer] Stored response for ${message.clientKey} (${message.command})`, {
+        success: message.payload?.success,
+        totalEntries: message.payload?.totalEntries,
+        agents: message.payload?.agents?.length
+      });
+      if (message.queuedCommandId) {
+        const logEntry = client.commandLog.find((e) => e.id === message.queuedCommandId);
+        if (logEntry) {
+          logEntry.status = "executed";
+          logEntry.result = message.payload;
+        }
+      }
+      if (message.command === "checkBBrainy" && message.payload) {
+        if (!client.info) {
+          client.info = {};
+        }
+        client.info.bbrainyStatus = message.payload;
+      }
+      if (message.command === "getUsageReport" && message.payload?.success && message.payload?.agents) {
+        this.showUsageReportWebview(message.payload, client.info?.username, client.info?.hostname);
+      }
+      this.triggerUpdate();
+    } else {
+      console.warn(`[MonitorServer] Response from unknown client: ${message.clientKey}`);
+    }
+  }
+  showUsageReportWebview(usageData, username = "Unknown", hostname2 = "Unknown") {
+    try {
+      const chartData = {
+        labels: usageData.agents.map((a) => a.name),
+        datasets: [{
+          label: "Usage Count",
+          data: usageData.agents.map((a) => a.count),
+          backgroundColor: [
+            "rgba(59, 130, 246, 0.2)",
+            // blue
+            "rgba(16, 185, 129, 0.2)",
+            // emerald
+            "rgba(168, 85, 247, 0.2)",
+            // purple
+            "rgba(251, 146, 60, 0.2)",
+            // orange
+            "rgba(244, 63, 94, 0.2)",
+            // red
+            "rgba(236, 72, 153, 0.2)"
+            // pink
+          ],
+          borderColor: [
+            "rgba(59, 130, 246, 1)",
+            "rgba(16, 185, 129, 1)",
+            "rgba(168, 85, 247, 1)",
+            "rgba(251, 146, 60, 1)",
+            "rgba(244, 63, 94, 1)",
+            "rgba(236, 72, 153, 1)"
+          ],
+          borderWidth: 2
+        }]
+      };
+      const panel = vscode.window.createWebviewPanel(
+        "bbrainyUsageReport",
+        `BBrainy Usage: ${usageData.timeframe}`,
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true
+        }
+      );
+      panel.webview.html = this.getUsageReportHtml(usageData, chartData, username, hostname2);
+      console.log(`[MonitorServer] Opened usage report webview for ${username}@${hostname2}: ${usageData.timeframe}`);
+    } catch (error) {
+      console.error(`[MonitorServer] Failed to show usage report:`, error);
+      vscode.window.showErrorMessage(`Failed to show usage report: ${error}`);
+    }
+  }
+  getUsageReportHtml(usageData, chartData, username, hostname2) {
+    const agentRows = usageData.agents.map(
+      (agent) => `<tr>
+                <td><span class="agent-name">${agent.name}</span></td>
+                <td class="count">${agent.count}</td>
+                <td class="percentage">${agent.percentage}%</td>
+            </tr>`
+    ).join("");
+    return `
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -207,22 +4871,22 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                 <div class="container">
                     <div class="header">
                         <h1>\u{1F3AF} BBrainy Usage Report</h1>
-                        <div class="client-info">\u{1F4CD} Client: <strong>${r}@${n}</strong></div>
-                        <div class="timeframe">${e.timeframe}</div>
+                        <div class="client-info">\u{1F4CD} Client: <strong>${username}@${hostname2}</strong></div>
+                        <div class="timeframe">${usageData.timeframe}</div>
                     </div>
                     
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">Total Usages</div>
-                            <div class="stat-value">${e.totalEntries}</div>
+                            <div class="stat-value">${usageData.totalEntries}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Unique Agents</div>
-                            <div class="stat-value">${e.agents.length}</div>
+                            <div class="stat-value">${usageData.agents.length}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Most Used</div>
-                            <div class="stat-value" style="font-size: 18px; color: #34d399;">${e.agents[0]?.name||"N/A"}</div>
+                            <div class="stat-value" style="font-size: 18px; color: #34d399;">${usageData.agents[0]?.name || "N/A"}</div>
                         </div>
                     </div>
                     
@@ -236,7 +4900,7 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                                 </tr>
                             </thead>
                             <tbody>
-                                ${i}
+                                ${agentRows}
                             </tbody>
                         </table>
                     </div>
@@ -247,7 +4911,7 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                     </div>
                     
                     <div class="footer">
-                        <p>Generated: ${new Date(e.timestamp).toLocaleString()}</p>
+                        <p>Generated: ${new Date(usageData.timestamp).toLocaleString()}</p>
                     </div>
                 </div>
                 
@@ -255,7 +4919,7 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                     const ctx = document.getElementById('usageChart').getContext('2d');
                     const chart = new Chart(ctx, {
                         type: 'bar',
-                        data: ${JSON.stringify(t)},
+                        data: ${JSON.stringify(chartData)},
                         options: {
                             indexAxis: 'y',
                             responsive: true,
@@ -301,18 +4965,146 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                 </script>
             </body>
             </html>
-        `}async sendCommand(e,t,r){let n=this.clients.get(e);if(!n){console.warn(`[MonitorServer] Attempted to send command to non-existent client: ${e}`),d.window.showErrorMessage("Client not found");return}if(n.status==="offline"){let o={id:`${Date.now()}-${Math.random().toString(36).substring(2,8)}`,command:t,status:"queued",timestamp:Date.now()};if(n.commandLog.push(o),this.triggerUpdate(),!this.fallback.isConfigured){o.status="error";let l=`Client offline \u2014 sync path not configured. Current value: "${d.workspace.getConfiguration("serverMonitor").get("syncPath")||"(empty)"}". Set serverMonitor.syncPath in settings.`;console.error(`[MonitorServer] ${l}`),d.window.showErrorMessage(l),this.savePersistentClients(),this.triggerUpdate();return}try{let a=this.fallback.enqueueCommand(n.clientLabel,e,t,r);o.id=a,this.savePersistentClients(),this.triggerUpdate();let l=`Queued "${t}" for ${n.clientLabel} \u2192 ${this.fallback.syncPathValue}\\queue\\${n.clientLabel}.json`;console.log(`[MonitorServer] ${l}`),d.window.showInformationMessage(l)}catch(a){o.status="error";let l=`Failed to queue command: ${a?.message||a}`;console.error(`[MonitorServer] ${l}`),d.window.showErrorMessage(l),this.savePersistentClients(),this.triggerUpdate()}return}console.log(`[MonitorServer] Sending command to ${e}: ${t}`,r||"{}"),n.ws.send(JSON.stringify({command:t,payload:r,timestamp:Date.now()})),console.log(`[MonitorServer] Command sent successfully to ${e}`)}async queryAllClients(e){console.log(`[MonitorServer] Broadcasting command to all ${this.clients.size} clients: ${e}`);let t=Array.from(this.clients.keys()).map(r=>this.sendCommand(r,e));await Promise.all(t),console.log(`[MonitorServer] Broadcast complete for command: ${e}`)}getAllClientsInfo(){return Array.from(this.clients.values()).map(e=>({key:e.key,username:e.info?.username||"Unknown",hostname:e.info?.hostname||"Unknown",workspace:e.info?.workspace,bbrainyActive:e.info?.bbrainyStatus?.active||!1,status:e.status,lastSeen:e.lastSeen,onlineStatus:e.status==="online"?"online":"offline"}))}showAllAssetsWebview(){let e=this.getAllClientsInfo(),t=d.window.createWebviewPanel("allAssets","All Assets",d.ViewColumn.One,{enableScripts:!0});t.webview.html=this.getAllAssetsHtml(e)}getAllAssetsHtml(e){let t=e.map(r=>`
+        `;
+  }
+  async sendCommand(clientKey, command, payload) {
+    const client = this.clients.get(clientKey);
+    if (!client) {
+      console.warn(`[MonitorServer] Attempted to send command to non-existent client: ${clientKey}`);
+      vscode.window.showErrorMessage("Client not found");
+      return;
+    }
+    if (client.status === "offline") {
+      const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const logEntry = { id: tempId, command, status: "queued", timestamp: Date.now() };
+      client.commandLog.push(logEntry);
+      this.triggerUpdate();
+      if (!this.fallback.isConfigured) {
+        logEntry.status = "error";
+        const syncPath = vscode.workspace.getConfiguration("serverMonitor").get("syncPath") || "(empty)";
+        const msg = `Client offline \u2014 sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
+        console.error(`[MonitorServer] ${msg}`);
+        vscode.window.showErrorMessage(msg);
+        this.savePersistentClients();
+        this.triggerUpdate();
+        return;
+      }
+      try {
+        const cmdId = this.fallback.enqueueCommand(client.clientLabel, clientKey, command, payload);
+        logEntry.id = cmdId;
+        this.savePersistentClients();
+        this.triggerUpdate();
+        const msg = `Queued "${command}" for ${client.clientLabel} \u2192 ${this.fallback.syncPathValue}\\queue\\${client.clientLabel}.json`;
+        console.log(`[MonitorServer] ${msg}`);
+        vscode.window.showInformationMessage(msg);
+      } catch (e) {
+        logEntry.status = "error";
+        const msg = `Failed to queue command: ${e?.message || e}`;
+        console.error(`[MonitorServer] ${msg}`);
+        vscode.window.showErrorMessage(msg);
+        this.savePersistentClients();
+        this.triggerUpdate();
+      }
+      return;
+    }
+    console.log(`[MonitorServer] Sending command to ${clientKey}: ${command}`, payload || "{}");
+    client.ws.send(JSON.stringify({
+      command,
+      payload,
+      timestamp: Date.now()
+    }));
+    console.log(`[MonitorServer] Command sent successfully to ${clientKey}`);
+  }
+  // Remove all queued (not-yet-delivered) commands for a client from disk and log
+  clearClientQueue(clientKey) {
+    const client = this.clients.get(clientKey);
+    if (!client) {
+      return;
+    }
+    if (this.fallback.isConfigured) {
+      try {
+        const queueFile = path.join(this.fallback.syncPathValue, "queue", `${client.clientLabel}.json`);
+        if (fsPathExists(queueFile)) {
+          fsDeleteFile(queueFile);
+        }
+      } catch (e) {
+        console.error("[MonitorServer] clearClientQueue: failed to delete queue file", e);
+      }
+    }
+    client.commandLog = client.commandLog.filter((e) => e.status !== "queued" && e.status !== "sent");
+    this.savePersistentClients();
+    this.triggerUpdate();
+  }
+  // Cancel a single queued command entry (removes from disk queue + log)
+  cancelQueueEntry(clientKey, entryId) {
+    const client = this.clients.get(clientKey);
+    if (!client) {
+      return;
+    }
+    if (this.fallback.isConfigured) {
+      try {
+        const queueFile = path.join(this.fallback.syncPathValue, "queue", `${client.clientLabel}.json`);
+        if (fsPathExists(queueFile)) {
+          const cmds = JSON.parse(fsReadText(queueFile));
+          const remaining = cmds.filter((c) => c.id !== entryId);
+          if (remaining.length === 0) {
+            fsDeleteFile(queueFile);
+          } else {
+            fsWriteText(queueFile, JSON.stringify(remaining, null, 2));
+          }
+        }
+      } catch (e) {
+        console.error("[MonitorServer] cancelQueueEntry: failed to update queue file", e);
+      }
+    }
+    client.commandLog = client.commandLog.filter((e) => e.id !== entryId);
+    this.savePersistentClients();
+    this.triggerUpdate();
+  }
+  async queryAllClients(command) {
+    console.log(`[MonitorServer] Broadcasting command to all ${this.clients.size} clients: ${command}`);
+    const promises = Array.from(this.clients.keys()).map(
+      (key) => this.sendCommand(key, command)
+    );
+    await Promise.all(promises);
+    console.log(`[MonitorServer] Broadcast complete for command: ${command}`);
+  }
+  getAllClientsInfo() {
+    return Array.from(this.clients.values()).map((c) => ({
+      key: c.key,
+      username: c.info?.username || "Unknown",
+      hostname: c.info?.hostname || "Unknown",
+      workspace: c.info?.workspace,
+      bbrainyActive: c.info?.bbrainyStatus?.active || false,
+      status: c.status,
+      lastSeen: c.lastSeen,
+      onlineStatus: c.status === "online" ? "online" : "offline"
+    }));
+  }
+  showAllAssetsWebview() {
+    const assets = this.getAllClientsInfo();
+    const panel = vscode.window.createWebviewPanel(
+      "allAssets",
+      "All Assets",
+      vscode.ViewColumn.One,
+      { enableScripts: true }
+    );
+    panel.webview.html = this.getAllAssetsHtml(assets);
+  }
+  getAllAssetsHtml(assets) {
+    const assetRows = assets.map((asset) => `
             <tr>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${r.username}</td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${r.hostname}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.username}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.hostname}</td>
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">
-                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${r.onlineStatus==="online"?"#34d399":"#ef4444"};"></span>
-                    ${r.onlineStatus}
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${asset.onlineStatus === "online" ? "#34d399" : "#ef4444"};"></span>
+                    ${asset.onlineStatus}
                 </td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${r.bbrainyActive?"\u2713 Active":"\u2717 Inactive"}</td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">${r.lastSeen?new Date(r.lastSeen).toLocaleString():"Never"}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? "\u2713 Active" : "\u2717 Inactive"}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">${asset.lastSeen ? new Date(asset.lastSeen).toLocaleString() : "Never"}</td>
             </tr>
-        `).join("");return`
+        `).join("");
+    return `
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -394,19 +5186,19 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
             </head>
             <body>
                 <div class="container">
-                    <h1>\u{1F4CA} All Assets (${e.length} Total)</h1>
+                    <h1>\u{1F4CA} All Assets (${assets.length} Total)</h1>
                     
                     <div class="summary-stats">
                         <div class="stat-card">
-                            <div class="stat-value">${e.length}</div>
+                            <div class="stat-value">${assets.length}</div>
                             <div class="stat-label">Total Clients</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${e.filter(r=>r.onlineStatus==="online").length}</div>
+                            <div class="stat-value">${assets.filter((a) => a.onlineStatus === "online").length}</div>
                             <div class="stat-label">Online</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${e.filter(r=>r.bbrainyActive).length}</div>
+                            <div class="stat-value">${assets.filter((a) => a.bbrainyActive).length}</div>
                             <div class="stat-label">BBrainy Active</div>
                         </div>
                     </div>
@@ -423,14 +5215,45 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                                 </tr>
                             </thead>
                             <tbody>
-                                ${t}
+                                ${assetRows}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </body>
             </html>
-        `}showBBrainyStatusWebview(e){let t=this.clients.get(e);if(!t){d.window.showErrorMessage(`Client ${e} not found`);return}let r=t.info?.bbrainyStatus||{installed:!1,active:!1,version:"Unknown",lastUsedTime:"Never",totalUsage:0},n=d.window.createWebviewPanel(`bbrainyStatus-${e}`,`BBrainy Status - ${t.info?.username}@${t.info?.hostname}`,d.ViewColumn.One,{enableScripts:!0});n.webview.html=this.getBBrainyStatusHtml(r,t.info?.username,t.info?.hostname)}getBBrainyStatusHtml(e,t="Unknown",r="Unknown"){let n=e.installed,i=e.active,o=e.version||"Unknown",a=e.lastUsedTime||"Never",l=e.totalUsage||0,c=n?i?"#34d399":"#f59e0b":"#ef4444";return`
+        `;
+  }
+  showBBrainyStatusWebview(clientKey) {
+    const client = this.clients.get(clientKey);
+    if (!client) {
+      vscode.window.showErrorMessage(`Client ${clientKey} not found`);
+      return;
+    }
+    const status = client.info?.bbrainyStatus || {
+      installed: false,
+      active: false,
+      version: "Unknown",
+      lastUsedTime: "Never",
+      totalUsage: 0
+    };
+    const panel = vscode.window.createWebviewPanel(
+      `bbrainyStatus-${clientKey}`,
+      `BBrainy Status - ${client.info?.username}@${client.info?.hostname}`,
+      vscode.ViewColumn.One,
+      { enableScripts: true }
+    );
+    panel.webview.html = this.getBBrainyStatusHtml(status, client.info?.username, client.info?.hostname);
+  }
+  getBBrainyStatusHtml(status, username = "Unknown", hostname2 = "Unknown") {
+    const installed = status.installed;
+    const active = status.active;
+    const version = status.version || "Unknown";
+    const lastUsed = status.lastUsedTime || "Never";
+    const totalUsage = status.totalUsage || 0;
+    const statusColor = installed ? active ? "#34d399" : "#f59e0b" : "#ef4444";
+    const statusText = installed ? active ? "Active" : "Installed - Inactive" : "Not Installed";
+    return `
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -472,9 +5295,9 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                         border-radius: 12px;
                         font-size: 14px;
                         font-weight: 600;
-                        background-color: ${c}20;
-                        color: ${c};
-                        border: 2px solid ${c};
+                        background-color: ${statusColor}20;
+                        color: ${statusColor};
+                        border: 2px solid ${statusColor};
                         margin-top: 15px;
                     }
                     .stats-grid {
@@ -536,41 +5359,346 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
             <body>
                 <div class="container">
                     <div class="client-info">
-                        <div class="client-name">\u{1F4F1} ${t}@${r}</div>
+                        <div class="client-name">\u{1F4F1} ${username}@${hostname2}</div>
                         <h1>\u{1F9E0} BBrainy Status</h1>
-                        <div class="status-badge">${n?i?"Active":"Installed - Inactive":"Not Installed"}</div>
+                        <div class="status-badge">${statusText}</div>
                     </div>
 
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">Installed</div>
-                            <div class="stat-value">${n?"\u2713 Yes":"\u2717 No"}</div>
+                            <div class="stat-value">${installed ? "\u2713 Yes" : "\u2717 No"}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Version</div>
-                            <div class="stat-value">${o}</div>
+                            <div class="stat-value">${version}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Last Used</div>
-                            <div class="stat-value" style="font-size: 14px;">${a}</div>
+                            <div class="stat-value" style="font-size: 14px;">${lastUsed}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Total Usage</div>
-                            <div class="stat-value">${l}</div>
+                            <div class="stat-value">${totalUsage}</div>
                         </div>
                     </div>
 
                     <div class="contribution-graph">
                         <div class="graph-title">\u{1F4CA} Contribution Graph (Last 12 Weeks)</div>
                         <div class="graph-grid">
-                            ${Array.from({length:84},(f,p)=>`<div class="graph-cell" style="background: rgba(52, 211, 153, ${Math.random()*.5});"></div>`).join("")}
+                            ${Array.from({ length: 84 }, (_, i) => `<div class="graph-cell" style="background: rgba(52, 211, 153, ${Math.random() * 0.5});"></div>`).join("")}
                         </div>
                         <div style="font-size: 12px; color: #94a3b8; text-align: center;">Green intensity shows activity level</div>
                     </div>
                 </div>
             </body>
             </html>
-        `}async generateReport(){if(!d.workspace.workspaceFolders){d.window.showErrorMessage("Open a workspace to generate reports");return}let e={timestamp:new Date().toISOString(),totalClients:this.clients.size,onlineClients:Array.from(this.clients.values()).filter(r=>r.status==="online").length,clients:Array.from(this.clients.values()).map(r=>({key:r.key,hostname:r.info.hostname,username:r.info.username,workspace:r.info.workspace,bbrainyActive:r.info.bbrainyStatus?.active,lastSeen:new Date(r.lastSeen).toISOString(),status:r.status}))},t=d.Uri.joinPath(d.workspace.workspaceFolders[0].uri,"reports",`report-${Date.now()}.json`);try{await d.workspace.fs.writeFile(t,Buffer.from(JSON.stringify(e,null,2))),d.window.showInformationMessage(`Report saved to ${t.fsPath}`)}catch(r){d.window.showErrorMessage(`Failed to save report: ${r}`)}}async publishClientUpdate(){let e=await d.window.showOpenDialog({canSelectFiles:!0,canSelectFolders:!1,canSelectMany:!1,filters:{"VSIX Extension":["vsix"]},title:"Select client extension VSIX to publish"});if(e&&e[0])if(this.clientReleasePath)try{let t=S.join(this.clientReleasePath,"updates");v.mkdirSync(t,{recursive:!0});let r=S.basename(e[0].fsPath);v.copyFileSync(e[0].fsPath,S.join(t,r)),console.log(`[MonitorServer] Published update to client-release: ${r}`),d.window.showInformationMessage(`Update published: ${r}`)}catch(t){console.error("[MonitorServer] Failed to publish update:",t),d.window.showErrorMessage(`Failed to publish update: ${t}`)}else d.window.showErrorMessage("Client release path not configured. Set serverMonitor.clientReleasePath first.")}triggerUpdate(){if(this.provider){let e=Array.from(this.clients.values());this.provider.update({serverStatus:{running:this.running,port:this.port,serverId:this.serverId},total:this.clients.size,online:e.filter(t=>t.status==="online").length,offline:e.filter(t=>t.status==="offline").length,clients:e.map(t=>({key:t.key,hostname:t.info?.hostname,username:t.info?.username,workspace:t.info?.workspace,bbrainyActive:t.info?.bbrainyStatus?.active,lastSeen:t.lastSeen,status:t.status,clientLabel:t.clientLabel,commandLog:t.commandLog.slice(-50),lastResponse:t.lastResponse,extensionStatus:t.extensionStatus})),backlogCount:this.fallback.getRecentBacklog().length,configuredPort:this.configuredPort})}}};var Ze=k(require("vscode")),he=class{constructor(e,t){this._extensionUri=e;this.server=t}static viewType="monitor-dashboard";_view;resolveWebviewView(e,t,r){this._view=e,e.webview.options={enableScripts:!0,localResourceRoots:[Ze.Uri.joinPath(this._extensionUri,"dist")]},e.webview.html=this._getWebviewContent(e.webview),e.webview.onDidReceiveMessage(async n=>{switch(n.action){case"sendCommand":await this.server.sendCommand(n.clientKey,n.command,n.payload);break;case"queryAll":await this.server.queryAllClients(n.command);break;case"showAssets":this.server.showAllAssetsWebview();break;case"showBBrainyStatus":this.server.showBBrainyStatusWebview(n.clientKey);break;case"generateReport":await this.server.generateReport();break;case"startServer":await this.server.start();break;case"stopServer":this.server.stop();break;case"changeServerKey":await this.server.changeServerKey(n.newKey);break;case"viewBacklog":this.server.showBacklogWebview();break;case"changePort":{let i=parseInt(n.newPort,10);isNaN(i)||await this.server.changePort(i);break}}}),this.server.triggerUpdate()}update(e){this._view&&this._view.webview.postMessage({type:"update",data:e})}_getWebviewContent(e){let t=zs(),r=o=>e.asWebviewUri(Ze.Uri.joinPath(this._extensionUri,"dist",o)),n=r("monitor-webview.js"),i=r("monitor-webview.css");return`
+        `;
+  }
+  async generateReport() {
+    const now = /* @__PURE__ */ new Date();
+    const clientsArray = Array.from(this.clients.values());
+    const online = clientsArray.filter((c) => c.status === "online");
+    const offline = clientsArray.filter((c) => c.status === "offline");
+    const inactive = clientsArray.filter((c) => c.extensionStatus === "inactive");
+    const reportData = {
+      generatedAt: now.toISOString(),
+      server: {
+        key: this.serverId,
+        machine: os.hostname(),
+        username: os.userInfo().username,
+        version: this.version,
+        port: this.port,
+        configuredPort: this.configuredPort,
+        running: this.running,
+        syncPath: this.fallback.syncPathValue || "(not configured)"
+      },
+      summary: {
+        total: clientsArray.length,
+        online: online.length,
+        offline: offline.length,
+        inactive: inactive.length
+      },
+      clients: clientsArray.map((c) => ({
+        label: c.clientLabel,
+        key: c.key,
+        username: c.info?.username,
+        hostname: c.info?.hostname,
+        workspace: c.info?.workspace,
+        version: c.info?.version,
+        bbrainyActive: c.info?.bbrainyStatus?.active,
+        status: c.status,
+        extensionStatus: c.extensionStatus ?? "active",
+        lastSeen: new Date(c.lastSeen).toISOString(),
+        pendingCommands: c.commandLog.filter((e) => e.status === "queued" || e.status === "sent").length,
+        lastCommand: c.commandLog.length > 0 ? c.commandLog[c.commandLog.length - 1]?.command : null
+      }))
+    };
+    const exportJson = JSON.stringify(reportData, null, 2);
+    const statusColor = {
+      online: "#22c55e",
+      offline: "#94a3b8",
+      active: "#22c55e",
+      inactive: "#f97316"
+    };
+    const clientRows = clientsArray.map((c) => {
+      const pending = c.commandLog.filter((e) => e.status === "queued" || e.status === "sent").length;
+      const bbrainyDot = c.info?.bbrainyStatus?.active ? "#22c55e" : "#475569";
+      return `<tr>
+                <td><span class="label">${c.clientLabel}</span></td>
+                <td>${c.info?.username || "\u2014"}</td>
+                <td>${c.info?.hostname || "\u2014"}</td>
+                <td>${c.info?.version || "\u2014"}</td>
+                <td><span class="badge" style="color:${statusColor[c.status] || "#94a3b8"}">${c.status}</span></td>
+                <td><span class="badge" style="color:${statusColor[c.extensionStatus ?? "active"] || "#94a3b8"}">${c.extensionStatus ?? "active"}</span></td>
+                <td><span style="color:${bbrainyDot};font-size:18px">\u25CF</span></td>
+                <td>${pending > 0 ? `<span class="badge-warn">${pending} pending</span>` : '<span class="badge-ok">0</span>'}</td>
+                <td>${new Date(c.lastSeen).toLocaleString()}</td>
+            </tr>`;
+    }).join("");
+    const panel = vscode.window.createWebviewPanel(
+      "serverReport",
+      `Server Report \u2014 ${this.serverId}`,
+      vscode.ViewColumn.One,
+      { enableScripts: true, retainContextWhenHidden: true }
+    );
+    panel.webview.onDidReceiveMessage((msg) => {
+      if (msg.action === "exportJson") {
+        vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(path.join(os.homedir(), `server-report-${this.serverId}-${Date.now()}.json`)),
+          filters: { "JSON": ["json"] },
+          title: "Save Server Report"
+        }).then((uri) => {
+          if (uri) {
+            try {
+              fs.writeFileSync(uri.fsPath, exportJson, "utf-8");
+              vscode.window.showInformationMessage(`Report saved to ${uri.fsPath}`);
+            } catch (e) {
+              vscode.window.showErrorMessage(`Failed to save: ${e}`);
+            }
+          }
+        });
+      }
+    });
+    panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Server Report</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);color:#e2e8f0;padding:28px;min-height:100vh}
+.container{max-width:1100px;margin:0 auto}
+h1{font-size:24px;font-weight:700;margin-bottom:4px;background:linear-gradient(135deg,#60a5fa,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:12px;color:#64748b;margin-bottom:24px}
+.section{margin-bottom:28px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:1px;color:#60a5fa;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid rgba(59,130,246,0.2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.card{background:rgba(30,41,59,0.8);border:1px solid rgba(59,130,246,0.2);border-radius:10px;padding:14px}
+.card-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:4px}
+.card-value{font-size:20px;font-weight:700;color:#60a5fa}
+.card-value.green{color:#22c55e}.card-value.red{color:#f87171}.card-value.orange{color:#f97316}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px}
+.info-row{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+.info-key{color:#64748b;min-width:110px;flex-shrink:0}
+.info-val{color:#cbd5e1;word-break:break-all}
+table{width:100%;border-collapse:collapse;background:rgba(30,41,59,0.8);border:1px solid rgba(59,130,246,0.15);border-radius:10px;overflow:hidden;font-size:12px}
+thead{background:rgba(15,23,42,0.6)}
+th{padding:9px 12px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
+td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;vertical-align:middle}
+.label{color:#34d399;font-weight:600}
+.badge{font-weight:600;font-size:11px}
+.badge-warn{color:#fbbf24;font-weight:600}
+.badge-ok{color:#475569}
+.export-btn{display:inline-flex;align-items:center;gap:6px;margin-top:20px;padding:8px 18px;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.3);border-radius:8px;color:#60a5fa;cursor:pointer;font-size:12px;font-weight:600;transition:background 0.2s}
+.export-btn:hover{background:rgba(59,130,246,0.3)}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>&#128202; Server Monitor Report</h1>
+  <div class="subtitle">Generated: ${now.toLocaleString()} &nbsp;|&nbsp; Server: <strong>${this.serverId}</strong> on <strong>${os.hostname()}</strong></div>
+
+  <div class="section">
+    <h2>Summary</h2>
+    <div class="grid">
+      <div class="card"><div class="card-label">Total Clients</div><div class="card-value">${clientsArray.length}</div></div>
+      <div class="card"><div class="card-label">Online</div><div class="card-value green">${online.length}</div></div>
+      <div class="card"><div class="card-label">Offline</div><div class="card-value red">${offline.length}</div></div>
+      <div class="card"><div class="card-label">Uninstalled</div><div class="card-value orange">${inactive.length}</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Server Info</h2>
+    <div class="info-grid">
+      <div><div class="info-row"><span class="info-key">Server Key</span><span class="info-val">${this.serverId}</span></div>
+           <div class="info-row"><span class="info-key">Machine</span><span class="info-val">${os.hostname()}</span></div>
+           <div class="info-row"><span class="info-key">Username</span><span class="info-val">${os.userInfo().username}</span></div>
+           <div class="info-row"><span class="info-key">Version</span><span class="info-val">${this.version}</span></div></div>
+      <div><div class="info-row"><span class="info-key">Active Port</span><span class="info-val">${this.running ? this.port : "(stopped)"}</span></div>
+           <div class="info-row"><span class="info-key">Configured Port</span><span class="info-val">${this.configuredPort}</span></div>
+           <div class="info-row"><span class="info-key">Status</span><span class="info-val" style="color:${this.running ? "#22c55e" : "#f87171"}">${this.running ? "Running" : "Stopped"}</span></div>
+           <div class="info-row"><span class="info-key">Sync Path</span><span class="info-val">${this.fallback.syncPathValue || "(not configured)"}</span></div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Clients (${clientsArray.length})</h2>
+    <table>
+      <thead><tr>
+        <th>Label</th><th>User</th><th>Host</th><th>Version</th>
+        <th>WS Status</th><th>Ext Status</th><th>BBrainy</th><th>Queue</th><th>Last Seen</th>
+      </tr></thead>
+      <tbody>${clientRows || '<tr><td colspan="9" style="text-align:center;color:#475569;padding:20px">No clients registered</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  <button class="export-btn" onclick="vscode.postMessage({action:'exportJson'})">&#11015; Export as JSON</button>
+</div>
+<script>const vscode=acquireVsCodeApi();</script>
+</body>
+</html>`;
+  }
+  // Publish a client extension update via client-release folder
+  async publishClientUpdate() {
+    const vsixFiles = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      filters: { "VSIX Extension": ["vsix"] },
+      title: "Select client extension VSIX to publish"
+    });
+    if (vsixFiles && vsixFiles[0]) {
+      if (this.clientReleasePath) {
+        try {
+          const updatesDir = path.join(this.clientReleasePath, "updates");
+          fs.mkdirSync(updatesDir, { recursive: true });
+          const filename = path.basename(vsixFiles[0].fsPath);
+          fs.copyFileSync(vsixFiles[0].fsPath, path.join(updatesDir, filename));
+          console.log(`[MonitorServer] Published update to client-release: ${filename}`);
+          vscode.window.showInformationMessage(`Update published: ${filename}`);
+        } catch (e) {
+          console.error("[MonitorServer] Failed to publish update:", e);
+          vscode.window.showErrorMessage(`Failed to publish update: ${e}`);
+        }
+      } else {
+        vscode.window.showErrorMessage("Client release path not configured. Set serverMonitor.clientReleasePath first.");
+      }
+    }
+  }
+  triggerUpdate() {
+    if (this.provider) {
+      const clientsArray = Array.from(this.clients.values());
+      this.provider.update({
+        serverStatus: {
+          running: this.running,
+          port: this.port,
+          serverId: this.serverId
+        },
+        total: this.clients.size,
+        online: clientsArray.filter((c) => c.status === "online").length,
+        offline: clientsArray.filter((c) => c.status === "offline").length,
+        clients: clientsArray.map((c) => ({
+          key: c.key,
+          hostname: c.info?.hostname,
+          username: c.info?.username,
+          workspace: c.info?.workspace,
+          bbrainyActive: c.info?.bbrainyStatus?.active,
+          lastSeen: c.lastSeen,
+          status: c.status,
+          clientLabel: c.clientLabel,
+          commandLog: c.commandLog.slice(-50),
+          // send last 50 to UI
+          lastResponse: c.lastResponse,
+          extensionStatus: c.extensionStatus
+        })),
+        backlogCount: this.fallback.getRecentBacklog().length,
+        configuredPort: this.configuredPort
+      });
+    }
+  }
+};
+
+// src/backend/providers/MonitorViewProvider.ts
+var vscode2 = __toESM(require("vscode"));
+var MonitorViewProvider = class {
+  constructor(_extensionUri, server) {
+    this._extensionUri = _extensionUri;
+    this.server = server;
+  }
+  static viewType = "monitor-dashboard";
+  _view;
+  resolveWebviewView(webviewView, _context, _token) {
+    this._view = webviewView;
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [
+        vscode2.Uri.joinPath(this._extensionUri, "dist")
+      ]
+    };
+    webviewView.webview.html = this._getWebviewContent(webviewView.webview);
+    webviewView.webview.onDidReceiveMessage(async (message) => {
+      switch (message.action) {
+        case "sendCommand":
+          await this.server.sendCommand(message.clientKey, message.command, message.payload);
+          break;
+        case "queryAll":
+          await this.server.queryAllClients(message.command);
+          break;
+        case "showAssets":
+          this.server.showAllAssetsWebview();
+          break;
+        case "showBBrainyStatus":
+          this.server.showBBrainyStatusWebview(message.clientKey);
+          break;
+        case "generateReport":
+          await this.server.generateReport();
+          break;
+        case "startServer":
+          await this.server.start();
+          break;
+        case "stopServer":
+          this.server.stop();
+          break;
+        case "changeServerKey":
+          await this.server.changeServerKey(message.newKey);
+          break;
+        case "viewBacklog":
+          this.server.showBacklogWebview();
+          break;
+        case "changePort": {
+          const p = parseInt(message.newPort, 10);
+          if (!isNaN(p)) {
+            await this.server.changePort(p);
+          }
+          break;
+        }
+        case "clearClientQueue":
+          this.server.clearClientQueue(message.clientKey);
+          break;
+        case "cancelQueueEntry":
+          this.server.cancelQueueEntry(message.clientKey, message.entryId);
+          break;
+      }
+    });
+    this.server.triggerUpdate();
+  }
+  update(data) {
+    if (this._view) {
+      this._view.webview.postMessage({
+        type: "update",
+        data
+      });
+    }
+  }
+  _getWebviewContent(webview) {
+    const nonce = getNonce();
+    const webviewUri = (filePath) => webview.asWebviewUri(vscode2.Uri.joinPath(this._extensionUri, "dist", filePath));
+    const jsUri = webviewUri("monitor-webview.js");
+    const cssUri = webviewUri("monitor-webview.css");
+    return `
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -578,18 +5706,63 @@ ${t.length===0?'<p class="empty">No backlog entries.</p>':i}
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <meta http-equiv="Content-Security-Policy" content="
                     default-src 'none';
-                    style-src ${e.cspSource} 'unsafe-inline';
-                    font-src ${e.cspSource};
-                    img-src ${e.cspSource} https: data:;
-                    script-src 'nonce-${t}';
-                    connect-src 'self' ${e.cspSource} https: ws:;
+                    style-src ${webview.cspSource} 'unsafe-inline';
+                    font-src ${webview.cspSource};
+                    img-src ${webview.cspSource} https: data:;
+                    script-src 'nonce-${nonce}';
+                    connect-src 'self' ${webview.cspSource} https: ws:;
                 ">
-                <link href="${i}" rel="stylesheet">
+                <link href="${cssUri}" rel="stylesheet">
                 <title>Monitor Dashboard</title>
             </head>
             <body>
                 <div id="root"></div>
-                <script nonce="${t}" src="${n}"></script>
+                <script nonce="${nonce}" src="${jsUri}"></script>
             </body>
             </html>
-        `}};function zs(){let s="",e="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";for(let t=0;t<32;t++)s+=e.charAt(Math.floor(Math.random()*e.length));return s}var et=null;function Vs(s){let e=new Ce;et=e,e.initialize(s);let t=new he(s.extensionUri,e);e.setProvider(t),s.subscriptions.push($.window.registerWebviewViewProvider(he.viewType,t),$.commands.registerCommand("serverMonitor.start",()=>e.start()),$.commands.registerCommand("serverMonitor.showDashboard",()=>{$.commands.executeCommand("workbench.view.extension.monitor-explorer")}),$.commands.registerCommand("serverMonitor.generateReport",()=>e.generateReport()),$.commands.registerCommand("serverMonitor.publishUpdate",()=>e.publishClientUpdate()),$.commands.registerCommand("serverMonitor.stop",()=>e.stop()),$.commands.registerCommand("serverMonitor.viewBacklog",()=>e.showBacklogWebview())),$.workspace.getConfiguration("serverMonitor").get("autoStart")&&e.start()}function Gs(){et?.removeServerPresenceFile(),et=null}0&&(module.exports={activate,deactivate});
+        `;
+  }
+};
+function getNonce() {
+  let text = "";
+  const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}
+
+// src/backend/extension.ts
+var serverInstance = null;
+function activate(context) {
+  const server = new MonitorServer();
+  serverInstance = server;
+  server.initialize(context);
+  const provider = new MonitorViewProvider(context.extensionUri, server);
+  server.setProvider(provider);
+  context.subscriptions.push(
+    vscode3.window.registerWebviewViewProvider(MonitorViewProvider.viewType, provider),
+    vscode3.commands.registerCommand("serverMonitor.start", () => server.start()),
+    vscode3.commands.registerCommand("serverMonitor.showDashboard", () => {
+      vscode3.commands.executeCommand("workbench.view.extension.monitor-explorer");
+    }),
+    vscode3.commands.registerCommand("serverMonitor.generateReport", () => server.generateReport()),
+    vscode3.commands.registerCommand("serverMonitor.publishUpdate", () => server.publishClientUpdate()),
+    vscode3.commands.registerCommand("serverMonitor.stop", () => server.stop()),
+    vscode3.commands.registerCommand("serverMonitor.viewBacklog", () => server.showBacklogWebview())
+  );
+  const config = vscode3.workspace.getConfiguration("serverMonitor");
+  if (config.get("autoStart")) {
+    server.start();
+  }
+}
+function deactivate() {
+  serverInstance?.removeServerPresenceFile();
+  serverInstance = null;
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  activate,
+  deactivate
+});
+//# sourceMappingURL=extension.js.map

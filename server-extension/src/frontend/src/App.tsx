@@ -191,22 +191,52 @@ const statusBadgeClass: Record<string, string> = {
   error:    'bg-rose-500/20 text-rose-400 border-rose-500/30',
 };
 
-const CommandQueueLog = ({ log }: { log: Client['commandLog'] }) => {
+const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], clientKey: string | null }) => {
+  const pending = log.filter(e => e.status === 'queued' || e.status === 'sent');
+  const clearAll = () => {
+    if (clientKey) vscode.postMessage({ action: 'clearClientQueue', clientKey });
+  };
+  const cancel = (entryId: string) => {
+    if (clientKey) vscode.postMessage({ action: 'cancelQueueEntry', clientKey, entryId });
+  };
+
   if (!log || log.length === 0) {
     return (
       <div className="text-[9px] text-slate-600 italic text-center py-2">No queued commands</div>
     );
   }
   return (
-    <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-      {[...log].reverse().map(entry => (
-        <div key={entry.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5">
-          <span className="text-[9px] text-slate-300 font-mono truncate flex-1">{entry.command}</span>
-          <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
-            {entry.status}
-          </span>
+    <div>
+      {pending.length > 0 && (
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[9px] text-yellow-400">{pending.length} pending</span>
+          <button
+            onClick={clearAll}
+            className="text-[8px] px-1.5 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors"
+          >
+            Clear All
+          </button>
         </div>
-      ))}
+      )}
+      <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+        {[...log].reverse().map(entry => (
+          <div key={entry.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5">
+            <span className="text-[9px] text-slate-300 font-mono truncate flex-1">{entry.command}</span>
+            <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
+              {entry.status}
+            </span>
+            {(entry.status === 'queued' || entry.status === 'sent') && (
+              <button
+                onClick={() => cancel(entry.id)}
+                title="Cancel this command"
+                className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-rose-500/20 text-rose-400 transition-colors"
+              >
+                <X size={9} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
@@ -666,7 +696,7 @@ const App = () => {
                   }`}></span>
                   Command Queue
                 </p>
-                <CommandQueueLog log={data.clients.find(c => c.key === selectedClient)?.commandLog ?? []} />
+                <CommandQueueLog log={data.clients.find(c => c.key === selectedClient)?.commandLog ?? []} clientKey={selectedClient} />
               </div>
             )}
           </GlassCard>
