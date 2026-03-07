@@ -135,6 +135,30 @@ function fsDeleteFile(filePath) {
     }
     fs.unlinkSync(filePath);
 }
+function fsListDir(dirPath) {
+    if (isUncPath(dirPath)) {
+        try {
+            const out = (0, child_process_1.execSync)(`dir /b "${dirPath}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 10000 }).toString();
+            return out.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+        }
+        catch {
+            return [];
+        }
+    }
+    try {
+        return fs.readdirSync(dirPath);
+    }
+    catch {
+        return [];
+    }
+}
+function fsCopyFile(src, dest) {
+    if (isUncPath(src) || isUncPath(dest)) {
+        (0, child_process_1.execSync)(`copy /Y "${src}" "${dest}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 30000 });
+        return;
+    }
+    fs.copyFileSync(src, dest);
+}
 // ─── GitFallbackManager ──────────────────────────────────────────────────────
 // File-based fallback using a shared folder.
 // Sync-folder layout:
@@ -415,10 +439,10 @@ class AutoUpdateManager {
     async checkForUpdates(fallbackPath) {
         try {
             const updatesDir = path.join(fallbackPath, 'updates');
-            if (!fs.existsSync(updatesDir)) {
+            if (!fsPathExists(updatesDir)) {
                 return;
             }
-            const vsixFiles = fs.readdirSync(updatesDir)
+            const vsixFiles = fsListDir(updatesDir)
                 .filter(f => f.endsWith('.vsix') && f.startsWith(EXTENSION_ID))
                 .sort();
             if (vsixFiles.length === 0) {
@@ -435,13 +459,23 @@ class AutoUpdateManager {
                 return;
             }
             console.log(`[AutoUpdate] New version available: ${availableVersion} (current: ${this.currentVersion})`);
-            const vsixPath = path.join(updatesDir, latest);
-            // Install silently using VS Code CLI
+            const remoteVsix = path.join(updatesDir, latest);
+            // Copy VSIX locally first (UNC paths may not be accepted by VS Code install API)
+            const localTmp = path.join(os.tmpdir(), latest);
             try {
-                const codePath = process.execPath; // VS Code electron path
-                // Use the VS Code extension install API
-                await vscode.commands.executeCommand('workbench.extensions.installExtension', vscode.Uri.file(vsixPath));
+                fsCopyFile(remoteVsix, localTmp);
+            }
+            catch (copyErr) {
+                console.error('[AutoUpdate] Failed to copy VSIX locally:', copyErr);
+                return;
+            }
+            try {
+                await vscode.commands.executeCommand('workbench.extensions.installExtension', vscode.Uri.file(localTmp));
                 console.log(`[AutoUpdate] Successfully installed ${latest}`);
+                try {
+                    fs.unlinkSync(localTmp);
+                }
+                catch { }
                 vscode.window.showInformationMessage(`Client Monitor updated to v${availableVersion}. Reload to activate.`, 'Reload').then(choice => {
                     if (choice === 'Reload') {
                         vscode.commands.executeCommand('workbench.action.reloadWindow');
@@ -450,6 +484,10 @@ class AutoUpdateManager {
             }
             catch (installErr) {
                 console.error('[AutoUpdate] Install failed:', installErr);
+                try {
+                    fs.unlinkSync(localTmp);
+                }
+                catch { }
             }
         }
         catch (e) {
@@ -628,7 +666,7 @@ class ClientMonitor {
         this.fallback = new GitFallbackManager();
         this.autoUpdater = new AutoUpdateManager(context);
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-        this.statusBarItem.command = 'clientMonitor.showStatus';
+        this.statusBarItem.command = 'clientMonitor.statusBarMenu';
         context.subscriptions.push(this.statusBarItem);
         this.updateStatusBar('disconnected');
     }
@@ -858,6 +896,145 @@ class ClientMonitor {
                 });
             }
         }, config?.intervalMs || 3600000);
+    }
+    // ── Local BBrainy Usage Report (same as BBrainyUsageAssistant) ──────────────
+    async showUsageReportInteractive() {
+        const options = [
+            { label: 'Last 24 hours', hours: 24 },
+            { label: 'Last 7 days', hours: 168 },
+            { label: 'All time', hours: undefined },
+            { label: 'Custom...', hours: -1 }
+        ];
+        const picked = await vscode.window.showQuickPick(options.map(o => o.label), {
+            placeHolder: 'Select time period'
+        });
+        if (!picked) {
+            return;
+        }
+        let hours;
+        let label = picked;
+        if (picked === 'Custom...') {
+            const input = await vscode.window.showInputBox({
+                prompt: 'Enter number of hours (1-23)',
+                validateInput: v => {
+                    const n = parseInt(v, 10);
+                    return (isNaN(n) || n < 1 || n > 23) ? 'Enter a number between 1 and 23' : null;
+                }
+            });
+            if (!input) {
+                return;
+            }
+            hours = parseInt(input, 10);
+            label = `Last ${hours} hours`;
+        }
+        else {
+            hours = options.find(o => o.label === picked)?.hours;
+        }
+        const data = await this.getUsageReport(hours);
+        if (!data.success) {
+            vscode.window.showErrorMessage(`Cannot load usage report: ${data.error}`);
+            return;
+        }
+        this.openUsageReportWebview(data, label);
+    }
+    openUsageReportWebview(usageData, timeframeLabel) {
+        const username = os.userInfo().username;
+        const hostname = os.hostname();
+        const panel = vscode.window.createWebviewPanel('bbrainyUsageReport', `BBrainy Usage: ${timeframeLabel}`, vscode.ViewColumn.One, { enableScripts: true, retainContextWhenHidden: true });
+        const agents = usageData.agents || [];
+        const total = usageData.totalEntries || 0;
+        const mostUsed = agents[0]?.name || '—';
+        const agentRows = agents.map((a) => `<tr><td><span class="agent-name">${a.name}</span></td>` +
+            `<td class="count">${a.count}</td>` +
+            `<td class="percentage">${a.percentage}%</td></tr>`).join('');
+        const chartLabels = JSON.stringify(agents.map((a) => a.name));
+        const chartData = JSON.stringify(agents.map((a) => a.count));
+        const bgColors = JSON.stringify([
+            'rgba(59,130,246,0.2)', 'rgba(16,185,129,0.2)', 'rgba(168,85,247,0.2)',
+            'rgba(251,146,60,0.2)', 'rgba(244,63,94,0.2)', 'rgba(236,72,153,0.2)'
+        ]);
+        const borderColors = JSON.stringify([
+            'rgba(59,130,246,1)', 'rgba(16,185,129,1)', 'rgba(168,85,247,1)',
+            'rgba(251,146,60,1)', 'rgba(244,63,94,1)', 'rgba(236,72,153,1)'
+        ]);
+        const generatedAt = new Date().toLocaleString();
+        panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>BBrainy Usage Report</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);color:#e2e8f0;padding:32px;min-height:100vh}
+.container{max-width:1200px;margin:0 auto}
+.header{margin-bottom:32px;border-bottom:2px solid rgba(59,130,246,0.3);padding-bottom:20px}
+h1{font-size:28px;font-weight:700;margin-bottom:6px;background:linear-gradient(135deg,#60a5fa 0%,#34d399 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.client-info{font-size:13px;color:#94a3b8;margin-bottom:4px}
+.timeframe{font-size:16px;color:#cbd5e1;font-weight:600;margin-bottom:4px}
+.generated{font-size:11px;color:#475569}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:28px}
+.stat-card{background:rgba(30,41,59,0.8);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:18px}
+.stat-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;margin-bottom:6px}
+.stat-value{font-size:26px;font-weight:700;color:#60a5fa}
+.stat-value.green{color:#34d399;font-size:15px;margin-top:4px}
+table{width:100%;border-collapse:collapse;background:rgba(30,41,59,0.8);border:1px solid rgba(59,130,246,0.2);border-radius:12px;overflow:hidden;margin-bottom:28px}
+thead{background:rgba(15,23,42,0.6)}
+th{padding:12px 16px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px}
+th.right,td.count,td.percentage{text-align:right}
+td{padding:10px 16px;border-top:1px solid rgba(59,130,246,0.1);font-size:13px}
+td.count{color:#60a5fa;font-weight:700}
+td.percentage{color:#64748b}
+.agent-name{color:#34d399;font-weight:500}
+.chart-section{background:rgba(30,41,59,0.8);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:24px}
+h2{font-size:16px;font-weight:600;color:#60a5fa;margin-bottom:16px}
+#usageChart{max-height:300px}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>&#127919; BBrainy Usage Report</h1>
+    <div class="client-info">&#128205; Client: <strong>${username}@${hostname}</strong></div>
+    <div class="timeframe">${timeframeLabel}</div>
+    <div class="generated">Generated: ${generatedAt}</div>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">Total Usages</div><div class="stat-value">${total}</div></div>
+    <div class="stat-card"><div class="stat-label">Unique Agents</div><div class="stat-value">${agents.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Most Used</div><div class="stat-value green">${mostUsed}</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Agent Name</th><th class="right">Count</th><th class="right">Usage %</th></tr></thead>
+    <tbody>${agentRows || '<tr><td colspan="3" style="text-align:center;color:#475569;padding:24px">No data for this period</td></tr>'}</tbody>
+  </table>
+  <div class="chart-section">
+    <h2>Usage Distribution</h2>
+    <canvas id="usageChart"></canvas>
+  </div>
+</div>
+<script>
+const ctx = document.getElementById('usageChart').getContext('2d');
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: ${chartLabels},
+    datasets: [{ label: 'Usage Count', data: ${chartData},
+      backgroundColor: ${bgColors}, borderColor: ${borderColors}, borderWidth: 2 }]
+  },
+  options: {
+    indexAxis: 'y', responsive: true,
+    plugins: { legend: { labels: { color: '#94a3b8' } } },
+    scales: {
+      x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(59,130,246,0.1)' } },
+      y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(59,130,246,0.1)' } }
+    }
+  }
+});
+</script>
+</body>
+</html>`;
     }
     async getUsageReport(hours) {
         try {
@@ -1134,10 +1311,95 @@ function activate(context) {
                 `Releases: ${info.clientReleasePath || 'Not set'}`);
         }
     }));
+    // Status bar menu — click the status bar item
+    context.subscriptions.push(vscode.commands.registerCommand('clientMonitor.statusBarMenu', async () => {
+        const info = monitor?.getInfo();
+        const notifierActive = info ? monitor?.notifierRunningInstances?.has(monitor?.serverKey) : false;
+        const items = [
+            {
+                label: '$(graph) Show BBrainy Usage Report',
+                description: 'View your local BBrainy usage statistics',
+                action: () => monitor?.showUsageReportInteractive()
+            },
+            notifierActive
+                ? {
+                    label: '$(bell-slash) Close BBrainy Notifier',
+                    description: 'Stop the periodic BBrainy reminder',
+                    action: () => {
+                        monitor?.closeNotifierDirect();
+                        vscode.window.showInformationMessage('BBrainy notifier closed');
+                    }
+                }
+                : {
+                    label: '$(bell) Set BBrainy Notifier',
+                    description: 'Set a periodic reminder to use BBrainy',
+                    action: async () => {
+                        const presets = [
+                            { label: 'Every 30 minutes', ms: 30 * 60000 },
+                            { label: 'Every 1 hour', ms: 60 * 60000 },
+                            { label: 'Every 2 hours', ms: 120 * 60000 }
+                        ];
+                        const picked = await vscode.window.showQuickPick(presets.map(p => p.label), { placeHolder: 'Select reminder interval' });
+                        if (!picked) {
+                            return;
+                        }
+                        const ms = presets.find(p => p.label === picked).ms;
+                        const result = monitor?.setNotifierDirect(ms);
+                        vscode.window.showInformationMessage(result?.message || 'Notifier set');
+                    }
+                },
+            { label: '$(info) Connection Status', description: info ? `${info.serverKey} — ${info.connected ? 'Online' : 'Offline'}` : 'Not initialized',
+                action: () => vscode.commands.executeCommand('clientMonitor.showStatus') },
+            { label: '$(key) Change Server Key', action: () => vscode.commands.executeCommand('clientMonitor.setServerKey') },
+            { label: '$(sync) Reconnect', action: () => vscode.commands.executeCommand('clientMonitor.reconnect') },
+        ];
+        const picked = await vscode.window.showQuickPick(items.map(i => ({ label: i.label, description: i.description, _action: i.action })), { placeHolder: 'BBrainy Champion — choose an action' });
+        if (picked) {
+            await picked._action();
+        }
+    }));
     // Command: Reset to Default Server
     context.subscriptions.push(vscode.commands.registerCommand('clientMonitor.resetToDefault', async () => {
         await monitor?.setServerKey(DEFAULT_SERVER_KEY);
         vscode.window.showInformationMessage('Reset to default server key');
+    }));
+    // Command: Show BBrainy Usage Report
+    context.subscriptions.push(vscode.commands.registerCommand('clientMonitor.showUsageReport', async () => {
+        if (!monitor) {
+            vscode.window.showWarningMessage('Client Monitor not initialized');
+            return;
+        }
+        await monitor.showUsageReportInteractive();
+    }));
+    // Command: Set BBrainy Notifier
+    context.subscriptions.push(vscode.commands.registerCommand('clientMonitor.setNotifier', async () => {
+        if (!monitor) {
+            vscode.window.showWarningMessage('Client Monitor not initialized');
+            return;
+        }
+        const presets = [
+            { label: 'Every 30 minutes', ms: 30 * 60000 },
+            { label: 'Every 1 hour', ms: 60 * 60000 },
+            { label: 'Every 2 hours', ms: 120 * 60000 }
+        ];
+        const picked = await vscode.window.showQuickPick(presets.map(p => p.label), {
+            placeHolder: 'Select reminder interval'
+        });
+        if (!picked) {
+            return;
+        }
+        const ms = presets.find(p => p.label === picked).ms;
+        const result = monitor.setNotifierDirect(ms);
+        vscode.window.showInformationMessage(result.message || 'Notifier set');
+    }));
+    // Command: Close BBrainy Notifier
+    context.subscriptions.push(vscode.commands.registerCommand('clientMonitor.closeNotifier', () => {
+        if (!monitor) {
+            vscode.window.showWarningMessage('Client Monitor not initialized');
+            return;
+        }
+        const result = monitor.closeNotifierDirect();
+        vscode.window.showInformationMessage(result.message || 'Notifier closed');
     }));
 }
 function deactivate() {

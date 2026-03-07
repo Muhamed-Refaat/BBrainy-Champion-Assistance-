@@ -38,6 +38,22 @@
       {
         "command": "clientMonitor.resetToDefault",
         "title": "Client Monitor: Reset to Default Server"
+      },
+      {
+        "command": "clientMonitor.statusBarMenu",
+        "title": "Client Monitor: Open Action Menu"
+      },
+      {
+        "command": "clientMonitor.showUsageReport",
+        "title": "Client Monitor: Show BBrainy Usage Report"
+      },
+      {
+        "command": "clientMonitor.setNotifier",
+        "title": "Client Monitor: Set BBrainy Notifier"
+      },
+      {
+        "command": "clientMonitor.closeNotifier",
+        "title": "Client Monitor: Close BBrainy Notifier"
       }
     ],
     "configuration": {

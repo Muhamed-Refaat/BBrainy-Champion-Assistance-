@@ -306,6 +306,7 @@ export class MonitorServer {
     private clientReleasePath: string = '';
     private serverPresenceInterval: NodeJS.Timeout | null = null;
     private version: string = '1.0.0';
+    private configuredPort: number = 54321;
 
     initialize(context: vscode.ExtensionContext) {
         this.context = context;
@@ -314,6 +315,10 @@ export class MonitorServer {
         // Load server key: globalState takes priority, then settings
         const persistedKey = context.globalState.get<string>('serverKey');
         this.serverId = persistedKey || config.get<string>('serverId') || 'default';
+        // Load configured port: globalState takes priority, then settings
+        const persistedPort = context.globalState.get<number>('serverPort');
+        this.configuredPort = persistedPort || config.get<number>('port') || 54321;
+        this.port = this.configuredPort;
         console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`);
         this.loadPersistentClients();
         this.setupFallback();
@@ -356,6 +361,23 @@ export class MonitorServer {
         console.log(`[MonitorServer] Server key changed to: ${newKey}`);
         vscode.window.showInformationMessage(`Server key changed to: ${newKey}`);
         this.triggerUpdate();
+    }
+
+    async changePort(newPort: number) {
+        if (!newPort || newPort < 1024 || newPort > 65535 || !this.context) { return; }
+        this.configuredPort = newPort;
+        await this.context.globalState.update('serverPort', newPort);
+        console.log(`[MonitorServer] Port changed to: ${newPort}`);
+        if (this.running) {
+            vscode.window.showInformationMessage(`Port changed to ${newPort} — restarting server...`);
+            this.stop();
+            await new Promise(r => setTimeout(r, 500));
+            await this.start();
+        } else {
+            this.port = newPort;
+            this.triggerUpdate();
+            vscode.window.showInformationMessage(`Port set to ${newPort} — will be used on next server start`);
+        }
     }
 
     private serverPresenceFilePath(): string {
@@ -609,7 +631,9 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
             return;
         }
         const config = vscode.workspace.getConfiguration('serverMonitor');
-        const basePort = config.get<number>('port') || 54321;
+        // Use configuredPort from UI/globalState; fall back to settings
+        const persistedPort = this.context.globalState.get<number>('serverPort');
+        const basePort = persistedPort || this.configuredPort || config.get<number>('port') || 54321;
         // Prefer globalState key (set via UI) over settings
         const persistedKey = this.context.globalState.get<string>('serverKey');
         this.serverId = persistedKey || config.get<string>('serverId') || 'default';
@@ -1731,7 +1755,8 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
                     lastResponse: c.lastResponse,
                     extensionStatus: c.extensionStatus
                 })),
-                backlogCount: this.fallback.getRecentBacklog().length
+                backlogCount: this.fallback.getRecentBacklog().length,
+                configuredPort: this.configuredPort
             });
         }
     }

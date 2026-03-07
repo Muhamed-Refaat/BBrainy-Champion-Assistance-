@@ -55,6 +55,7 @@ interface DashboardData {
   offline: number;
   clients: Client[];
   backlogCount?: number;
+  configuredPort?: number;
 }
 
 interface CommandModal {
@@ -221,6 +222,8 @@ const App = () => {
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState(false);
   const [keyInput, setKeyInput] = useState('');
+  const [editingPort, setEditingPort] = useState(false);
+  const [portInput, setPortInput] = useState('');
   const [modal, setModal] = useState<CommandModal>({
     isOpen: false,
     command: '',
@@ -300,6 +303,18 @@ const App = () => {
     }
     setEditingKey(false);
   };
+  const displayPort = data.configuredPort || data.serverStatus.port;
+  const startEditingPort = () => {
+    setPortInput(String(displayPort));
+    setEditingPort(true);
+  };
+  const savePort = () => {
+    const n = parseInt(portInput, 10);
+    if (!isNaN(n) && n >= 1024 && n <= 65535 && n !== displayPort) {
+      vscode.postMessage({ action: 'changePort', newPort: n });
+    }
+    setEditingPort(false);
+  };
 
   return (
     <div className="min-h-screen p-4 text-white overflow-x-hidden">
@@ -342,6 +357,38 @@ const App = () => {
                 title="Click to change server key"
               >
                 Key: {data.serverStatus.serverId}
+              </button>
+            )}
+          </div>
+          {/* Port Editor */}
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <HardDrive size={12} className="text-slate-500 flex-shrink-0" />
+            {editingPort ? (
+              <div className="flex items-center gap-1 flex-1">
+                <input
+                  type="number"
+                  value={portInput}
+                  onChange={(e) => setPortInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') savePort(); if (e.key === 'Escape') setEditingPort(false); }}
+                  autoFocus
+                  min={1024} max={65535}
+                  className="flex-1 px-2 py-0.5 rounded bg-white/5 border border-blue-500/30 text-white text-[10px] focus:outline-none focus:border-blue-500/60"
+                  placeholder="Port 1024–65535"
+                />
+                <button onClick={savePort} className="p-0.5 hover:bg-white/10 rounded text-emerald-400 transition-colors">
+                  <Check size={12} />
+                </button>
+                <button onClick={() => setEditingPort(false)} className="p-0.5 hover:bg-white/10 rounded text-slate-400 transition-colors">
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startEditingPort}
+                className="text-[10px] text-slate-400 hover:text-blue-400 transition-colors"
+                title="Click to change WebSocket port"
+              >
+                Port: {displayPort}{data.serverStatus.running && data.serverStatus.port !== displayPort ? ` (active: ${data.serverStatus.port})` : ''}
               </button>
             )}
           </div>
