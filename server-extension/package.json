@@ -22,6 +22,18 @@
             {
                 "command": "serverMonitor.generateReport",
                 "title": "Generate Client Report"
+            },
+            {
+                "command": "serverMonitor.publishUpdate",
+                "title": "Server Monitor: Publish Client Update (VSIX)"
+            },
+            {
+                "command": "serverMonitor.start",
+                "title": "Server Monitor: Start Server"
+            },
+            {
+                "command": "serverMonitor.stop",
+                "title": "Server Monitor: Stop Server"
             }
         ],
         "viewsContainers": {
@@ -53,18 +65,28 @@
                 },
                 "serverMonitor.serverId": {
                     "type": "string",
-                    "default": "uwb-01",
-                    "description": "Unique identifier for this monitor server"
+                    "default": "default",
+                    "description": "Server key that clients must use to register. Publish this key to your clients."
                 },
                 "serverMonitor.autoStart": {
                     "type": "boolean",
                     "default": false,
                     "description": "Automatically start server on VS Code startup"
                 },
+                "serverMonitor.syncPath": {
+                    "type": "string",
+                    "default": "\\\\cai1-users\\Users\\Mohamed.REFAAT-ALLAM\\Share\\AI-Champion-Assist\\sync",
+                    "description": "Path to shared sync folder (git repo or network share) for offline command queueing. Must be the same sync path configured on clients."
+                },
+                "serverMonitor.clientReleasePath": {
+                    "type": "string",
+                    "default": "\\\\cai1-users\\Users\\Mohamed.REFAAT-ALLAM\\Share\\AI-Champion-Assist\\client-release",
+                    "description": "Path to shared folder for publishing client extension updates (VSIX files)."
+                },
                 "serverMonitor.authorizedKeys": {
                     "type": "array",
                     "default": [],
-                    "description": "List of authorized client keys"
+                    "description": "List of authorized client keys (empty = allow all)"
                 }
             }
         }

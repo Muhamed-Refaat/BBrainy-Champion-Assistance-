@@ -24553,6 +24553,9 @@ var Bell = createLucideIcon("Bell", [
   ["path", { d: "M10.3 21a1.94 1.94 0 0 0 3.4 0", key: "qgo35s" }]
 ]);
 
+// node_modules/lucide-react/dist/esm/icons/check.js
+var Check = createLucideIcon("Check", [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]]);
+
 // node_modules/lucide-react/dist/esm/icons/file-json.js
 var FileJson = createLucideIcon("FileJson", [
   [
@@ -24586,6 +24589,13 @@ var Globe = createLucideIcon("Globe", [
   ["circle", { cx: "12", cy: "12", r: "10", key: "1mglay" }],
   ["path", { d: "M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20", key: "13o1zl" }],
   ["path", { d: "M2 12h20", key: "9i4pu4" }]
+]);
+
+// node_modules/lucide-react/dist/esm/icons/key.js
+var Key = createLucideIcon("Key", [
+  ["circle", { cx: "7.5", cy: "15.5", r: "5.5", key: "yqb3hr" }],
+  ["path", { d: "m21 2-9.6 9.6", key: "1j0ho8" }],
+  ["path", { d: "m15.5 7.5 3 3L22 7l-3-3", key: "1rn1fs" }]
 ]);
 
 // node_modules/lucide-react/dist/esm/icons/monitor.js
@@ -31891,15 +31901,32 @@ var ModalDialog = ({
     }
   ) });
 };
+var statusBadgeClass = {
+  queued: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  sent: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  executed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  error: "bg-rose-500/20 text-rose-400 border-rose-500/30"
+};
+var CommandQueueLog = ({ log }) => {
+  if (!log || log.length === 0) {
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-[9px] text-slate-600 italic text-center py-2", children: "No queued commands" });
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-1 max-h-40 overflow-y-auto pr-1", children: [...log].reverse().map((entry) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-[9px] text-slate-300 font-mono truncate flex-1", children: entry.command }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ""}`, children: entry.status })
+  ] }, entry.id)) });
+};
 var App = () => {
   const [data, setData] = (0, import_react26.useState)({
-    serverStatus: { running: false, port: 54321, serverId: "uwb-01" },
+    serverStatus: { running: false, port: 54321, serverId: "default" },
     total: 0,
     online: 0,
     offline: 0,
     clients: []
   });
   const [selectedClient, setSelectedClient] = (0, import_react26.useState)(null);
+  const [editingKey, setEditingKey] = (0, import_react26.useState)(false);
+  const [keyInput, setKeyInput] = (0, import_react26.useState)("");
   const [modal, setModal] = (0, import_react26.useState)({
     isOpen: false,
     command: "",
@@ -31955,12 +31982,58 @@ var App = () => {
       vscode.postMessage({ action: "startServer" });
     }
   };
+  const startEditingKey = () => {
+    setKeyInput(data.serverStatus.serverId);
+    setEditingKey(true);
+  };
+  const saveServerKey = () => {
+    const trimmed = keyInput.trim();
+    if (trimmed && trimmed !== data.serverStatus.serverId) {
+      vscode.postMessage({ action: "changeServerKey", newKey: trimmed });
+    }
+    setEditingKey(false);
+  };
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "min-h-screen p-4 text-white overflow-x-hidden", children: [
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mb-6", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { className: "text-xl font-extrabold tracking-tight mb-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400", children: "Monitor Dashboard" }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-2", children: [
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `w-2 h-2 rounded-full ${data.serverStatus.running ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}` }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-slate-400 font-medium", children: data.serverStatus.running ? `Online: ${data.serverStatus.serverId} on ${data.serverStatus.port}` : `Standalone [${data.serverStatus.serverId}]` })
+      ] }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-2 flex items-center gap-1.5", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Key, { size: 12, className: "text-slate-500 flex-shrink-0" }),
+        editingKey ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-1 flex-1", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "input",
+            {
+              type: "text",
+              value: keyInput,
+              onChange: (e) => setKeyInput(e.target.value),
+              onKeyDown: (e) => {
+                if (e.key === "Enter")
+                  saveServerKey();
+                if (e.key === "Escape")
+                  setEditingKey(false);
+              },
+              autoFocus: true,
+              className: "flex-1 px-2 py-0.5 rounded bg-white/5 border border-blue-500/30 text-white text-[10px] focus:outline-none focus:border-blue-500/60",
+              placeholder: "Server key..."
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: saveServerKey, className: "p-0.5 hover:bg-white/10 rounded text-emerald-400 transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { size: 12 }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: () => setEditingKey(false), className: "p-0.5 hover:bg-white/10 rounded text-slate-400 transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 12 }) })
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          "button",
+          {
+            onClick: startEditingKey,
+            className: "text-[10px] text-slate-400 hover:text-blue-400 transition-colors truncate",
+            title: "Click to change server key",
+            children: [
+              "Key: ",
+              data.serverStatus.serverId
+            ]
+          }
+        )
       ] })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "grid grid-cols-2 gap-2 mb-6", children: [
@@ -32036,7 +32109,8 @@ var App = () => {
                 /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-2 text-[10px] text-slate-500", children: [
                   /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `w-1.5 h-1.5 rounded-full ${client.status === "online" ? "bg-emerald-500" : "bg-rose-500"}` }),
                   client.bbrainyActive ? "BBrainy Active" : "Inactive"
-                ] })
+                ] }),
+                client.extensionStatus === "inactive" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-[8px] text-orange-400/70 bg-orange-500/10 border border-orange-500/20 rounded px-1 mt-0.5 inline-block", children: "uninstalled" })
               ] })
             ] }) })
           },
@@ -32236,6 +32310,13 @@ var App = () => {
               " Response"
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-1 max-h-48 overflow-y-auto text-slate-300 font-mono", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", { className: "whitespace-pre-wrap break-words text-[9px]", children: JSON.stringify(data.clients.find((c) => c.key === selectedClient)?.lastResponse?.data, null, 2) }) })
+          ] }),
+          selectedClient && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-4 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { className: "text-[9px] text-slate-400 uppercase font-bold mb-2 flex items-center gap-1.5", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${data.clients.find((c) => c.key === selectedClient)?.status === "online" ? "bg-emerald-500" : "bg-yellow-500 animate-pulse"}` }),
+              "Command Queue"
+            ] }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CommandQueueLog, { log: data.clients.find((c) => c.key === selectedClient)?.commandLog ?? [] })
           ] })
         ] })
       ] }),
@@ -32258,6 +32339,18 @@ var App = () => {
               onClick: () => vscode.postMessage({ action: "showAssets" }),
               className: "flex items-center justify-center gap-1.5 p-2 rounded-lg border border-white/10 hover:bg-white/5 transition-all text-[10px] text-slate-400 disabled:cursor-not-allowed",
               children: "Check Assets"
+            }
+          ),
+          (data.backlogCount ?? 0) > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+            "button",
+            {
+              onClick: () => vscode.postMessage({ action: "viewBacklog" }),
+              className: "col-span-2 flex items-center justify-center gap-1.5 p-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-all text-[10px] text-yellow-400",
+              children: [
+                "View Backlog (",
+                data.backlogCount,
+                ")"
+              ]
             }
           )
         ] })
@@ -32374,6 +32467,14 @@ lucide-react/dist/esm/icons/bell.js:
    * See the LICENSE file in the root directory of this source tree.
    *)
 
+lucide-react/dist/esm/icons/check.js:
+  (**
+   * @license lucide-react v0.294.0 - ISC
+   *
+   * This source code is licensed under the ISC license.
+   * See the LICENSE file in the root directory of this source tree.
+   *)
+
 lucide-react/dist/esm/icons/file-json.js:
   (**
    * @license lucide-react v0.294.0 - ISC
@@ -32391,6 +32492,14 @@ lucide-react/dist/esm/icons/folder-open.js:
    *)
 
 lucide-react/dist/esm/icons/globe.js:
+  (**
+   * @license lucide-react v0.294.0 - ISC
+   *
+   * This source code is licensed under the ISC license.
+   * See the LICENSE file in the root directory of this source tree.
+   *)
+
+lucide-react/dist/esm/icons/key.js:
   (**
    * @license lucide-react v0.294.0 - ISC
    *

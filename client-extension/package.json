@@ -1,7 +1,7 @@
 {
   "name": "client-monitor",
   "displayName": "Client Monitor",
-  "description": "Client-side monitoring extension",
+  "description": "Client-side monitoring extension for BBrainy Champion Assistant",
   "version": "1.0.0",
   "engines": {
     "vscode": "^1.85.0"
@@ -12,49 +12,61 @@
   "contributes": {
     "commands": [
       {
+        "command": "clientMonitor.setServerKey",
+        "title": "Client Monitor: Set Server Key"
+      },
+      {
+        "command": "clientMonitor.setServerUrl",
+        "title": "Client Monitor: Set Server URL"
+      },
+      {
+        "command": "clientMonitor.setSyncPath",
+        "title": "Client Monitor: Set Sync Folder"
+      },
+      {
+        "command": "clientMonitor.setClientReleasePath",
+        "title": "Client Monitor: Set Client Release Folder"
+      },
+      {
         "command": "clientMonitor.reconnect",
-        "title": "Reconnect to Monitor Server"
+        "title": "Client Monitor: Reconnect to Server"
+      },
+      {
+        "command": "clientMonitor.showStatus",
+        "title": "Client Monitor: Show Connection Status"
+      },
+      {
+        "command": "clientMonitor.resetToDefault",
+        "title": "Client Monitor: Reset to Default Server"
       }
     ],
     "configuration": {
       "title": "Client Monitor",
       "properties": {
-        "clientMonitor.servers": {
-          "type": "array",
-          "default": [
-            {
-              "url": "ws://localhost:54321",
-              "serverId": "uwb-01"
-            }
-          ],
-          "items": {
-            "type": "object",
-            "properties": {
-              "url": {
-                "type": "string",
-                "description": "WebSocket server URL"
-              },
-              "serverId": {
-                "type": "string",
-                "description": "Unique identifier for this server instance"
-              }
-            }
-          },
-          "description": "List of monitor servers to connect to"
-        },
-        "clientMonitor.clientKey": {
+        "clientMonitor.serverKey": {
           "type": "string",
-          "description": "Unique client key for authentication (generated automatically if empty)"
+          "default": "default",
+          "description": "Server key to connect to. Must match the server's published key. Use 'default' for the default server."
+        },
+        "clientMonitor.serverUrl": {
+          "type": "string",
+          "default": "ws://localhost:54321",
+          "description": "WebSocket URL of the monitor server (e.g., ws://192.168.1.100:54321)"
+        },
+        "clientMonitor.syncPath": {
+          "type": "string",
+          "default": "\\\\cai1-users\\Users\\Mohamed.REFAAT-ALLAM\\Share\\AI-Champion-Assist\\sync",
+          "description": "Path to shared sync folder (git-synced or network share) for offline command queuing. Leave empty to disable."
+        },
+        "clientMonitor.clientReleasePath": {
+          "type": "string",
+          "default": "\\\\cai1-users\\Users\\Mohamed.REFAAT-ALLAM\\Share\\AI-Champion-Assist\\client-release",
+          "description": "Path to shared folder for client extension auto-updates (VSIX files). Leave empty to disable."
         },
         "clientMonitor.autoConnect": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically connect to all configured servers on startup"
-        },
-        "clientMonitor.reportInterval": {
-          "type": "number",
-          "default": 60000,
-          "description": "Shared heartbeat interval in milliseconds for all connections"
+          "description": "Automatically connect to the server on VS Code startup"
         }
       }
     }

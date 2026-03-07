@@ -52,6 +52,12 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
                 case 'stopServer':
                     this.server.stop();
                     break;
+                case 'changeServerKey':
+                    await this.server.changeServerKey(message.newKey);
+                    break;
+                case 'viewBacklog':
+                    this.server.showBacklogWebview();
+                    break;
             }
         });
 

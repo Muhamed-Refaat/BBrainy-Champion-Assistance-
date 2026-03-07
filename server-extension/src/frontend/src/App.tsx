@@ -11,7 +11,9 @@ import {
   Power,
   Bell,
   FolderOpen,
-  X
+  X,
+  Key,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -26,11 +28,20 @@ interface Client {
   bbrainyActive: boolean;
   lastSeen: number;
   status: 'online' | 'offline';
+  clientLabel: string;
+  commandLog: Array<{
+    id: string;
+    command: string;
+    status: 'queued' | 'sent' | 'executed' | 'error';
+    timestamp: number;
+    result?: any;
+  }>;
   lastResponse?: {
     command: string;
     data: any;
     timestamp: number;
   };
+  extensionStatus?: 'active' | 'inactive';
 }
 
 interface DashboardData {
@@ -43,6 +54,7 @@ interface DashboardData {
   online: number;
   offline: number;
   clients: Client[];
+  backlogCount?: number;
 }
 
 interface CommandModal {
@@ -171,15 +183,44 @@ const ModalDialog = ({
   );
 };
 
+const statusBadgeClass: Record<string, string> = {
+  queued:   'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  sent:     'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  executed: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  error:    'bg-rose-500/20 text-rose-400 border-rose-500/30',
+};
+
+const CommandQueueLog = ({ log }: { log: Client['commandLog'] }) => {
+  if (!log || log.length === 0) {
+    return (
+      <div className="text-[9px] text-slate-600 italic text-center py-2">No queued commands</div>
+    );
+  }
+  return (
+    <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+      {[...log].reverse().map(entry => (
+        <div key={entry.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5">
+          <span className="text-[9px] text-slate-300 font-mono truncate flex-1">{entry.command}</span>
+          <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
+            {entry.status}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const App = () => {
   const [data, setData] = useState<DashboardData>({ 
-    serverStatus: { running: false, port: 54321, serverId: 'uwb-01' },
+    serverStatus: { running: false, port: 54321, serverId: 'default' },
     total: 0, 
     online: 0, 
     offline: 0, 
     clients: [] 
   });
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState(false);
+  const [keyInput, setKeyInput] = useState('');
   const [modal, setModal] = useState<CommandModal>({
     isOpen: false,
     command: '',
@@ -248,6 +289,17 @@ const App = () => {
       vscode.postMessage({ action: 'startServer' });
     }
   };
+  const startEditingKey = () => {
+    setKeyInput(data.serverStatus.serverId);
+    setEditingKey(true);
+  };
+  const saveServerKey = () => {
+    const trimmed = keyInput.trim();
+    if (trimmed && trimmed !== data.serverStatus.serverId) {
+      vscode.postMessage({ action: 'changeServerKey', newKey: trimmed });
+    }
+    setEditingKey(false);
+  };
 
   return (
     <div className="min-h-screen p-4 text-white overflow-x-hidden">
@@ -261,6 +313,37 @@ const App = () => {
             <p className="text-[10px] text-slate-400 font-medium">
               {data.serverStatus.running ? `Online: ${data.serverStatus.serverId} on ${data.serverStatus.port}` : `Standalone [${data.serverStatus.serverId}]`}
             </p>
+          </div>
+          {/* Server Key Editor */}
+          <div className="mt-2 flex items-center gap-1.5">
+            <Key size={12} className="text-slate-500 flex-shrink-0" />
+            {editingKey ? (
+              <div className="flex items-center gap-1 flex-1">
+                <input
+                  type="text"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveServerKey(); if (e.key === 'Escape') setEditingKey(false); }}
+                  autoFocus
+                  className="flex-1 px-2 py-0.5 rounded bg-white/5 border border-blue-500/30 text-white text-[10px] focus:outline-none focus:border-blue-500/60"
+                  placeholder="Server key..."
+                />
+                <button onClick={saveServerKey} className="p-0.5 hover:bg-white/10 rounded text-emerald-400 transition-colors">
+                  <Check size={12} />
+                </button>
+                <button onClick={() => setEditingKey(false)} className="p-0.5 hover:bg-white/10 rounded text-slate-400 transition-colors">
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startEditingKey}
+                className="text-[10px] text-slate-400 hover:text-blue-400 transition-colors truncate"
+                title="Click to change server key"
+              >
+                Key: {data.serverStatus.serverId}
+              </button>
+            )}
           </div>
       </div>
 
@@ -351,6 +434,9 @@ const App = () => {
                              <span className={`w-1.5 h-1.5 rounded-full ${client.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
                              {client.bbrainyActive ? 'BBrainy Active' : 'Inactive'}
                           </div>
+                          {client.extensionStatus === 'inactive' && (
+                            <span className="text-[8px] text-orange-400/70 bg-orange-500/10 border border-orange-500/20 rounded px-1 mt-0.5 inline-block">uninstalled</span>
+                          )}
                         </div>
                       </div>
                     </GlassCard>
@@ -522,6 +608,20 @@ const App = () => {
                 </div>
               </div>
             )}
+
+            {/* Command Queue Log */}
+            {selectedClient && (
+              <div className="mt-4 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                <p className="text-[9px] text-slate-400 uppercase font-bold mb-2 flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    data.clients.find(c => c.key === selectedClient)?.status === 'online'
+                      ? 'bg-emerald-500' : 'bg-yellow-500 animate-pulse'
+                  }`}></span>
+                  Command Queue
+                </p>
+                <CommandQueueLog log={data.clients.find(c => c.key === selectedClient)?.commandLog ?? []} />
+              </div>
+            )}
           </GlassCard>
         </section>
 
@@ -543,6 +643,14 @@ const App = () => {
             >
               Check Assets
             </button>
+            {(data.backlogCount ?? 0) > 0 && (
+              <button
+                onClick={() => vscode.postMessage({ action: 'viewBacklog' })}
+                className="col-span-2 flex items-center justify-center gap-1.5 p-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-all text-[10px] text-yellow-400"
+              >
+                View Backlog ({data.backlogCount})
+              </button>
+            )}
           </div>
         </section>
       </div>
