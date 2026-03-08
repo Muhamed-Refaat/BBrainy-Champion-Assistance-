@@ -14,12 +14,12 @@ cd /d "%~dp0"
 REM Build client-extension
 echo [CLIENT] Building client-extension...
 cd client-extension
-call npm run compile
+call npm run package
 if errorlevel 1 (
-    echo [CLIENT] Error: client-extension compilation failed
+    echo [CLIENT] Error: client-extension build or packaging failed
     set "buildFailed=1"
 ) else (
-    echo [CLIENT] Success: client-extension compiled successfully
+    echo [CLIENT] Success: client-extension built and packaged as VSIX
 )
 cd ..
 

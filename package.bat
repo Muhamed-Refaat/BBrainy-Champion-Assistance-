@@ -73,16 +73,16 @@ if not "%CLIENT_VER%"=="" (
     )
 )
 
-REM -- Compile
-echo [CLIENT] Compiling...
-call npm run compile
+REM -- Build (esbuild bundle)
+echo [CLIENT] Building...
+call npm run build
 if errorlevel 1 (
-    echo [CLIENT] Error: Compilation failed
+    echo [CLIENT] Error: Build failed
     set "buildFailed=1"
     cd ..
     goto SERVER_SECTION
 )
-echo [CLIENT] Compiled successfully
+echo [CLIENT] Built successfully
 
 REM -- Package
 echo [CLIENT] Packaging as VSIX...

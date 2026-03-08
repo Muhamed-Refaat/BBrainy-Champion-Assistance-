@@ -1310,8 +1310,8 @@ export class MonitorServer {
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>ðŸŽ¯ BBrainy Usage Report</h1>
-                        <div class="client-info">ðŸ“ Client: <strong>${username}@${hostname}</strong></div>
+                        <h1>&#127919; BBrainy Usage Report</h1>
+                        <div class="client-info">&#128205; Client: <strong>${username}@${hostname}</strong></div>
                         <div class="timeframe">${usageData.timeframe}</div>
                     </div>
                     
@@ -1576,7 +1576,7 @@ export class MonitorServer {
                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${asset.onlineStatus === 'online' ? '#34d399' : '#ef4444'};"></span>
                     ${asset.onlineStatus}
                 </td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? 'âœ“ Active' : 'âœ— Inactive'}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? '&#10003; Active' : '&#10007; Inactive'}</td>
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">${asset.lastSeen ? new Date(asset.lastSeen).toLocaleString() : 'Never'}</td>
             </tr>
         `).join('');
@@ -1663,7 +1663,7 @@ export class MonitorServer {
             </head>
             <body>
                 <div class="container">
-                    <h1>ðŸ“Š All Assets (${assets.length} Total)</h1>
+                    <h1>&#128202; All Assets (${assets.length} Total)</h1>
                     
                     <div class="summary-stats">
                         <div class="stat-card">
@@ -1843,15 +1843,15 @@ export class MonitorServer {
             <body>
                 <div class="container">
                     <div class="client-info">
-                        <div class="client-name">ðŸ“± ${username}@${hostname}</div>
-                        <h1>ðŸ§  BBrainy Status</h1>
+                        <div class="client-name">&#128241; ${username}@${hostname}</div>
+                        <h1>&#129504; BBrainy Status</h1>
                         <div class="status-badge">${statusText}</div>
                     </div>
 
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">Installed</div>
-                            <div class="stat-value">${installed ? 'âœ“ Yes' : 'âœ— No'}</div>
+                            <div class="stat-value">${installed ? '&#10003; Yes' : '&#10007; No'}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Version</div>
@@ -1868,7 +1868,7 @@ export class MonitorServer {
                     </div>
 
                     <div class="contribution-graph">
-                        <div class="graph-title">ðŸ“Š Contribution Graph (Last 12 Weeks)</div>
+                        <div class="graph-title">&#128202; Contribution Graph (Last 12 Weeks)</div>
                         <div class="graph-grid">
                             ${Array.from({length: 84}, (_, i) => `<div class="graph-cell" style="background: rgba(52, 211, 153, ${Math.random() * 0.5});"></div>`).join('')}
                         </div>
