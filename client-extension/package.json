@@ -1,112 +1,112 @@
 {
-  "name": "client-monitor",
-  "displayName": "Client Monitor",
-  "description": "Client-side monitoring extension for BBrainy Champion Assistant",
-  "version": "1.0.0",
-  "engines": {
-    "vscode": "^1.85.0"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
-  "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "clientMonitor.setServerKey",
-        "title": "Client Monitor: Set Server Key"
-      },
-      {
-        "command": "clientMonitor.setServerUrl",
-        "title": "Client Monitor: Set Server URL"
-      },
-      {
-        "command": "clientMonitor.setSyncPath",
-        "title": "Client Monitor: Set Sync Folder"
-      },
-      {
-        "command": "clientMonitor.setClientReleasePath",
-        "title": "Client Monitor: Set Client Release Folder"
-      },
-      {
-        "command": "clientMonitor.reconnect",
-        "title": "Client Monitor: Reconnect to Server"
-      },
-      {
-        "command": "clientMonitor.showStatus",
-        "title": "Client Monitor: Show Connection Status"
-      },
-      {
-        "command": "clientMonitor.resetToDefault",
-        "title": "Client Monitor: Reset to Default Server"
-      },
-      {
-        "command": "clientMonitor.statusBarMenu",
-        "title": "Client Monitor: Open Action Menu"
-      },
-      {
-        "command": "clientMonitor.showUsageReport",
-        "title": "Client Monitor: Show BBrainy Usage Report"
-      },
-      {
-        "command": "clientMonitor.setNotifier",
-        "title": "Client Monitor: Set BBrainy Notifier"
-      },
-      {
-        "command": "clientMonitor.closeNotifier",
-        "title": "Client Monitor: Close BBrainy Notifier"
-      }
-    ],
-    "configuration": {
-      "title": "Client Monitor",
-      "properties": {
-        "clientMonitor.serverKey": {
-          "type": "string",
-          "default": "default",
-          "description": "Server key to connect to. Must match the server's published key. Use 'default' for the default server."
-        },
-        "clientMonitor.serverUrl": {
-          "type": "string",
-          "default": "ws://localhost:54321",
-          "description": "WebSocket URL of the monitor server (e.g., ws://192.168.1.100:54321)"
-        },
-        "clientMonitor.syncPath": {
-          "type": "string",
-          "default": "\\\\cai1-users\\share\\AI-Champion-Assist\\sync",
-          "description": "Path to shared sync folder (git-synced or network share) for offline command queuing. Leave empty to disable."
-        },
-        "clientMonitor.clientReleasePath": {
-          "type": "string",
-          "default": "\\\\cai1-users\\share\\AI-Champion-Assist\\client-release",
-          "description": "Path to shared folder for client extension auto-updates (VSIX files). Leave empty to disable."
-        },
-        "clientMonitor.autoConnect": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically connect to the server on VS Code startup"
-        }
-      }
-    }
-  },
-  "scripts": {
-    "vscode:prepublish": "node esbuild.js",
-    "compile": "node esbuild.js",
-    "build": "node esbuild.js",
-    "package": "node esbuild.js && npx @vscode/vsce package --no-dependencies --allow-missing-repository --skip-license",
-    "watch": "tsc -watch -p ./"
-  },
-  "dependencies": {
-    "ws": "^8.14.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.x",
-    "@types/vscode": "^1.85.0",
-    "@types/ws": "^8.5.0",
-    "@vscode/vsce": "^3.7.1",
-    "esbuild": "^0.27.3",
-    "typescript": "^5.3.0"
-  }
+    "name":  "client-monitor",
+    "displayName":  "Client Monitor",
+    "description":  "Client-side monitoring extension for BBrainy Champion Assistant",
+    "version":  "1.0.0",
+    "engines":  {
+                    "vscode":  "^1.85.0"
+                },
+    "categories":  [
+                       "Other"
+                   ],
+    "activationEvents":  [
+                             "onStartupFinished"
+                         ],
+    "main":  "./out/extension.js",
+    "contributes":  {
+                        "commands":  [
+                                         {
+                                             "command":  "clientMonitor.setServerKey",
+                                             "title":  "Client Monitor: Set Server Key"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.setServerUrl",
+                                             "title":  "Client Monitor: Set Server URL"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.setSyncPath",
+                                             "title":  "Client Monitor: Set Sync Folder"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.setClientReleasePath",
+                                             "title":  "Client Monitor: Set Client Release Folder"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.reconnect",
+                                             "title":  "Client Monitor: Reconnect to Server"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.showStatus",
+                                             "title":  "Client Monitor: Show Connection Status"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.resetToDefault",
+                                             "title":  "Client Monitor: Reset to Default Server"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.statusBarMenu",
+                                             "title":  "Client Monitor: Open Action Menu"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.showUsageReport",
+                                             "title":  "Client Monitor: Show BBrainy Usage Report"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.setNotifier",
+                                             "title":  "Client Monitor: Set BBrainy Notifier"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.closeNotifier",
+                                             "title":  "Client Monitor: Close BBrainy Notifier"
+                                         }
+                                     ],
+                        "configuration":  {
+                                              "title":  "Client Monitor",
+                                              "properties":  {
+                                                                 "clientMonitor.serverKey":  {
+                                                                                                 "type":  "string",
+                                                                                                 "default":  "default",
+                                                                                                 "description":  "Server key to connect to. Must match the server\u0027s published key. Use \u0027default\u0027 for the default server."
+                                                                                             },
+                                                                 "clientMonitor.serverUrl":  {
+                                                                                                 "type":  "string",
+                                                                                                 "default":  "ws://localhost:54321",
+                                                                                                 "description":  "WebSocket URL of the monitor server (e.g., ws://192.168.1.100:54321)"
+                                                                                             },
+                                                                 "clientMonitor.syncPath":  {
+                                                                                                "type":  "string",
+                                                                                                "default":  "\\\\cai1-users\\share\\AI-Champion-Assist\\sync",
+                                                                                                "description":  "Path to shared sync folder (git-synced or network share) for offline command queuing. Leave empty to disable."
+                                                                                            },
+                                                                 "clientMonitor.clientReleasePath":  {
+                                                                                                         "type":  "string",
+                                                                                                         "default":  "\\\\cai1-users\\share\\AI-Champion-Assist\\client-release",
+                                                                                                         "description":  "Path to shared folder for client extension auto-updates (VSIX files). Leave empty to disable."
+                                                                                                     },
+                                                                 "clientMonitor.autoConnect":  {
+                                                                                                   "type":  "boolean",
+                                                                                                   "default":  true,
+                                                                                                   "description":  "Automatically connect to the server on VS Code startup"
+                                                                                               }
+                                                             }
+                                          }
+                    },
+    "scripts":  {
+                    "vscode:prepublish":  "node esbuild.js",
+                    "compile":  "node esbuild.js",
+                    "build":  "node esbuild.js",
+                    "package":  "node esbuild.js \u0026\u0026 npx @vscode/vsce package --no-dependencies --allow-missing-repository --skip-license",
+                    "watch":  "tsc -watch -p ./"
+                },
+    "dependencies":  {
+                         "ws":  "^8.14.0"
+                     },
+    "devDependencies":  {
+                            "@types/node":  "^20.x",
+                            "@types/vscode":  "^1.85.0",
+                            "@types/ws":  "^8.5.0",
+                            "@vscode/vsce":  "^3.7.1",
+                            "esbuild":  "^0.27.3",
+                            "typescript":  "^5.3.0"
+                        }
 }
