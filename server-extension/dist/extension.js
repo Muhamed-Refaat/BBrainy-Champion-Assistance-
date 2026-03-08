@@ -3912,7 +3912,7 @@ var ServerFallbackManager = class {
     }
   }
   // Append a command to <syncPath>/queue/<username-hostname>.json
-  enqueueCommand(clientLabel, clientKey, command, payload) {
+  enqueueCommand(clientLabel, clientKey, command, payload, providedId) {
     if (!this.isConfigured) {
       throw new Error(`Sync path is not configured. Set serverMonitor.syncPath in settings.`);
     }
@@ -3928,11 +3928,11 @@ var ServerFallbackManager = class {
           existing = [];
         }
       }
-      const id = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const id = providedId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       const entry = { id, clientKey, clientLabel, command, payload, timestamp: Date.now(), serverKey: this.serverKey };
       existing.push(entry);
       fsWriteText(queueFile, JSON.stringify(existing, null, 2));
-      console.log(`[ServerFallback] Enqueued command "${command}" for ${clientLabel} \u2192 ${queueFile}`);
+      console.log(`[ServerFallback] Enqueued command "${command}" for ${clientLabel} \xE2\u2020\u2019 ${queueFile}`);
       return id;
     } catch (e) {
       throw new Error(`Failed to write queue file at "${this.syncPath}\\queue\\${clientLabel}.json": ${e?.message || e}`);
@@ -4027,7 +4027,7 @@ var ServerFallbackManager = class {
     this.recentBacklogEntries = [];
   }
 };
-var MonitorServer = class {
+var MonitorServer = class _MonitorServer {
   wss = null;
   server = null;
   clients = /* @__PURE__ */ new Map();
@@ -4106,14 +4106,14 @@ var MonitorServer = class {
     await this.context.globalState.update("serverPort", newPort);
     console.log(`[MonitorServer] Port changed to: ${newPort}`);
     if (this.running) {
-      vscode.window.showInformationMessage(`Port changed to ${newPort} \u2014 restarting server...`);
+      vscode.window.showInformationMessage(`Port changed to ${newPort} \xE2\u20AC\u201D restarting server...`);
       this.stop();
       await new Promise((r) => setTimeout(r, 500));
       await this.start();
     } else {
       this.port = newPort;
       this.triggerUpdate();
-      vscode.window.showInformationMessage(`Port set to ${newPort} \u2014 will be used on next server start`);
+      vscode.window.showInformationMessage(`Port set to ${newPort} \xE2\u20AC\u201D will be used on next server start`);
     }
   }
   serverPresenceFilePath() {
@@ -4176,15 +4176,115 @@ var MonitorServer = class {
     }
   }
   showBacklogWebview() {
-    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const e = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const badge = (ok) => `<span class="r-badge ${ok ? "ok" : "err"}">${ok ? "&#10004; ok" : "&#10006; err"}</span>`;
+    const fmt = (ts) => {
+      try {
+        return new Date(ts).toLocaleString();
+      } catch {
+        return e(ts);
+      }
+    };
+    const kv = (k, v) => `<span class="r-key">${e(k)}</span><span class="r-val">${v}</span>`;
+    const renderUsageReport = (p) => {
+      const agents = p.agents || [];
+      let h = `<div class="r-card"><div class="r-kv">`;
+      h += kv("Status", badge(!!p.success));
+      if (p.timeframe) {
+        h += kv("Timeframe", e(p.timeframe));
+      }
+      if (p.totalEntries !== void 0) {
+        h += kv("Total entries", `<strong>${e(p.totalEntries)}</strong>`);
+      }
+      if (p.dateRange?.earliest) {
+        h += kv("From", e(fmt(p.dateRange.earliest)));
+        h += kv("To", e(fmt(p.dateRange.latest)));
+      }
+      h += `</div>`;
+      if (agents.length > 0) {
+        h += `<table class="r-subtable"><thead><tr><th>Agent</th><th>Count</th><th>%</th></tr></thead><tbody>`;
+        agents.forEach((a) => {
+          h += `<tr><td>${e(a.name)}</td><td>${e(a.count)}</td><td>${e(a.percentage)}%</td></tr>`;
+        });
+        h += `</tbody></table>`;
+      } else {
+        h += `<span class="r-none">No agent data for this period.</span>`;
+      }
+      return h + `</div>`;
+    };
+    const renderCheckBBrainy = (p) => {
+      let h = `<div class="r-card"><div class="r-kv">`;
+      h += kv("Status", badge(!!p.success));
+      if (p.installed !== void 0) {
+        h += kv("Installed", badge(!!p.installed));
+      }
+      if (p.version) {
+        h += kv("Version", e(p.version));
+      }
+      if (p.active !== void 0) {
+        h += kv("Active", badge(!!p.active));
+      }
+      if (p.message) {
+        h += kv("Message", e(p.message));
+      }
+      return h + `</div></div>`;
+    };
+    const renderSystemInfo = (p) => {
+      let h = `<div class="r-card"><div class="r-kv">`;
+      ["hostname", "username", "os", "platform", "arch", "cpu", "memory", "vscodeVersion", "nodeVersion"].forEach((k) => {
+        if (p[k] !== void 0) {
+          h += kv(k, e(p[k]));
+        }
+      });
+      return h + `</div></div>`;
+    };
+    const renderWorkspace = (p) => {
+      let h = `<div class="r-card"><div class="r-kv">`;
+      if (p.name) {
+        h += kv("Name", e(p.name));
+      }
+      if (p.workspace) {
+        h += kv("Workspace", e(p.workspace));
+      }
+      const roots = p.rootPaths || (p.rootPath ? [p.rootPath] : []);
+      if (roots.length) {
+        h += kv("Root", e(roots.join(", ")));
+      }
+      return h + `</div></div>`;
+    };
+    const renderResult = (cmd, payload) => {
+      if (payload === null || payload === void 0) {
+        return `<span class="r-none">&mdash;</span>`;
+      }
+      if (typeof payload !== "object") {
+        return `<pre class="r-pre">${e(String(payload))}</pre>`;
+      }
+      if (cmd === "getUsageReport" || cmd === "generateReport") {
+        return renderUsageReport(payload);
+      }
+      if (cmd === "checkBBrainy" || cmd === "forceBBrainy" || cmd === "showBBrainyStatus") {
+        return renderCheckBBrainy(payload);
+      }
+      if (cmd === "getSystemInfo") {
+        return renderSystemInfo(payload);
+      }
+      if (cmd === "getWorkspace") {
+        return renderWorkspace(payload);
+      }
+      const json = JSON.stringify(payload, null, 2);
+      if (json.length < 300) {
+        return `<pre class="r-pre">${e(json)}</pre>`;
+      }
+      return `<details class="r-details"><summary>{ &hellip; } show JSON</summary><pre class="r-pre">${e(json)}</pre></details>`;
+    };
     const entries = this.fallback.getRecentBacklog();
     const grouped = {};
-    for (const e of entries) {
-      const label = e.clientLabel || "unknown";
+    for (const entry of entries) {
+      const label = entry.clientLabel || "unknown";
       if (!grouped[label]) {
         grouped[label] = [];
       }
-      grouped[label].push(e);
+      grouped[label].push(entry);
     }
     const panel = vscode.window.createWebviewPanel(
       "serverBacklog",
@@ -4193,38 +4293,60 @@ var MonitorServer = class {
       { enableScripts: true }
     );
     const sections = Object.entries(grouped).map(([label, ents]) => {
-      const rows = ents.map((e) => `
-                <tr>
-                    <td class="cell time">${esc(new Date(e.timestamp || Date.now()).toLocaleString())}</td>
-                    <td class="cell cmd">${esc(e.command || "")}</td>
-                    <td class="cell result"><pre>${esc(JSON.stringify(e.payload ?? e.result ?? null, null, 2))}</pre></td>
-                </tr>`).join("");
-      return `<div class="section"><h3>${esc(label)}</h3>
-                    <table><thead><tr><th>Time</th><th>Command</th><th>Result</th></tr></thead>
-                    <tbody>${rows}</tbody></table></div>`;
+      const rows = ents.map((ent) => `<tr>
+                <td class="cell time">${e(fmt(ent.timestamp || Date.now()))}</td>
+                <td class="cell cmd">${e(ent.command || "")}</td>
+                <td class="cell result-cell">${renderResult(ent.command || "", ent.payload ?? ent.result ?? null)}</td>
+            </tr>`).join("");
+      return `<div class="section"><h3>${e(label)}</h3>
+            <table><colgroup><col class="col-time"><col class="col-cmd"><col class="col-result"></colgroup>
+            <thead><tr><th>Time</th><th>Command</th><th>Result</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>`;
     }).join("");
-    panel.webview.html = `<!DOCTYPE html><html lang="en">
-<head><meta charset="UTF-8"><style>
-body{background:#1e1e2e;color:#cdd6f4;font-family:ui-sans-serif,system-ui,sans-serif;padding:24px;margin:0}
-h2{margin:0 0 4px;font-size:1.1rem}h3{color:#a6e3a1;font-size:.85rem;border-bottom:1px solid #313244;padding-bottom:6px;margin:0 0 8px}
-.section{margin-bottom:28px}table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:.7rem;color:#6c7086;padding-bottom:6px;font-weight:600;text-transform:uppercase}
-.cell{padding:4px 8px 4px 0;vertical-align:top;font-size:.75rem}.time{color:#a6adc8;white-space:nowrap}
-.cmd{color:#89b4fa;font-family:monospace}.result{color:#cdd6f4}
-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:.7rem}
-.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
-.empty{color:#6c7086;font-style:italic;margin-top:20px}
-button{background:#313244;border:1px solid #45475a;color:#cdd6f4;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:.8rem}
-button:hover{background:#45475a}
-</style></head>
-<body>
-<div class="toolbar">
-  <h2>Server Backlog \u2014 ${entries.length} result${entries.length === 1 ? "" : "s"}</h2>
-  <button onclick="clearAll()">Clear All</button>
-</div>
-${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
-<script>const vscode=acquireVsCodeApi();function clearAll(){vscode.postMessage({action:'clearBacklog'});}</script>
-</body></html>`;
+    const count = entries.length;
+    panel.webview.html = [
+      '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><style>',
+      ":root{color-scheme:dark}",
+      "body{background:var(--vscode-editor-background,#1e1e2e);color:var(--vscode-foreground,#cdd6f4);",
+      "  font-family:var(--vscode-font-family,ui-sans-serif,system-ui,sans-serif);padding:24px;margin:0}",
+      "h2{margin:0 0 4px;font-size:1.1rem}",
+      "h3{color:var(--vscode-charts-green,#a6e3a1);font-size:.85rem;border-bottom:1px solid var(--vscode-panel-border,#313244);padding-bottom:6px;margin:0 0 8px}",
+      ".section{margin-bottom:28px}",
+      "table{width:100%;border-collapse:collapse;table-layout:fixed}",
+      "col.col-time{width:140px}col.col-cmd{width:160px}col.col-result{width:auto}",
+      "th{text-align:left;font-size:.7rem;color:var(--vscode-descriptionForeground,#6c7086);padding-bottom:6px;font-weight:600;text-transform:uppercase;border-bottom:1px solid var(--vscode-panel-border,#313244)}",
+      ".cell{padding:6px 8px 6px 0;vertical-align:top;font-size:.75rem;border-bottom:1px solid var(--vscode-panel-border,#252535)}",
+      ".time{color:var(--vscode-descriptionForeground,#a6adc8);white-space:nowrap}",
+      ".cmd{color:var(--vscode-textLink-foreground,#89b4fa);font-family:monospace;font-size:.75rem}",
+      ".result-cell{color:var(--vscode-foreground,#cdd6f4)}",
+      ".r-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:.7rem;opacity:.85}",
+      ".toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}",
+      ".empty{color:var(--vscode-descriptionForeground,#6c7086);font-style:italic;margin-top:20px}",
+      "button{background:var(--vscode-button-secondaryBackground,#313244);border:1px solid var(--vscode-panel-border,#45475a);",
+      "  color:var(--vscode-button-secondaryForeground,#cdd6f4);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.8rem}",
+      "button:hover{background:var(--vscode-button-secondaryHoverBackground,#45475a)}",
+      ".r-card{background:var(--vscode-editor-inactiveSelectionBackground,#2a2a3e);border-radius:6px;padding:8px 10px;font-size:.73rem}",
+      ".r-kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;margin-bottom:6px}",
+      ".r-key{color:var(--vscode-descriptionForeground,#888);font-weight:600;white-space:nowrap}",
+      ".r-val{color:var(--vscode-foreground,#cdd6f4);word-break:break-word}",
+      ".r-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.68rem;font-weight:700}",
+      ".r-badge.ok{background:rgba(166,227,161,.15);color:var(--vscode-charts-green,#a6e3a1)}",
+      ".r-badge.err{background:rgba(241,76,76,.15);color:var(--vscode-charts-red,#f38ba8)}",
+      ".r-subtable{width:100%;border-collapse:collapse;margin-top:6px}",
+      ".r-subtable th{font-size:.66rem;color:var(--vscode-descriptionForeground,#888);border-bottom:1px solid var(--vscode-panel-border,#313244);padding:2px 6px 3px 0}",
+      ".r-subtable td{font-size:.7rem;padding:2px 6px 2px 0;border-bottom:1px solid var(--vscode-panel-border,#25253a)}",
+      ".r-none{opacity:.4}",
+      ".r-details summary{font-size:.65rem;color:var(--vscode-textLink-foreground,#89b4fa);cursor:pointer;user-select:none;padding:2px 0}",
+      ".r-details .r-pre{margin-top:4px}",
+      "</style></head><body>",
+      `<div class="toolbar"><h2>Server Backlog &mdash; ${count} result${count === 1 ? "" : "s"}</h2>`,
+      '<button onclick="clearAll()">Clear All</button></div>',
+      count === 0 ? '<p class="empty">No backlog entries.</p>' : sections,
+      "<script>",
+      "const vscode=acquireVsCodeApi();",
+      'function clearAll(){vscode.postMessage({action:"clearBacklog"});}',
+      "</script></body></html>"
+    ].join("\n");
     panel.webview.onDidReceiveMessage((msg) => {
       if (msg.action === "clearBacklog") {
         this.fallback.clearRecentBacklog();
@@ -4233,7 +4355,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
       }
     });
   }
-  // Called when server-backlog file is found — client wrote results while server was offline
+  // Called when server-backlog file is found â€” client wrote results while server was offline
   handleBacklogResponse(clientLabel, entry) {
     const client = Array.from(this.clients.values()).find((c) => c.clientLabel === clientLabel);
     if (!client) {
@@ -4434,7 +4556,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
       }
       this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile("online"), 3e4);
       this.triggerUpdate();
-      console.log(`[MonitorServer] \u2705 Server started successfully on port ${this.port}`);
+      console.log(`[MonitorServer] \xE2\u0153\u2026 Server started successfully on port ${this.port}`);
       vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running on port ${this.port}`);
     }).on("error", (err) => {
       if (err.code === "EADDRINUSE") {
@@ -4476,7 +4598,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
       client.ws = null;
     }
     this.triggerUpdate();
-    console.log(`[MonitorServer] \u2705 Server stopped`);
+    console.log(`[MonitorServer] \xE2\u0153\u2026 Server stopped`);
     vscode.window.showInformationMessage("Monitor server stopped");
   }
   handleClientMessage(ws, data) {
@@ -4549,7 +4671,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
       return;
     }
     console.log(`[MonitorServer] Delivering ${pending.length} queued command(s) to ${clientLabel} via WebSocket`);
-    vscode.window.showInformationMessage(`Client ${clientLabel} is back online \u2014 delivering ${pending.length} queued command(s)`);
+    vscode.window.showInformationMessage(`Client ${clientLabel} is back online \xE2\u20AC\u201D delivering ${pending.length} queued command(s)`);
     for (const cmd of pending) {
       const logEntry = client.commandLog.find((e) => e.id === cmd.id);
       if (logEntry) {
@@ -4870,8 +4992,8 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>\u{1F3AF} BBrainy Usage Report</h1>
-                        <div class="client-info">\u{1F4CD} Client: <strong>${username}@${hostname2}</strong></div>
+                        <h1>\xF0\u0178\u017D\xAF BBrainy Usage Report</h1>
+                        <div class="client-info">\xF0\u0178\u201C\x8D Client: <strong>${username}@${hostname2}</strong></div>
                         <div class="timeframe">${usageData.timeframe}</div>
                     </div>
                     
@@ -4967,6 +5089,14 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
             </html>
         `;
   }
+  // Commands that make no sense offline (need a live response) â€” never queue these
+  static NO_QUEUE_COMMANDS = /* @__PURE__ */ new Set([
+    "checkBBrainy",
+    "forceBBrainy",
+    "getWorkspace",
+    "getSystemInfo",
+    "showBBrainyStatus"
+  ]);
   async sendCommand(clientKey, command, payload) {
     const client = this.clients.get(clientKey);
     if (!client) {
@@ -4975,14 +5105,20 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
       return;
     }
     if (client.status === "offline") {
-      const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const logEntry = { id: tempId, command, status: "queued", timestamp: Date.now() };
+      if (_MonitorServer.NO_QUEUE_COMMANDS.has(command)) {
+        vscode.window.showWarningMessage(
+          `"${command}" requires an active connection \xE2\u20AC\u201D ${client.clientLabel} is currently offline.`
+        );
+        return;
+      }
+      const cmdId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const logEntry = { id: cmdId, command, status: "queued", timestamp: Date.now() };
       client.commandLog.push(logEntry);
       this.triggerUpdate();
       if (!this.fallback.isConfigured) {
         logEntry.status = "error";
         const syncPath = vscode.workspace.getConfiguration("serverMonitor").get("syncPath") || "(empty)";
-        const msg = `Client offline \u2014 sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
+        const msg = `Client offline \xE2\u20AC\u201D sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
         console.error(`[MonitorServer] ${msg}`);
         vscode.window.showErrorMessage(msg);
         this.savePersistentClients();
@@ -4990,11 +5126,10 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
         return;
       }
       try {
-        const cmdId = this.fallback.enqueueCommand(client.clientLabel, clientKey, command, payload);
-        logEntry.id = cmdId;
+        this.fallback.enqueueCommand(client.clientLabel, clientKey, command, payload, cmdId);
         this.savePersistentClients();
         this.triggerUpdate();
-        const msg = `Queued "${command}" for ${client.clientLabel} \u2192 ${this.fallback.syncPathValue}\\queue\\${client.clientLabel}.json`;
+        const msg = `Queued "${command}" for ${client.clientLabel} \xE2\u2020\u2019 ${this.fallback.syncPathValue}\\queue\\${client.clientLabel}.json`;
         console.log(`[MonitorServer] ${msg}`);
         vscode.window.showInformationMessage(msg);
       } catch (e) {
@@ -5031,8 +5166,13 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
         console.error("[MonitorServer] clearClientQueue: failed to delete queue file", e);
       }
     }
-    client.commandLog = client.commandLog.filter((e) => e.status !== "queued" && e.status !== "sent");
+    client.commandLog = [];
     this.savePersistentClients();
+    this.triggerUpdate();
+  }
+  // Clear the server-side backlog (callable directly from sidebar without opening the panel)
+  clearBacklog() {
+    this.fallback.clearRecentBacklog();
     this.triggerUpdate();
   }
   // Cancel a single queued command entry (removes from disk queue + log)
@@ -5100,7 +5240,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
                     <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${asset.onlineStatus === "online" ? "#34d399" : "#ef4444"};"></span>
                     ${asset.onlineStatus}
                 </td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? "\u2713 Active" : "\u2717 Inactive"}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? "\xE2\u0153\u201C Active" : "\xE2\u0153\u2014 Inactive"}</td>
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">${asset.lastSeen ? new Date(asset.lastSeen).toLocaleString() : "Never"}</td>
             </tr>
         `).join("");
@@ -5186,7 +5326,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
             </head>
             <body>
                 <div class="container">
-                    <h1>\u{1F4CA} All Assets (${assets.length} Total)</h1>
+                    <h1>\xF0\u0178\u201C\u0160 All Assets (${assets.length} Total)</h1>
                     
                     <div class="summary-stats">
                         <div class="stat-card">
@@ -5359,15 +5499,15 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
             <body>
                 <div class="container">
                     <div class="client-info">
-                        <div class="client-name">\u{1F4F1} ${username}@${hostname2}</div>
-                        <h1>\u{1F9E0} BBrainy Status</h1>
+                        <div class="client-name">\xF0\u0178\u201C\xB1 ${username}@${hostname2}</div>
+                        <h1>\xF0\u0178\xA7\xA0 BBrainy Status</h1>
                         <div class="status-badge">${statusText}</div>
                     </div>
 
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">Installed</div>
-                            <div class="stat-value">${installed ? "\u2713 Yes" : "\u2717 No"}</div>
+                            <div class="stat-value">${installed ? "\xE2\u0153\u201C Yes" : "\xE2\u0153\u2014 No"}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Version</div>
@@ -5384,7 +5524,7 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
                     </div>
 
                     <div class="contribution-graph">
-                        <div class="graph-title">\u{1F4CA} Contribution Graph (Last 12 Weeks)</div>
+                        <div class="graph-title">\xF0\u0178\u201C\u0160 Contribution Graph (Last 12 Weeks)</div>
                         <div class="graph-grid">
                             ${Array.from({ length: 84 }, (_, i) => `<div class="graph-cell" style="background: rgba(52, 211, 153, ${Math.random() * 0.5});"></div>`).join("")}
                         </div>
@@ -5446,19 +5586,19 @@ ${entries.length === 0 ? '<p class="empty">No backlog entries.</p>' : sections}
       const bbrainyDot = c.info?.bbrainyStatus?.active ? "#22c55e" : "#475569";
       return `<tr>
                 <td><span class="label">${c.clientLabel}</span></td>
-                <td>${c.info?.username || "\u2014"}</td>
-                <td>${c.info?.hostname || "\u2014"}</td>
-                <td>${c.info?.version || "\u2014"}</td>
+                <td>${c.info?.username || "\xE2\u20AC\u201D"}</td>
+                <td>${c.info?.hostname || "\xE2\u20AC\u201D"}</td>
+                <td>${c.info?.version || "\xE2\u20AC\u201D"}</td>
                 <td><span class="badge" style="color:${statusColor[c.status] || "#94a3b8"}">${c.status}</span></td>
                 <td><span class="badge" style="color:${statusColor[c.extensionStatus ?? "active"] || "#94a3b8"}">${c.extensionStatus ?? "active"}</span></td>
-                <td><span style="color:${bbrainyDot};font-size:18px">\u25CF</span></td>
+                <td><span style="color:${bbrainyDot};font-size:18px">\xE2\u2014\x8F</span></td>
                 <td>${pending > 0 ? `<span class="badge-warn">${pending} pending</span>` : '<span class="badge-ok">0</span>'}</td>
                 <td>${new Date(c.lastSeen).toLocaleString()}</td>
             </tr>`;
     }).join("");
     const panel = vscode.window.createWebviewPanel(
       "serverReport",
-      `Server Report \u2014 ${this.serverId}`,
+      `Server Report \xE2\u20AC\u201D ${this.serverId}`,
       vscode.ViewColumn.One,
       { enableScripts: true, retainContextWhenHidden: true }
     );
@@ -5588,15 +5728,29 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
       }
     }
   }
+  /** Returns the first non-loopback IPv4 address found on the LAN interfaces. */
+  getLocalIpv4() {
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name] ?? []) {
+        if (iface.family === "IPv4" && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+    return "localhost";
+  }
   triggerUpdate() {
     if (this.provider) {
       const clientsArray = Array.from(this.clients.values());
+      const localIp = this.getLocalIpv4();
       this.provider.update({
         serverStatus: {
           running: this.running,
           port: this.port,
           serverId: this.serverId
         },
+        serverUrl: this.running ? `ws://${localIp}:${this.port}` : null,
         total: this.clients.size,
         online: clientsArray.filter((c) => c.status === "online").length,
         offline: clientsArray.filter((c) => c.status === "offline").length,
@@ -5667,6 +5821,9 @@ var MonitorViewProvider = class {
           break;
         case "viewBacklog":
           this.server.showBacklogWebview();
+          break;
+        case "clearBacklog":
+          this.server.clearBacklog();
           break;
         case "changePort": {
           const p = parseInt(message.newPort, 10);
@@ -5741,7 +5898,9 @@ function activate(context) {
   const provider = new MonitorViewProvider(context.extensionUri, server);
   server.setProvider(provider);
   context.subscriptions.push(
-    vscode3.window.registerWebviewViewProvider(MonitorViewProvider.viewType, provider),
+    vscode3.window.registerWebviewViewProvider(MonitorViewProvider.viewType, provider, {
+      webviewOptions: { retainContextWhenHidden: true }
+    }),
     vscode3.commands.registerCommand("serverMonitor.start", () => server.start()),
     vscode3.commands.registerCommand("serverMonitor.showDashboard", () => {
       vscode3.commands.executeCommand("workbench.view.extension.monitor-explorer");

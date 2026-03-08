@@ -31813,7 +31813,7 @@ var AnimatePresence = ({ children, custom, initial = true, onExitComplete, exitB
 // src/frontend/src/App.tsx
 var import_jsx_runtime = __toESM(require_jsx_runtime());
 var vscode = acquireVsCodeApi();
-var GlassCard = ({ children, className = "" }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: `liquid-glass liquid-glass-glow rounded-2xl p-6 ${className}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "relative z-10", children }) });
+var GlassCard = ({ children, className = "" }) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: `liquid-glass liquid-glass-glow rounded-xl p-4 ${className}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "relative z-10", children }) });
 var ModalDialog = ({
   modal,
   onClose,
@@ -31838,7 +31838,7 @@ var ModalDialog = ({
       initial: { opacity: 0 },
       animate: { opacity: 1 },
       exit: { opacity: 0 },
-      className: "fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50",
+      className: "fixed inset-0 modal-backdrop flex items-center justify-center z-50",
       onClick: onClose,
       children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
         motion.div,
@@ -31847,36 +31847,40 @@ var ModalDialog = ({
           animate: { scale: 1, opacity: 1 },
           exit: { scale: 0.95, opacity: 0 },
           onClick: (e) => e.stopPropagation(),
-          className: "w-96 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 shadow-2xl p-6 space-y-4",
+          className: "w-96 rounded-xl bg-modal border b-panel shadow-2xl p-5 space-y-4",
+          style: { background: "var(--modal-bg)", borderColor: "var(--border)" },
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center justify-between mb-4", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-lg font-bold text-white capitalize", children: modal.command.replace(/([A-Z])/g, " $1").trim() }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center justify-between mb-3", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-base font-bold t-primary capitalize", children: modal.command.replace(/([A-Z])/g, " $1").trim() }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "button",
                 {
                   onClick: onClose,
-                  className: "p-1.5 hover:bg-white/10 rounded-lg transition-colors text-slate-400 hover:text-slate-300",
-                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 18 })
+                  className: "p-1.5 rounded-lg transition-colors t-muted bg-card-hover",
+                  style: { background: "transparent" },
+                  onMouseEnter: (e) => e.currentTarget.style.background = "var(--card-bg-hover)",
+                  onMouseLeave: (e) => e.currentTarget.style.background = "transparent",
+                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 16 })
                 }
               )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-4", children: modal.fields.map((field) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "space-y-2", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", { className: "block text-sm font-medium text-slate-300", children: field.label }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-3", children: modal.fields.map((field) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "space-y-1.5", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", { className: "block text-xs font-semibold t-secondary", children: field.label }),
               field.type === "textarea" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "textarea",
                 {
                   value: field.value,
                   onChange: (e) => handleFieldChange(field.name, e.target.value),
                   placeholder: field.label,
-                  rows: 6,
-                  className: "w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all text-sm resize-none"
+                  rows: 5,
+                  className: "w-full px-3 py-2 rounded-lg vsc-input transition-all text-sm resize-none"
                 }
               ) : field.type === "select" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "select",
                 {
                   value: field.value,
                   onChange: (e) => handleFieldChange(field.name, e.target.value),
-                  className: "w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all text-sm",
+                  className: "w-full px-3 py-2 rounded-lg vsc-input transition-all text-sm",
                   children: field.options?.map((opt) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", { value: opt.value, children: opt.label }, opt.value))
                 }
               ) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -31886,16 +31890,17 @@ var ModalDialog = ({
                   value: field.value,
                   onChange: (e) => handleFieldChange(field.name, e.target.value),
                   placeholder: field.label,
-                  className: "w-full px-4 py-2.5 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all text-sm"
+                  className: "w-full px-3 py-2 rounded-lg vsc-input transition-all text-sm"
                 }
               )
             ] }, field.name)) }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex gap-3 pt-4", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex gap-2 pt-3", children: [
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "button",
                 {
                   onClick: onClose,
-                  className: "flex-1 px-4 py-2.5 rounded-lg bg-slate-700/50 hover:bg-slate-700 border border-slate-600 text-slate-300 hover:text-white transition-all font-medium text-sm",
+                  className: "flex-1 px-4 py-2 rounded-lg border b-panel t-secondary transition-all font-medium text-sm bg-card-hover",
+                  style: { background: "var(--card-bg)", borderColor: "var(--border)" },
                   children: "Cancel"
                 }
               ),
@@ -31904,7 +31909,7 @@ var ModalDialog = ({
                 {
                   onClick: onConfirm,
                   disabled: disabled || !selectedClient,
-                  className: "flex-1 px-4 py-2.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-400 hover:text-blue-300 transition-all font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed",
+                  className: "flex-1 px-4 py-2 rounded-lg border tint-blue transition-all font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed",
                   children: "Confirm"
                 }
               )
@@ -31916,10 +31921,10 @@ var ModalDialog = ({
   ) });
 };
 var statusBadgeClass = {
-  queued: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  sent: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  executed: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  error: "bg-rose-500/20 text-rose-400 border-rose-500/30"
+  queued: "tint-yellow",
+  sent: "tint-blue",
+  executed: "tint-green",
+  error: "tint-red"
 };
 var CommandQueueLog = ({ log, clientKey }) => {
   const pending = log.filter((e) => e.status === "queued" || e.status === "sent");
@@ -31932,32 +31937,29 @@ var CommandQueueLog = ({ log, clientKey }) => {
       vscode.postMessage({ action: "cancelQueueEntry", clientKey, entryId });
   };
   if (!log || log.length === 0) {
-    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-[9px] text-slate-600 italic text-center py-2", children: "No queued commands" });
+    return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-[9px] t-muted italic text-center py-2", children: "No command history" });
   }
   return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-    pending.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center justify-between mb-1.5", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "text-[9px] text-yellow-400", children: [
-        pending.length,
-        " pending"
-      ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center justify-between mb-1.5", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-[9px] t-warn", style: { color: pending.length > 0 ? "var(--accent-yellow)" : "var(--text-muted)" }, children: pending.length > 0 ? `${pending.length} pending` : `${log.length} entries` }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "button",
         {
           onClick: clearAll,
-          className: "text-[8px] px-1.5 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-colors",
+          className: "text-[8px] px-1.5 py-0.5 rounded border tint-red transition-colors",
           children: "Clear All"
         }
       )
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-1 max-h-40 overflow-y-auto pr-1", children: [...log].reverse().map((entry) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-white/5 border border-white/5", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-[9px] text-slate-300 font-mono truncate flex-1", children: entry.command }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-1 max-h-40 overflow-y-auto pr-1", children: [...log].reverse().map((entry) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg liquid-glass", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-[9px] t-secondary font-mono truncate flex-1", children: entry.command }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ""}`, children: entry.status }),
       (entry.status === "queued" || entry.status === "sent") && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "button",
         {
           onClick: () => cancel(entry.id),
           title: "Cancel this command",
-          className: "flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-rose-500/20 text-rose-400 transition-colors",
+          className: "flex-shrink-0 w-4 h-4 flex items-center justify-center rounded tint-red transition-colors",
           children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 9 })
         }
       )
@@ -32048,6 +32050,9 @@ var App = () => {
     setPortInput(String(displayPort));
     setEditingPort(true);
   };
+  const selectedClientData = selectedClient ? data.clients.find((c) => c.key === selectedClient) : null;
+  const isClientOnline = selectedClientData?.status === "online";
+  const onlineRequired = !data.serverStatus.running || !isClientOnline;
   const savePort = () => {
     const n = parseInt(portInput, 10);
     if (!isNaN(n) && n >= 1024 && n <= 65535 && n !== displayPort) {
@@ -32055,15 +32060,44 @@ var App = () => {
     }
     setEditingPort(false);
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "min-h-screen p-4 text-white overflow-x-hidden", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mb-6", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { className: "text-xl font-extrabold tracking-tight mb-1 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400", children: "Monitor Dashboard" }),
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "min-h-screen p-4 t-primary overflow-x-hidden", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mb-5", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { className: "text-lg font-extrabold tracking-tight mb-1", style: { color: "var(--text-link)" }, children: "Monitor: Command Center" }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-2", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `w-2 h-2 rounded-full ${data.serverStatus.running ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}` }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-slate-400 font-medium", children: data.serverStatus.running ? `Online: ${data.serverStatus.serverId} on ${data.serverStatus.port}` : `Standalone [${data.serverStatus.serverId}]` })
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "span",
+          {
+            className: `w-2 h-2 rounded-full ${data.serverStatus.running ? "pulse-dot" : ""}`,
+            style: { background: data.serverStatus.running ? "var(--color-online)" : "var(--color-offline)" }
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] t-muted font-medium", children: data.serverStatus.running ? `Online \xB7 ${data.serverStatus.serverId} \xB7 :${data.serverStatus.port}` : `Standalone [${data.serverStatus.serverId}]` })
+      ] }),
+      data.serverStatus.running && data.serverUrl && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-1.5 flex items-center gap-1.5", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Globe, { size: 11, className: "t-muted flex-shrink-0" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "button",
+          {
+            className: "text-[10px] font-mono t-link truncate text-left hover:underline transition-colors",
+            title: "Click to copy WebSocket URL",
+            onClick: () => {
+              navigator.clipboard.writeText(data.serverUrl).then(() => {
+                const btn = document.activeElement;
+                if (btn) {
+                  const prev = btn.textContent;
+                  btn.textContent = "Copied!";
+                  setTimeout(() => {
+                    btn.textContent = prev;
+                  }, 1200);
+                }
+              });
+            },
+            children: data.serverUrl
+          }
+        )
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-2 flex items-center gap-1.5", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Key, { size: 12, className: "text-slate-500 flex-shrink-0" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Key, { size: 11, className: "t-muted flex-shrink-0" }),
         editingKey ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-1 flex-1", children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
             "input",
@@ -32078,17 +32112,20 @@ var App = () => {
                   setEditingKey(false);
               },
               autoFocus: true,
-              className: "flex-1 px-2 py-0.5 rounded bg-white/5 border border-blue-500/30 text-white text-[10px] focus:outline-none focus:border-blue-500/60",
+              className: "flex-1 px-2 py-0.5 rounded vsc-input text-[10px]",
               placeholder: "Server key..."
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: saveServerKey, className: "p-0.5 hover:bg-white/10 rounded text-emerald-400 transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { size: 12 }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: () => setEditingKey(false), className: "p-0.5 hover:bg-white/10 rounded text-slate-400 transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 12 }) })
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: saveServerKey, className: "p-0.5 rounded t-green transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { size: 12 }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: () => setEditingKey(false), className: "p-0.5 rounded t-muted transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 12 }) })
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
           "button",
           {
             onClick: startEditingKey,
-            className: "text-[10px] text-slate-400 hover:text-blue-400 transition-colors truncate",
+            className: "text-[10px] t-muted hover:t-link transition-colors truncate",
+            style: { color: void 0 },
+            onMouseEnter: (e) => e.currentTarget.style.color = "var(--text-link)",
+            onMouseLeave: (e) => e.currentTarget.style.color = "var(--text-muted)",
             title: "Click to change server key",
             children: [
               "Key: ",
@@ -32097,8 +32134,8 @@ var App = () => {
           }
         )
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-1.5 flex items-center gap-1.5", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HardDrive, { size: 12, className: "text-slate-500 flex-shrink-0" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-1 flex items-center gap-1.5", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HardDrive, { size: 11, className: "t-muted flex-shrink-0" }),
         editingPort ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-1 flex-1", children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
             "input",
@@ -32115,17 +32152,19 @@ var App = () => {
               autoFocus: true,
               min: 1024,
               max: 65535,
-              className: "flex-1 px-2 py-0.5 rounded bg-white/5 border border-blue-500/30 text-white text-[10px] focus:outline-none focus:border-blue-500/60",
+              className: "flex-1 px-2 py-0.5 rounded vsc-input text-[10px]",
               placeholder: "Port 1024\u201365535"
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: savePort, className: "p-0.5 hover:bg-white/10 rounded text-emerald-400 transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { size: 12 }) }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: () => setEditingPort(false), className: "p-0.5 hover:bg-white/10 rounded text-slate-400 transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 12 }) })
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: savePort, className: "p-0.5 rounded t-green transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Check, { size: 12 }) }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", { onClick: () => setEditingPort(false), className: "p-0.5 rounded t-muted transition-colors", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, { size: 12 }) })
         ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
           "button",
           {
             onClick: startEditingPort,
-            className: "text-[10px] text-slate-400 hover:text-blue-400 transition-colors",
+            className: "text-[10px] t-muted transition-colors",
+            onMouseEnter: (e) => e.currentTarget.style.color = "var(--text-link)",
+            onMouseLeave: (e) => e.currentTarget.style.color = "var(--text-muted)",
             title: "Click to change WebSocket port",
             children: [
               "Port: ",
@@ -32136,14 +32175,14 @@ var App = () => {
         )
       ] })
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "grid grid-cols-2 gap-2 mb-6", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "grid grid-cols-2 gap-2 mb-5", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
         "button",
         {
           onClick: toggleServer,
-          className: `flex items-center justify-center gap-2 px-3 py-2 rounded-xl border transition-all duration-300 text-xs font-semibold ${data.serverStatus.running ? "bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 text-rose-400" : "bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400"}`,
+          className: `flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all duration-200 text-xs font-semibold ${data.serverStatus.running ? "tint-red" : "tint-green"}`,
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Power, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Power, { size: 13 }),
             " ",
             data.serverStatus.running ? "Stop" : "Start"
           ]
@@ -32153,39 +32192,39 @@ var App = () => {
         "button",
         {
           onClick: generateReport,
-          className: "flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-slate-500/10 hover:bg-slate-500/20 border border-slate-500/30 text-slate-300 transition-all duration-300 text-xs",
+          className: "flex items-center justify-center gap-2 px-3 py-2 rounded-lg border tint-muted transition-all duration-200 text-xs",
           children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 14 }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 13 }),
             " Report"
           ]
         }
       )
     ] }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex flex-col gap-3 mb-6", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex flex-col gap-2 mb-5", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GlassCard, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-3", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "p-2 bg-blue-500/20 rounded-lg text-blue-400", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Monitor, { size: 20 }) }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "p-2 rounded-lg tint-blue", style: { display: "inline-flex" }, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Monitor, { size: 18 }) }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-slate-400 uppercase tracking-wider", children: "Total Assets" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-xl font-bold", children: data.total })
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] t-muted uppercase tracking-wider", children: "Total Assets" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-xl font-bold t-primary", children: data.total })
         ] })
       ] }) }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "grid grid-cols-2 gap-3", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GlassCard, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex flex-col items-center text-center p-1", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 16, className: "text-emerald-400 mb-1" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-slate-500 uppercase", children: "Online" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-lg font-bold text-emerald-400", children: data.online })
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "grid grid-cols-2 gap-2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GlassCard, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex flex-col items-center text-center", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 15, className: "mb-1", style: { color: "var(--color-online)" } }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[9px] t-muted uppercase section-label", children: "Online" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-lg font-bold", style: { color: "var(--color-online)" }, children: data.online })
         ] }) }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GlassCard, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex flex-col items-center text-center p-1", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Power, { size: 16, className: "text-rose-400 mb-1" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[10px] text-slate-500 uppercase", children: "Offline" }),
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-lg font-bold text-rose-400", children: data.offline })
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GlassCard, { children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex flex-col items-center text-center", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Power, { size: 15, className: "mb-1", style: { color: "var(--color-offline)" } }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[9px] t-muted uppercase section-label", children: "Offline" }),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-lg font-bold", style: { color: "var(--color-offline)" }, children: data.offline })
         ] }) })
       ] })
     ] }),
     /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "space-y-6", children: [
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", { className: "text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-2", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Globe, { size: 14, className: "text-blue-400" }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", { className: "section-label mb-3 flex items-center gap-2", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Globe, { size: 13, style: { color: "var(--text-link)" } }),
           " Managed Fleet"
         ] }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-3", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AnimatePresence, { children: data.clients.length > 0 ? data.clients.map((client) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
@@ -32195,49 +32234,67 @@ var App = () => {
             animate: { opacity: 1, scale: 1 },
             exit: { opacity: 0, scale: 0.9 },
             onClick: () => setSelectedClient(client.key),
-            className: `cursor-pointer transition-all ${selectedClient === client.key ? "scale-[1.02]" : "hover:scale-[1.01]"}`,
-            children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GlassCard, { className: selectedClient === client.key ? "ring-2 ring-blue-500/50 bg-blue-500/10" : "", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-3", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: `w-10 h-10 rounded-lg flex items-center justify-center ${client.status === "online" ? "bg-emerald-500/20 text-emerald-400" : "bg-slate-500/20 text-slate-400"}`, children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(User, { size: 20 }) }),
+            className: `cursor-pointer transition-all ${selectedClient === client.key ? "scale-[1.01]" : "hover:scale-[1.005]"}`,
+            children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GlassCard, { className: selectedClient === client.key ? "card-selected" : "", children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-3", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "div",
+                {
+                  className: "w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0",
+                  style: {
+                    background: client.status === "online" ? "color-mix(in srgb, var(--color-online) 15%, transparent)" : "color-mix(in srgb, var(--text-muted) 12%, transparent)",
+                    color: client.status === "online" ? "var(--color-online)" : "var(--text-muted)"
+                  },
+                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(User, { size: 18 })
+                }
+              ),
               /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex-1 min-w-0", children: [
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h3", { className: "font-bold text-xs truncate text-blue-300", children: [
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h3", { className: "font-bold text-xs truncate", style: { color: "var(--text-link)" }, children: [
                   client.username,
                   " ",
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-slate-500 font-normal", children: "@" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "t-muted font-normal", children: "@" }),
                   " ",
                   client.hostname
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-2 text-[10px] text-slate-500", children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `w-1.5 h-1.5 rounded-full ${client.status === "online" ? "bg-emerald-500" : "bg-rose-500"}` }),
+                /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-1.5 text-[10px] t-muted", children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                    "span",
+                    {
+                      className: "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                      style: { background: client.status === "online" ? "var(--color-online)" : "var(--color-offline)" }
+                    }
+                  ),
                   client.bbrainyActive ? "BBrainy Active" : "Inactive"
                 ] }),
-                client.extensionStatus === "inactive" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-[8px] text-orange-400/70 bg-orange-500/10 border border-orange-500/20 rounded px-1 mt-0.5 inline-block", children: "uninstalled" })
+                client.extensionStatus === "inactive" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-[8px] tint-orange rounded px-1 mt-0.5 inline-block border", children: "uninstalled" })
               ] })
             ] }) })
           },
           client.key
-        )) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-center py-8 text-slate-500 text-xs border border-dashed border-white/10 rounded-xl", children: "Waiting for clients..." }) }) })
+        )) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-center py-8 t-muted text-xs border border-dashed b-divider rounded-xl", children: "Waiting for clients..." }) }) })
       ] }),
       /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", { className: "text-xs font-bold uppercase tracking-widest text-slate-500 mb-3 flex items-center gap-2", children: [
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { size: 14, className: `text-emerald-400 ${!data.serverStatus.running ? "opacity-50" : ""}` }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", { className: "section-label mb-3 flex items-center gap-2", children: [
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { size: 13, style: { color: data.serverStatus.running ? "var(--color-online)" : "var(--text-muted)" } }),
           " Control Center"
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(GlassCard, { className: !data.serverStatus.running ? "opacity-50" : "", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(GlassCard, { className: !data.serverStatus.running ? "opacity-40" : "", children: [
           selectedClient && data.serverStatus.running ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "space-y-2", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { className: "text-[10px] text-slate-500 mb-3 truncate", children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { className: "text-[10px] t-muted mb-2 truncate", children: [
               "Managing: ",
-              data.clients.find((c) => c.key === selectedClient)?.username
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "t-secondary font-semibold", children: data.clients.find((c) => c.key === selectedClient)?.username })
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "pb-2 border-b border-white/10", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[9px] text-slate-600 uppercase font-bold mb-2", children: "System" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "pb-2", style: { borderBottom: "1px solid var(--divider)" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "section-label mb-1.5", children: "System" }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "button",
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "getSystemInfo"),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5 text-xs mb-1 disabled:cursor-not-allowed",
-                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 text-slate-300", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCcw, { size: 12 }),
+                  className: "w-full flex items-center p-2 rounded-lg liquid-glass bg-card-hover transition-colors border b-panel text-xs mb-1 disabled:cursor-not-allowed",
+                  onMouseEnter: (e) => e.currentTarget.style.background = "var(--card-bg-hover)",
+                  onMouseLeave: (e) => e.currentTarget.style.background = "",
+                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 t-secondary", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCcw, { size: 11 }),
                     " Refresh Node"
                   ] })
                 }
@@ -32247,24 +32304,26 @@ var App = () => {
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "getWorkspace"),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-white/5 text-xs disabled:cursor-not-allowed",
-                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 text-slate-300", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderOpen, { size: 12 }),
+                  className: "w-full flex items-center p-2 rounded-lg liquid-glass transition-colors border b-panel text-xs disabled:cursor-not-allowed",
+                  onMouseEnter: (e) => e.currentTarget.style.background = "var(--card-bg-hover)",
+                  onMouseLeave: (e) => e.currentTarget.style.background = "",
+                  children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 t-secondary", children: [
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderOpen, { size: 11 }),
                     " Peek Directory"
                   ] })
                 }
               )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "py-2 border-b border-white/10", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[9px] text-slate-600 uppercase font-bold mb-2", children: "BBrainy" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "py-2", style: { borderBottom: "1px solid var(--divider)" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "section-label mb-1.5", children: "BBrainy" }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "button",
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "forceBBrainy"),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors border border-emerald-500/20 text-emerald-400 text-xs mb-1 disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-green transition-colors text-xs mb-1 disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Power, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Power, { size: 11 }),
                     " Activate"
                   ] })
                 }
@@ -32277,24 +32336,24 @@ var App = () => {
                     sendCommand(selectedClient, "checkBBrainy");
                     vscode.postMessage({ action: "showBBrainyStatus", clientKey: selectedClient });
                   },
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors border border-emerald-500/20 text-emerald-400 text-xs disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-green transition-colors text-xs disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 11 }),
                     " Check Status"
                   ] })
                 }
               )
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "py-2 border-b border-white/10", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[9px] text-slate-600 uppercase font-bold mb-2", children: "Analytics" }),
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "py-2", style: { borderBottom: "1px solid var(--divider)" }, children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "section-label mb-1.5", children: "Analytics" }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "button",
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "getUsageReport", { hours: 24 }),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs mb-1 disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-blue transition-colors text-xs mb-1 disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 11 }),
                     " 24h Report"
                   ] })
                 }
@@ -32304,9 +32363,9 @@ var App = () => {
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "getUsageReport", { hours: 168 }),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs mb-1 disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-blue transition-colors text-xs mb-1 disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 11 }),
                     " 7d Report"
                   ] })
                 }
@@ -32316,9 +32375,9 @@ var App = () => {
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "getUsageReport", {}),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs mb-1 disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-blue transition-colors text-xs mb-1 disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 11 }),
                     " All Time"
                   ] })
                 }
@@ -32328,38 +32387,28 @@ var App = () => {
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => openModal("getUsageReport", [
-                    {
-                      name: "hours",
-                      label: "Hours (less than 24)",
-                      type: "number",
-                      value: "1"
-                    }
+                    { name: "hours", label: "Hours (less than 24)", type: "number", value: "1" }
                   ]),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors border border-blue-500/20 text-blue-400 text-xs disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-blue transition-colors text-xs disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileJson, { size: 11 }),
                     " Custom"
                   ] })
                 }
               )
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "pt-2", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-[9px] text-slate-600 uppercase font-bold mb-2", children: "Notifications" }),
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "section-label mb-1.5", children: "Notifications" }),
               /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
                 "button",
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => openModal("setNotifier", [
-                    {
-                      name: "intervalMs",
-                      label: "Interval (1-120 minutes)",
-                      type: "number",
-                      value: "60"
-                    }
+                    { name: "intervalMs", label: "Interval (1-120 minutes)", type: "number", value: "60" }
                   ]),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 transition-colors border border-purple-500/20 text-purple-400 text-xs mb-1 disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-purple transition-colors text-xs mb-1 disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 11 }),
                     " Set Reminder"
                   ] })
                 }
@@ -32369,9 +32418,9 @@ var App = () => {
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => sendCommand(selectedClient, "closeNotifier"),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-slate-500/10 hover:bg-slate-500/20 transition-colors border border-slate-500/20 text-slate-400 text-xs mb-1 disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-muted transition-colors text-xs mb-1 disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 11 }),
                     " Close Reminder"
                   ] })
                 }
@@ -32381,54 +32430,53 @@ var App = () => {
                 {
                   disabled: !data.serverStatus.running,
                   onClick: () => openModal("displayReminderScreen", [
-                    {
-                      name: "title",
-                      label: "Title",
-                      type: "text",
-                      value: "Important Message"
-                    },
-                    {
-                      name: "body",
-                      label: "Message Body",
-                      type: "textarea",
-                      value: "This is your message content"
-                    }
+                    { name: "title", label: "Title", type: "text", value: "Important Message" },
+                    { name: "body", label: "Message Body", type: "textarea", value: "This is your message content" }
                   ]),
-                  className: "w-full flex items-center justify-between p-2 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 transition-colors border border-orange-500/20 text-orange-400 text-xs disabled:cursor-not-allowed",
+                  className: "w-full flex items-center p-2 rounded-lg border tint-orange transition-colors text-xs disabled:cursor-not-allowed",
                   children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { className: "flex items-center gap-2 leading-none", children: [
-                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 12 }),
+                    /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Bell, { size: 11 }),
                     " Reminder Screen"
                   ] })
                 }
               )
             ] })
-          ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-[10px] text-slate-500 py-4 italic text-center", children: !data.serverStatus.running ? "Start server to manage assets" : "Select a node to authorize actions" }),
-          selectedClient && data.serverStatus.running && data.clients.find((c) => c.key === selectedClient)?.lastResponse && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-4 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 text-[10px]", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { className: "text-slate-400 uppercase font-bold mb-2", children: [
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "text-[10px] t-muted py-4 italic text-center", children: !data.serverStatus.running ? "Start server to manage assets" : "Select a node to authorize actions" }),
+          selectedClient && data.serverStatus.running && data.clients.find((c) => c.key === selectedClient)?.lastResponse && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-3 p-3 rounded-lg liquid-glass text-[10px]", style: { borderColor: "var(--border)" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { className: "section-label mb-2", children: [
               "\u21B3 ",
               data.clients.find((c) => c.key === selectedClient)?.lastResponse?.command,
               " Response"
             ] }),
-            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-1 max-h-48 overflow-y-auto text-slate-300 font-mono", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", { className: "whitespace-pre-wrap break-words text-[9px]", children: JSON.stringify(data.clients.find((c) => c.key === selectedClient)?.lastResponse?.data, null, 2) }) })
+            /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-1 max-h-48 overflow-y-auto t-secondary font-mono", children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", { className: "whitespace-pre-wrap break-words text-[9px]", children: JSON.stringify(data.clients.find((c) => c.key === selectedClient)?.lastResponse?.data, null, 2) }) })
           ] }),
-          selectedClient && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-4 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50", children: [
-            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { className: "text-[9px] text-slate-400 uppercase font-bold mb-2 flex items-center gap-1.5", children: [
-              /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: `w-1.5 h-1.5 rounded-full flex-shrink-0 ${data.clients.find((c) => c.key === selectedClient)?.status === "online" ? "bg-emerald-500" : "bg-yellow-500 animate-pulse"}` }),
+          selectedClient && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mt-3 p-3 rounded-lg liquid-glass", style: { borderColor: "var(--border)" }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", { className: "section-label mb-2 flex items-center gap-1.5", children: [
+              /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+                "span",
+                {
+                  className: "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                  style: {
+                    background: data.clients.find((c) => c.key === selectedClient)?.status === "online" ? "var(--color-online)" : "var(--accent-yellow)",
+                    animation: data.clients.find((c) => c.key === selectedClient)?.status !== "online" ? "pulse-dot 2s ease-in-out infinite" : "none"
+                  }
+                }
+              ),
               "Command Queue"
             ] }),
             /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CommandQueueLog, { log: data.clients.find((c) => c.key === selectedClient)?.commandLog ?? [], clientKey: selectedClient })
           ] })
         ] })
       ] }),
-      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { className: !data.serverStatus.running ? "opacity-50 pointer-events-none" : "", children: [
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "text-xs font-bold uppercase tracking-widest text-slate-500 mb-3", children: "Global" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", { className: !data.serverStatus.running ? "opacity-40 pointer-events-none" : "", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "section-label mb-3", children: "Global" }),
         /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "grid grid-cols-2 gap-2", children: [
           /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
             "button",
             {
               disabled: !data.serverStatus.running,
               onClick: () => queryAll("checkBBrainy"),
-              className: "flex items-center justify-center gap-1.5 p-2 rounded-lg border border-white/10 hover:bg-white/5 transition-all text-[10px] text-slate-400 disabled:cursor-not-allowed",
+              className: "flex items-center justify-center gap-1.5 p-2 rounded-lg border tint-muted transition-all text-[10px] disabled:cursor-not-allowed",
               children: "Scan Fleet"
             }
           ),
@@ -32437,20 +32485,27 @@ var App = () => {
             {
               disabled: !data.serverStatus.running,
               onClick: () => vscode.postMessage({ action: "showAssets" }),
-              className: "flex items-center justify-center gap-1.5 p-2 rounded-lg border border-white/10 hover:bg-white/5 transition-all text-[10px] text-slate-400 disabled:cursor-not-allowed",
+              className: "flex items-center justify-center gap-1.5 p-2 rounded-lg border tint-muted transition-all text-[10px] disabled:cursor-not-allowed",
               children: "Check Assets"
             }
           ),
-          (data.backlogCount ?? 0) > 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
             "button",
             {
               onClick: () => vscode.postMessage({ action: "viewBacklog" }),
-              className: "col-span-2 flex items-center justify-center gap-1.5 p-2 rounded-lg border border-yellow-500/30 bg-yellow-500/10 hover:bg-yellow-500/20 transition-all text-[10px] text-yellow-400",
+              className: "flex items-center justify-center gap-1.5 p-2 rounded-lg border tint-yellow transition-all text-[10px]",
               children: [
-                "View Backlog (",
-                data.backlogCount,
-                ")"
+                "View Backlog",
+                (data.backlogCount ?? 0) > 0 ? ` (${data.backlogCount})` : ""
               ]
+            }
+          ),
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            "button",
+            {
+              onClick: () => vscode.postMessage({ action: "clearBacklog" }),
+              className: "flex items-center justify-center gap-1.5 p-2 rounded-lg border tint-red transition-all text-[10px]",
+              children: "Clear Backlog"
             }
           )
         ] })

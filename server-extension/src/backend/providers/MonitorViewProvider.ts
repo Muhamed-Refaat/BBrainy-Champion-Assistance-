@@ -58,6 +58,9 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
                 case 'viewBacklog':
                     this.server.showBacklogWebview();
                     break;
+                case 'clearBacklog':
+                    this.server.clearBacklog();
+                    break;
                 case 'changePort': {
                     const p = parseInt(message.newPort, 10);
                     if (!isNaN(p)) { await this.server.changePort(p); }
