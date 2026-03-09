@@ -86,7 +86,8 @@ function fsWriteText(filePath: string, content: string): void {
 
 function fsDeleteFile(filePath: string): void {
     if (isUncPath(filePath)) {
-        try { execSync(`del /F /Q "${filePath}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 5000 }); } catch {}
+        // Do NOT swallow errors — callers rely on a throw to know deletion failed.
+        execSync(`del /F /Q "${filePath}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 5000 });
         return;
     }
     fs.unlinkSync(filePath);
@@ -297,10 +298,27 @@ class GitFallbackManager {
 
             if (cmds.length === 0) { return; }
 
+            // Filter to only commands addressed to this server — ignore stale entries from other servers.
+            cmds = cmds.filter(c => !c.serverKey || c.serverKey === this.serverKey);
+            if (cmds.length === 0) { return; }
+
             console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
 
-            // Clear the queue file immediately to avoid double-processing
-            fsDeleteFile(queueFile);
+            // Delete the queue file BEFORE executing. If deletion fails (UNC permission/network
+            // error) bail out entirely — better to miss one cycle than to execute commands
+            // repeatedly on every poll tick.
+            try {
+                fsDeleteFile(queueFile);
+            } catch (delErr) {
+                console.error(`[Fallback] Could not delete queue file — skipping to prevent double-execution:`, delErr);
+                return;
+            }
+            // Extra safety: verify the file is actually gone (UNC del can succeed in the shell
+            // but leave the file if a network hiccup occurs between the delete and the stat).
+            if (fsPathExists(queueFile)) {
+                console.warn(`[Fallback] Queue file still present after delete attempt — skipping to prevent double-execution`);
+                return;
+            }
 
             for (const cmd of cmds) {
                 try {

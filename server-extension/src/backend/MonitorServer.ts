@@ -1935,12 +1935,12 @@ export class MonitorServer {
             const bbrainyDot = c.info?.bbrainyStatus?.active ? '#22c55e' : '#475569';
             return `<tr>
                 <td><span class="label">${c.clientLabel}</span></td>
-                <td>${c.info?.username || 'â€”'}</td>
-                <td>${c.info?.hostname || 'â€”'}</td>
-                <td>${c.info?.version || 'â€”'}</td>
+                <td>${c.info?.username || '&#8212;'}</td>
+                <td>${c.info?.hostname || '&#8212;'}</td>
+                <td>${c.info?.version || '&#8212;'}</td>
                 <td><span class="badge" style="color:${statusColor[c.status] || '#94a3b8'}">${c.status}</span></td>
                 <td><span class="badge" style="color:${statusColor[c.extensionStatus ?? 'active'] || '#94a3b8'}">${c.extensionStatus ?? 'active'}</span></td>
-                <td><span style="color:${bbrainyDot};font-size:18px">â—</span></td>
+                <td><span style="color:${bbrainyDot};font-size:18px">&#9679;</span></td>
                 <td>${pending > 0 ? `<span class="badge-warn">${pending} pending</span>` : '<span class="badge-ok">0</span>'}</td>
                 <td>${new Date(c.lastSeen).toLocaleString()}</td>
             </tr>`;
@@ -1948,7 +1948,7 @@ export class MonitorServer {
 
         const panel = vscode.window.createWebviewPanel(
             'serverReport',
-            `Server Report â€” ${this.serverId}`,
+            `Server Report - ${this.serverId}`,
             vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
         );
@@ -2086,14 +2086,21 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
     /** Returns the first non-loopback IPv4 address found on the LAN interfaces. */
     private getLocalIpv4(): string {
         const ifaces = os.networkInterfaces();
+        let vpnFallback: string | null = null;
         for (const name of Object.keys(ifaces)) {
             for (const iface of ifaces[name] ?? []) {
                 if (iface.family === 'IPv4' && !iface.internal) {
+                    // Skip point-to-point / VPN links (/32 mask) — unreachable from LAN peers.
+                    // Keep as last-resort fallback in case no real LAN adapter exists.
+                    if (iface.netmask === '255.255.255.255') {
+                        if (!vpnFallback) { vpnFallback = iface.address; }
+                        continue;
+                    }
                     return iface.address;
                 }
             }
         }
-        return 'localhost';
+        return vpnFallback ?? 'localhost';
     }
 
     triggerUpdate() {

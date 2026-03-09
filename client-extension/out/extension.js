@@ -3743,10 +3743,7 @@ function fsWriteText(filePath, content) {
 }
 function fsDeleteFile(filePath) {
   if (isUncPath(filePath)) {
-    try {
-      (0, import_child_process.execSync)(`del /F /Q "${filePath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 5e3 });
-    } catch {
-    }
+    (0, import_child_process.execSync)(`del /F /Q "${filePath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 5e3 });
     return;
   }
   fs.unlinkSync(filePath);
@@ -3933,8 +3930,21 @@ var GitFallbackManager = class {
       if (cmds.length === 0) {
         return;
       }
+      cmds = cmds.filter((c) => !c.serverKey || c.serverKey === this.serverKey);
+      if (cmds.length === 0) {
+        return;
+      }
       console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
-      fsDeleteFile(queueFile);
+      try {
+        fsDeleteFile(queueFile);
+      } catch (delErr) {
+        console.error(`[Fallback] Could not delete queue file \u2014 skipping to prevent double-execution:`, delErr);
+        return;
+      }
+      if (fsPathExists(queueFile)) {
+        console.warn(`[Fallback] Queue file still present after delete attempt \u2014 skipping to prevent double-execution`);
+        return;
+      }
       for (const cmd of cmds) {
         try {
           console.log(`[Fallback] Executing queued command: ${cmd.command} (${cmd.id})`);
