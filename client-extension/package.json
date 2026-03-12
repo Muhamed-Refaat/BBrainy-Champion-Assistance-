@@ -3,6 +3,7 @@
     "displayName":  "Client Monitor",
     "description":  "Client-side monitoring extension for BBrainy Champion Assistant",
     "version":  "1.0.0",
+    "icon":  "resources/icon.png",
     "engines":  {
                     "vscode":  "^1.85.0"
                 },
@@ -19,10 +20,7 @@
                                              "command":  "clientMonitor.setServerKey",
                                              "title":  "Client Monitor: Set Server Key"
                                          },
-                                         {
-                                             "command":  "clientMonitor.setServerUrl",
-                                             "title":  "Client Monitor: Set Server URL"
-                                         },
+
                                          {
                                              "command":  "clientMonitor.setSyncPath",
                                              "title":  "Client Monitor: Set Sync Folder"
@@ -31,10 +29,7 @@
                                              "command":  "clientMonitor.setClientReleasePath",
                                              "title":  "Client Monitor: Set Client Release Folder"
                                          },
-                                         {
-                                             "command":  "clientMonitor.reconnect",
-                                             "title":  "Client Monitor: Reconnect to Server"
-                                         },
+
                                          {
                                              "command":  "clientMonitor.showStatus",
                                              "title":  "Client Monitor: Show Connection Status"
@@ -68,11 +63,7 @@
                                                                                                  "default":  "default",
                                                                                                  "description":  "Server key to connect to. Must match the server\u0027s published key. Use \u0027default\u0027 for the default server."
                                                                                              },
-                                                                 "clientMonitor.serverUrl":  {
-                                                                                                 "type":  "string",
-                                                                                                 "default":  "ws://localhost:54321",
-                                                                                                 "description":  "WebSocket URL of the monitor server (e.g., ws://192.168.1.100:54321)"
-                                                                                             },
+
                                                                  "clientMonitor.syncPath":  {
                                                                                                 "type":  "string",
                                                                                                 "default":  "\\\\cai1-users\\share\\AI-Champion-Assist\\sync",
@@ -82,12 +73,8 @@
                                                                                                          "type":  "string",
                                                                                                          "default":  "\\\\cai1-users\\share\\AI-Champion-Assist\\client-release",
                                                                                                          "description":  "Path to shared folder for client extension auto-updates (VSIX files). Leave empty to disable."
-                                                                                                     },
-                                                                 "clientMonitor.autoConnect":  {
-                                                                                                   "type":  "boolean",
-                                                                                                   "default":  true,
-                                                                                                   "description":  "Automatically connect to the server on VS Code startup"
-                                                                                               }
+                                                                                                     }
+
                                                              }
                                           }
                     },
@@ -98,13 +85,12 @@
                     "package":  "node esbuild.js \u0026\u0026 npx @vscode/vsce package --no-dependencies --allow-missing-repository --skip-license",
                     "watch":  "tsc -watch -p ./"
                 },
-    "dependencies":  {
-                         "ws":  "^8.14.0"
-                     },
+    "dependencies":  {},
+
     "devDependencies":  {
                             "@types/node":  "^20.x",
                             "@types/vscode":  "^1.85.0",
-                            "@types/ws":  "^8.5.0",
+
                             "@vscode/vsce":  "^3.7.1",
                             "esbuild":  "^0.27.3",
                             "typescript":  "^5.3.0"

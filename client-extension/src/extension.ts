@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import WebSocket from 'ws';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -8,22 +7,11 @@ import { execSync, exec } from 'child_process';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DEFAULT_SERVER_KEY = 'default';
-const HEARTBEAT_INTERVAL_MS = 30000;
-const RECONNECT_INTERVAL_MS = 5000;
 const FALLBACK_POLL_INTERVAL_MS = 15000;
 const UPDATE_CHECK_INTERVAL_MS = 3600000; // 1 hour
 const EXTENSION_ID = 'client-monitor';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
-interface ClientMessage {
-    type: 'register' | 'heartbeat' | 'response' | 'event';
-    clientKey: string;
-    serverKey: string;
-    timestamp: number;
-    payload: any;
-    command?: string;
-}
-
 interface FallbackCommand {
     id: string;
     command: string;
@@ -139,8 +127,8 @@ class GitFallbackManager {
     private serverKey: string = '';
     private version: string = '1.0.0';
     private onCommand: ((cmd: FallbackCommand) => Promise<any>) | null = null;
-    private getIsConnected: (() => boolean) | null = null;
-    private sendResponse: ((payload: any, cmdId: string, command: string) => void) | null = null;
+    private pollIntervalMs: number = FALLBACK_POLL_INTERVAL_MS;
+    private executedIds: Set<string> = new Set();
 
     configure(
         fallbackPath: string,
@@ -148,9 +136,7 @@ class GitFallbackManager {
         clientLabel: string,
         serverKey: string,
         version: string,
-        onCommand: (cmd: FallbackCommand) => Promise<any>,
-        getIsConnected: () => boolean,
-        sendResponse: (payload: any, cmdId: string, command: string) => void
+        onCommand: (cmd: FallbackCommand) => Promise<any>
     ) {
         this.fallbackPath = fallbackPath;
         this.clientKey = clientKey;
@@ -158,8 +144,6 @@ class GitFallbackManager {
         this.serverKey = serverKey;
         this.version = version;
         this.onCommand = onCommand;
-        this.getIsConnected = getIsConnected;
-        this.sendResponse = sendResponse;
         // Write presence file immediately — this is the "installation hook"
         this.writePresenceFile();
     }
@@ -259,14 +243,26 @@ class GitFallbackManager {
         return this.fallbackPath;
     }
 
-    startPolling() {
+    startPolling(intervalMs?: number) {
         this.stopPolling();
         if (!this.isConfigured) { return; }
+        if (intervalMs !== undefined && intervalMs >= 3000) { this.pollIntervalMs = intervalMs; }
         // Do an immediate check, then poll
         this.checkBacklog();
-        this.pollInterval = setInterval(() => this.checkBacklog(), FALLBACK_POLL_INTERVAL_MS);
-        console.log(`[Fallback] Polling started: ${this.fallbackPath}`);
+        this.pollInterval = setInterval(() => this.checkBacklog(), this.pollIntervalMs);
+        console.log(`[Fallback] Polling started (${this.pollIntervalMs / 1000}s): ${this.fallbackPath}`);
     }
+
+    /** Change the poll interval at runtime (called when server sends setPollInterval command) */
+    setPollInterval(ms: number) {
+        if (ms < 3000) { ms = 3000; }      // floor at 3 s
+        if (ms > 300000) { ms = 300000; }  // cap at 5 min
+        this.pollIntervalMs = ms;
+        if (this.pollInterval) { this.startPolling(); }  // restart with new interval
+        console.log(`[Fallback] Poll interval changed to ${ms / 1000}s`);
+    }
+
+    get currentPollIntervalMs(): number { return this.pollIntervalMs; }
 
     stopPolling() {
         if (this.pollInterval) {
@@ -280,11 +276,6 @@ class GitFallbackManager {
         // Keep presence file fresh so server always sees an up-to-date lastSeen
         this.updatePresenceLastSeen();
 
-        // When the WebSocket is live, the server owns the queue: it calls dequeueAndSend()
-        // on registration and sends commands directly via WS.  If checkBacklog() also reads
-        // the queue file it creates a race — one deletes it before the other can read it.
-        // Skip queue processing here when connected; only use file-fallback when offline.
-        if (this.getIsConnected && this.getIsConnected()) { return; }
 
         try {
             // Read queue file: <syncPath>/queue/<username-hostname>.json
@@ -321,20 +312,27 @@ class GitFallbackManager {
             }
 
             for (const cmd of cmds) {
+                // Dedup: skip commands we already executed (race-condition safety)
+                if (this.executedIds.has(cmd.id)) {
+                    console.log(`[Fallback] Skipping duplicate command: ${cmd.command} (${cmd.id})`);
+                    continue;
+                }
                 try {
                     console.log(`[Fallback] Executing queued command: ${cmd.command} (${cmd.id})`);
                     const result = await this.onCommand(cmd);
-
-                    if (this.getIsConnected && this.getIsConnected() && this.sendResponse) {
-                        // WS is live — send result directly
-                        this.sendResponse(result, cmd.id, cmd.command);
-                        console.log(`[Fallback] Sent result for "${cmd.command}" (${cmd.id}) via WebSocket`);
-                    } else {
-                        // Server offline — write to server-backlog
-                        this.writeServerBacklog(cmd.id, cmd.command, result);
-                        console.log(`[Fallback] Wrote server-backlog entry for "${cmd.command}" (${cmd.id})`);
+                    this.executedIds.add(cmd.id);
+                    // Trim dedup set to last 500 entries
+                    if (this.executedIds.size > 500) {
+                        const first = this.executedIds.values().next().value;
+                        if (first !== undefined) { this.executedIds.delete(first); }
                     }
-                } catch (e) {
+
+                    this.writeServerBacklog(cmd.id, cmd.command, result);
+                    console.log(`[Fallback] Wrote server-backlog entry for "${cmd.command}" (${cmd.id})`);
+                } catch (e: any) {
+                    // Write error response so the server knows the command failed
+                    const errPayload = { success: false, error: e?.message || String(e) };
+                    this.writeServerBacklog(cmd.id, cmd.command, errPayload);
                     console.error(`[Fallback] Error executing queued command ${cmd.command}:`, e);
                 }
             }
@@ -345,37 +343,39 @@ class GitFallbackManager {
 
     private writeServerBacklog(commandId: string, command: string, payload: any) {
         if (!this.isConfigured) { return; }
-        const backlogDir = path.join(this.fallbackPath, 'server-backlog');
-        fsEnsureDir(backlogDir);
-        const backlogFile = path.join(backlogDir, `${this.clientLabel}.json`);
-
+        // Route to results/ (server online = live channel) or server-backlog/ (server offline = offline accumulation)
+        const targetDir = this.isServerOnline()
+            ? path.join(this.fallbackPath, 'results')
+            : path.join(this.fallbackPath, 'server-backlog');
+        fsEnsureDir(targetDir);
+        const file = path.join(targetDir, `${this.clientLabel}.json`);
         let existing: any[] = [];
-        if (fsPathExists(backlogFile)) {
-            try { existing = JSON.parse(fsReadText(backlogFile)); } catch { existing = []; }
+        if (fsPathExists(file)) {
+            try { existing = JSON.parse(fsReadText(file)); } catch { existing = []; }
         }
         existing.push({ id: commandId, command, clientKey: this.clientKey, clientLabel: this.clientLabel, timestamp: Date.now(), payload });
-        fsWriteText(backlogFile, JSON.stringify(existing, null, 2));
+        fsWriteText(file, JSON.stringify(existing, null, 2));
     }
 
-    private gitPull() {
-        if (!this.isGitRepo()) { return; }
+    // Check whether the server is currently online by reading its presence file.
+    // Server is considered online if its presence file has lastSeen within 90 seconds.
+    private isServerOnline(): boolean {
+        if (!this.fallbackPath || !this.serverKey) { return false; }
         try {
-            execSync('git pull --rebase --quiet', { cwd: this.fallbackPath, stdio: 'ignore', timeout: 30000 });
-        } catch { /* non-git or no remote — ignore */ }
+            const serversDir = path.join(this.fallbackPath, 'servers');
+            if (!fsPathExists(serversDir)) { return false; }
+            const files = fsListDir(serversDir).filter(f => f.endsWith('.json') && f.startsWith(this.serverKey));
+            for (const file of files) {
+                try {
+                    const entry = JSON.parse(fsReadText(path.join(serversDir, file)));
+                    if (entry.status === 'online' && (Date.now() - entry.lastSeen) < 90000) { return true; }
+                } catch { }
+            }
+        } catch { }
+        return false;
     }
 
-    private gitCommitAndPush(message: string) {
-        if (!this.isGitRepo()) { return; }
-        try {
-            execSync('git add -A', { cwd: this.fallbackPath, stdio: 'ignore', timeout: 10000 });
-            execSync(`git commit -m "${message}" --allow-empty --quiet`, { cwd: this.fallbackPath, stdio: 'ignore', timeout: 10000 });
-            execSync('git push --quiet', { cwd: this.fallbackPath, stdio: 'ignore', timeout: 30000 });
-        } catch { /* ignore */ }
-    }
 
-    private isGitRepo(): boolean {
-        return fs.existsSync(path.join(this.fallbackPath, '.git'));
-    }
 }
 
 // ─── AutoUpdateManager ───────────────────────────────────────────────────────
@@ -467,159 +467,11 @@ class AutoUpdateManager {
     }
 }
 
-// ─── MonitorConnection ───────────────────────────────────────────────────────
-// Single WebSocket connection to the server.
-class MonitorConnection {
-    private ws: WebSocket | null = null;
-    private reconnectInterval: NodeJS.Timeout | null = null;
-    private heartbeatInterval: NodeJS.Timeout | null = null;
-    private lastCommand: string = '';
-    private _isConnected: boolean = false;
-
-    constructor(
-        private serverUrl: string,
-        private serverKey: string,
-        private clientKey: string,
-        private onCommand: (conn: MonitorConnection, data: WebSocket.Data) => void,
-        private getSystemInfo: () => Promise<any>,
-        private onConnected: () => void,
-        private onDisconnected: () => void
-    ) { }
-
-    get isConnected(): boolean {
-        return this._isConnected;
-    }
-
-    connect() {
-        if (this.ws) {
-            this.ws.close();
-        }
-
-        console.log(`[WS] Connecting to server "${this.serverKey}" at ${this.serverUrl}`);
-        this.ws = new WebSocket(this.serverUrl);
-
-        this.ws.on('open', () => {
-            console.log(`[WS] Connected to server: ${this.serverKey}`);
-            this._isConnected = true;
-            if (this.reconnectInterval) {
-                clearInterval(this.reconnectInterval);
-                this.reconnectInterval = null;
-            }
-            // Send registration + immediate heartbeat
-            this.register();
-            this.sendHeartbeat();
-            this.startHeartbeat();
-            this.onConnected();
-        });
-
-        this.ws.on('message', (data) => this.onCommand(this, data));
-
-        this.ws.on('close', () => {
-            console.log(`[WS] Disconnected from ${this.serverKey}`);
-            this._isConnected = false;
-            this.stopHeartbeat();
-            this.onDisconnected();
-            this.scheduleReconnect();
-        });
-
-        this.ws.on('error', (err) => {
-            console.error(`[WS] Error [${this.serverKey}]:`, err.message);
-        });
-    }
-
-    private async register() {
-        const systemInfo = await this.getSystemInfo();
-        this.send({
-            type: 'register',
-            clientKey: this.clientKey,
-            serverKey: this.serverKey,
-            timestamp: Date.now(),
-            payload: systemInfo
-        });
-    }
-
-    sendHeartbeat() {
-        this.send({
-            type: 'heartbeat',
-            clientKey: this.clientKey,
-            serverKey: this.serverKey,
-            timestamp: Date.now(),
-            payload: {}
-        });
-    }
-
-    private startHeartbeat() {
-        this.stopHeartbeat();
-        this.heartbeatInterval = setInterval(() => this.sendHeartbeat(), HEARTBEAT_INTERVAL_MS);
-    }
-
-    private stopHeartbeat() {
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-            this.heartbeatInterval = null;
-        }
-    }
-
-    private scheduleReconnect() {
-        if (this.reconnectInterval) { return; }
-        this.reconnectInterval = setInterval(() => this.connect(), RECONNECT_INTERVAL_MS);
-    }
-
-    send(message: ClientMessage) {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(message));
-        }
-    }
-
-    sendResponse(payload: any) {
-        this.send({
-            type: 'response',
-            clientKey: this.clientKey,
-            serverKey: this.serverKey,
-            timestamp: Date.now(),
-            command: this.lastCommand,
-            payload
-        });
-    }
-
-    sendQueuedResponse(payload: any, queuedCommandId: string, command: string) {
-        if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
-                type: 'response',
-                clientKey: this.clientKey,
-                serverKey: this.serverKey,
-                timestamp: Date.now(),
-                command,
-                queuedCommandId,
-                payload
-            }));
-        }
-    }
-
-    setLastCommand(command: string) {
-        this.lastCommand = command;
-    }
-
-    updateConfig(serverUrl: string, serverKey: string) {
-        this.serverUrl = serverUrl;
-        this.serverKey = serverKey;
-    }
-
-    close() {
-        this.stopHeartbeat();
-        if (this.reconnectInterval) { clearInterval(this.reconnectInterval); }
-        this._isConnected = false;
-        this.ws?.close();
-    }
-}
-
 // ─── ClientMonitor ───────────────────────────────────────────────────────────
 // Main class: manages a single server connection, git fallback, and auto-update.
 class ClientMonitor {
-    private connection: MonitorConnection | null = null;
     private clientKey: string = '';
     private serverKey: string = DEFAULT_SERVER_KEY;
-    private serverUrl: string = '';
     private context: vscode.ExtensionContext;
     private fallback: GitFallbackManager;
     private autoUpdater: AutoUpdateManager;
@@ -637,42 +489,33 @@ class ClientMonitor {
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         this.statusBarItem.command = 'clientMonitor.statusBarMenu';
         context.subscriptions.push(this.statusBarItem);
-        this.updateStatusBar('disconnected');
+        this.updateStatusBar('inactive');
     }
 
-    private updateStatusBar(state: 'connected' | 'disconnected' | 'fallback') {
-        switch (state) {
-            case 'connected':
-                this.statusBarItem.text = '$(plug) Monitor: Online';
-                this.statusBarItem.tooltip = `Connected to server "${this.serverKey}" via WebSocket`;
-                this.statusBarItem.backgroundColor = undefined;
-                break;
-            case 'disconnected':
-                this.statusBarItem.text = '$(debug-disconnect) Monitor: Offline';
-                this.statusBarItem.tooltip = 'Disconnected from monitor server';
-                this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-                break;
-            case 'fallback':
-                this.statusBarItem.text = '$(cloud-download) Monitor: Fallback';
-                this.statusBarItem.tooltip = 'Using git/file fallback for communication';
-                this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-                break;
+    private updateStatusBar(state: 'active' | 'inactive') {
+        if (state === 'active') {
+            this.statusBarItem.text = '$(cloud-download) Monitor: Active';
+            this.statusBarItem.tooltip = `Sync-folder mode — server key: "${this.serverKey}"`;
+            this.statusBarItem.backgroundColor = undefined;
+        } else {
+            this.statusBarItem.text = '$(debug-disconnect) Monitor: Inactive';
+            this.statusBarItem.tooltip = 'No sync path configured';
+            this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         }
         this.statusBarItem.show();
     }
+
 
     async initialize() {
         this.clientKey = this.getOrCreateClientKey();
         this.loadConfig();
         this.setupFallback();
         this.setupAutoUpdate();
-        this.connectToServer();
     }
 
     private loadConfig() {
         const config = vscode.workspace.getConfiguration('clientMonitor');
         this.serverKey = config.get<string>('serverKey') || DEFAULT_SERVER_KEY;
-        this.serverUrl = config.get<string>('serverUrl') || 'ws://localhost:54321';
     }
 
     private setupFallback() {
@@ -687,17 +530,10 @@ class ClientMonitor {
                 clientLabel,
                 this.serverKey,
                 version,
-                (cmd) => this.executeFallbackCommand(cmd),
-                () => this.connection?.isConnected ?? false,
-                (payload, cmdId, command) => {
-                    // Send result via WS tagging the queuedCommandId so server can correlate
-                    if (this.connection?.isConnected) {
-                        this.connection.sendQueuedResponse(payload, cmdId, command);
-                    }
-                }
+                (cmd) => this.executeFallbackCommand(cmd)
             );
-            // Always poll — handles backlog even when WebSocket is active
             this.fallback.startPolling();
+            this.updateStatusBar('active');
         }
     }
 
@@ -709,33 +545,7 @@ class ClientMonitor {
         }
     }
 
-    connectToServer() {
-        if (this.connection) {
-            this.connection.close();
-        }
 
-        this.connection = new MonitorConnection(
-            this.serverUrl,
-            this.serverKey,
-            this.clientKey,
-            (c, d) => this.handleServerCommand(c, d),
-            () => this.collectSystemInfo(),
-            () => {
-                // On connected — switch to WebSocket mode
-                this.updateStatusBar('connected');
-                console.log(`[Client] WebSocket connected, checking fallback backlog...`);
-            },
-            () => {
-                // On disconnected — activate fallback polling
-                if (this.fallback.isConfigured) {
-                    this.updateStatusBar('fallback');
-                } else {
-                    this.updateStatusBar('disconnected');
-                }
-            }
-        );
-        this.connection.connect();
-    }
 
     async setServerKey(newKey: string) {
         const oldKey = this.serverKey;
@@ -750,20 +560,12 @@ class ClientMonitor {
         if (oldKey && oldKey !== newKey) {
             this.fallback.removeOldPresenceFile(oldKey);
         }
-        // Reconnect WebSocket with new key
-        this.connectToServer();
     }
 
-    async setServerUrl(newUrl: string) {
-        this.serverUrl = newUrl;
-        const config = vscode.workspace.getConfiguration('clientMonitor');
-        await config.update('serverUrl', newUrl, vscode.ConfigurationTarget.Global);
-        vscode.window.showInformationMessage(`Server URL set to: ${newUrl}`);
-        this.connectToServer();
-    }
+
 
     private async executeFallbackCommand(cmd: FallbackCommand): Promise<any> {
-        // Execute the same commands as WebSocket, but return the result directly
+        // Execute a command received via sync-folder and return the result directly
         return this.executeCommand(cmd.command, cmd.payload);
     }
 
@@ -792,6 +594,14 @@ class ClientMonitor {
             case 'displayReminderScreen':
                 this.displayReminderScreenDirect(payload);
                 return { success: true, message: 'Reminder displayed' };
+            case 'setPollInterval': {
+                const ms = payload?.intervalMs;
+                if (typeof ms === 'number' && ms >= 3000) {
+                    this.fallback.setPollInterval(ms);
+                    return { success: true, intervalMs: this.fallback.currentPollIntervalMs };
+                }
+                return { success: false, error: 'intervalMs must be >= 3000' };
+            }
             case 'getAssets':
                 return { acknowledged: true };
             default:
@@ -840,32 +650,7 @@ class ClientMonitor {
         };
     }
 
-    // ─── WebSocket command handler ────────────────────────────────────────
-    private async handleServerCommand(conn: MonitorConnection, data: WebSocket.Data) {
-        let message;
-        try { message = JSON.parse(data.toString()); } catch { return; }
 
-        const command = message.command;
-        const queuedCommandId: string | undefined = message.queuedCommandId;
-        conn.setLastCommand(command);
-        try {
-            const result = await this.executeCommand(command, message.payload);
-            if (queuedCommandId) {
-                // This command came from dequeueAndSend — echo queuedCommandId so server
-                // can correlate the response to the correct commandLog entry
-                conn.sendQueuedResponse(result, queuedCommandId, command);
-            } else {
-                conn.sendResponse(result);
-            }
-        } catch (e: any) {
-            const errorPayload = { success: false, error: e?.message || String(e) };
-            if (queuedCommandId) {
-                conn.sendQueuedResponse(errorPayload, queuedCommandId, command);
-            } else {
-                conn.sendResponse(errorPayload);
-            }
-        }
-    }
 
     // ─── Direct command implementations (no conn dependency) ──────────────
     private async activateBBrainyDirect(): Promise<any> {
@@ -1214,11 +999,10 @@ new Chart(ctx, {
         return {
             clientKey: this.clientKey,
             serverKey: this.serverKey,
-            serverUrl: this.serverUrl,
-            connected: this.connection?.isConnected || false,
             fallbackConfigured: this.fallback.isConfigured,
             syncPath: config.get<string>('syncPath') || '',
-            clientReleasePath: config.get<string>('clientReleasePath') || ''
+            clientReleasePath: config.get<string>('clientReleasePath') || '',
+            pollIntervalMs: this.fallback.currentPollIntervalMs
         };
     }
 
@@ -1226,7 +1010,6 @@ new Chart(ctx, {
         this.fallback.markInactive();
         for (const interval of this.notifierIntervals.values()) { clearInterval(interval); }
         this.notifierIntervals.clear();
-        this.connection?.close();
         this.fallback.stopPolling();
         this.autoUpdater.stopChecking();
         this.statusBarItem.dispose();
@@ -1244,7 +1027,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('clientMonitor.serverKey') ||
-                e.affectsConfiguration('clientMonitor.serverUrl') ||
                 e.affectsConfiguration('clientMonitor.syncPath') ||
                 e.affectsConfiguration('clientMonitor.clientReleasePath')) {
                 monitor?.cleanup();
@@ -1265,21 +1047,6 @@ export function activate(context: vscode.ExtensionContext) {
             });
             if (key !== undefined && key.trim()) {
                 await monitor?.setServerKey(key.trim());
-            }
-        })
-    );
-
-    // Command: Set Server URL (interactive prompt)
-    context.subscriptions.push(
-        vscode.commands.registerCommand('clientMonitor.setServerUrl', async () => {
-            const current = vscode.workspace.getConfiguration('clientMonitor').get<string>('serverUrl') || 'ws://localhost:54321';
-            const url = await vscode.window.showInputBox({
-                prompt: 'Enter the WebSocket server URL',
-                value: current,
-                placeHolder: 'ws://192.168.1.100:54321'
-            });
-            if (url !== undefined && url.trim()) {
-                await monitor?.setServerUrl(url.trim());
             }
         })
     );
@@ -1318,13 +1085,6 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Command: Reconnect
-    context.subscriptions.push(
-        vscode.commands.registerCommand('clientMonitor.reconnect', () => {
-            monitor?.connectToServer();
-        })
-    );
-
     // Command: Show Status
     context.subscriptions.push(
         vscode.commands.registerCommand('clientMonitor.showStatus', () => {
@@ -1332,9 +1092,8 @@ export function activate(context: vscode.ExtensionContext) {
             if (info) {
                 vscode.window.showInformationMessage(
                     `Client Key: ${info.clientKey.substring(0, 12)}...\n` +
-                    `Server: ${info.serverKey} @ ${info.serverUrl}\n` +
-                    `WebSocket: ${info.connected ? 'Connected' : 'Disconnected'}\n` +
-                    `Fallback: ${info.fallbackConfigured ? 'Configured' : 'Not configured'}\n` +
+                    `Server Key: ${info.serverKey}\n` +
+                    `Sync: ${info.syncPath || 'Not set'}\n` +
                     `Sync: ${info.syncPath || 'Not set'}\n` +
                     `Releases: ${info.clientReleasePath || 'Not set'}`
                 );
@@ -1380,26 +1139,9 @@ export function activate(context: vscode.ExtensionContext) {
                             vscode.window.showInformationMessage(result?.message || 'Notifier set');
                         }
                     },
-                { label: '$(info) Connection Status', description: info ? `${info.serverKey} — ${info.connected ? 'Online' : 'Offline'}` : 'Not initialized',
+                { label: '$(info) Connection Status', description: info ? `${info.serverKey} — Sync-folder mode` : 'Not initialized',
                     action: () => vscode.commands.executeCommand('clientMonitor.showStatus') },
                 { label: '$(key) Change Server Key',       action: () => vscode.commands.executeCommand('clientMonitor.setServerKey') },
-                {
-                    label: '$(globe) Change Server URL / Port',
-                    description: info?.serverUrl ?? '',
-                    action: async () => {
-                        const current = vscode.workspace.getConfiguration('clientMonitor').get<string>('serverUrl') || 'ws://localhost:54321';
-                        const input = await vscode.window.showInputBox({
-                            prompt: 'Enter server WebSocket URL (e.g. ws://192.168.1.10:54321)',
-                            value: current,
-                            validateInput: v => /^wss?:\/\/.+:\d+$/.test(v.trim()) ? null : 'Must be ws:// or wss:// with a port number'
-                        });
-                        if (input?.trim()) {
-                            await vscode.workspace.getConfiguration('clientMonitor').update('serverUrl', input.trim(), vscode.ConfigurationTarget.Global);
-                            vscode.window.showInformationMessage(`Server URL updated to ${input.trim()}`);
-                        }
-                    }
-                },
-                { label: '$(sync) Reconnect',               action: () => vscode.commands.executeCommand('clientMonitor.reconnect') },
             ];
 
             const picked = await vscode.window.showQuickPick(

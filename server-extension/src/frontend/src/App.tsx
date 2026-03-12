@@ -13,7 +13,8 @@ import {
   FolderOpen,
   X,
   Key,
-  Check
+  Check,
+  Timer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -27,7 +28,7 @@ interface Client {
   workspace: string;
   bbrainyActive: boolean;
   lastSeen: number;
-  status: 'online' | 'offline';
+  status: 'sync' | 'offline';
   clientLabel: string;
   commandLog: Array<{
     id: string;
@@ -47,16 +48,20 @@ interface Client {
 interface DashboardData {
   serverStatus: {
     running: boolean;
-    port: number;
     serverId: string;
   };
   total: number;
-  online: number;
+  sync: number;
   offline: number;
   clients: Client[];
   backlogCount?: number;
-  configuredPort?: number;
-  serverUrl?: string | null;
+  intervals?: {
+    backlogPollMs: number;
+    presenceCheckMs: number;
+    syncScanMs: number;
+    serverPresenceMs: number;
+    clientPollMs: number;
+  };
 }
 
 interface CommandModal {
@@ -249,17 +254,15 @@ const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], client
 
 const App = () => {
   const [data, setData] = useState<DashboardData>({ 
-    serverStatus: { running: false, port: 54321, serverId: 'default' },
+    serverStatus: { running: false, serverId: 'default' },
     total: 0, 
-    online: 0, 
+    sync: 0,
     offline: 0, 
     clients: [] 
   });
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState(false);
   const [keyInput, setKeyInput] = useState('');
-  const [editingPort, setEditingPort] = useState(false);
-  const [portInput, setPortInput] = useState('');
   const [modal, setModal] = useState<CommandModal>({
     isOpen: false,
     command: '',
@@ -339,24 +342,10 @@ const App = () => {
     }
     setEditingKey(false);
   };
-  const displayPort = data.configuredPort || data.serverStatus.port;
-  const startEditingPort = () => {
-    setPortInput(String(displayPort));
-    setEditingPort(true);
-  };
-
   // Helpers for button disabled states
   const selectedClientData = selectedClient ? data.clients.find(c => c.key === selectedClient) : null;
-  const isClientOnline = selectedClientData?.status === 'online';
-  // Commands that require a live client connection — cannot be queued
-  const onlineRequired = !data.serverStatus.running || !isClientOnline;
-  const savePort = () => {
-    const n = parseInt(portInput, 10);
-    if (!isNaN(n) && n >= 1024 && n <= 65535 && n !== displayPort) {
-      vscode.postMessage({ action: 'changePort', newPort: n });
-    }
-    setEditingPort(false);
-  };
+  const isClientReachable = selectedClientData?.status === 'sync';
+
 
   return (
     <div className="min-h-screen p-4 t-primary overflow-x-hidden">
@@ -370,27 +359,9 @@ const App = () => {
               style={{ background: data.serverStatus.running ? 'var(--color-online)' : 'var(--color-offline)' }}
             ></span>
             <p className="text-[10px] t-muted font-medium">
-              {data.serverStatus.running ? `Online · ${data.serverStatus.serverId} · :${data.serverStatus.port}` : `Standalone [${data.serverStatus.serverId}]`}
+              {data.serverStatus.running ? `Running · ${data.serverStatus.serverId}` : `Stopped [${data.serverStatus.serverId}]`}
             </p>
           </div>
-          {/* WS connection URL — shown when server is running so admin can share it */}
-          {data.serverStatus.running && data.serverUrl && (
-            <div className="mt-1.5 flex items-center gap-1.5">
-              <Globe size={11} className="t-muted flex-shrink-0" />
-              <button
-                className="text-[10px] font-mono t-link truncate text-left hover:underline transition-colors"
-                title="Click to copy WebSocket URL"
-                onClick={() => {
-                  navigator.clipboard.writeText(data.serverUrl!).then(() => {
-                    const btn = document.activeElement as HTMLButtonElement;
-                    if (btn) { const prev = btn.textContent; btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = prev; }, 1200); }
-                  });
-                }}
-              >
-                {data.serverUrl}
-              </button>
-            </div>
-          )}
           {/* Server Key Editor */}
           <div className="mt-2 flex items-center gap-1.5">
             <Key size={11} className="t-muted flex-shrink-0" />
@@ -422,40 +393,6 @@ const App = () => {
                 title="Click to change server key"
               >
                 Key: {data.serverStatus.serverId}
-              </button>
-            )}
-          </div>
-          {/* Port Editor */}
-          <div className="mt-1 flex items-center gap-1.5">
-            <HardDrive size={11} className="t-muted flex-shrink-0" />
-            {editingPort ? (
-              <div className="flex items-center gap-1 flex-1">
-                <input
-                  type="number"
-                  value={portInput}
-                  onChange={(e) => setPortInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') savePort(); if (e.key === 'Escape') setEditingPort(false); }}
-                  autoFocus
-                  min={1024} max={65535}
-                  className="flex-1 px-2 py-0.5 rounded vsc-input text-[10px]"
-                  placeholder="Port 1024–65535"
-                />
-                <button onClick={savePort} className="p-0.5 rounded t-green transition-colors">
-                  <Check size={12} />
-                </button>
-                <button onClick={() => setEditingPort(false)} className="p-0.5 rounded t-muted transition-colors">
-                  <X size={12} />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={startEditingPort}
-                className="text-[10px] t-muted transition-colors"
-                onMouseEnter={e => e.currentTarget.style.color = 'var(--text-link)'}
-                onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                title="Click to change WebSocket port"
-              >
-                Port: {displayPort}{data.serverStatus.running && data.serverStatus.port !== displayPort ? ` (active: ${data.serverStatus.port})` : ''}
               </button>
             )}
           </div>
@@ -494,9 +431,9 @@ const App = () => {
         <div className="grid grid-cols-2 gap-2">
           <GlassCard>
             <div className="flex flex-col items-center text-center">
-              <Activity size={15} className="mb-1" style={{ color: 'var(--color-online)' }} />
-              <p className="text-[9px] t-muted uppercase section-label">Online</p>
-              <h3 className="text-lg font-bold" style={{ color: 'var(--color-online)' }}>{data.online}</h3>
+              <RefreshCcw size={15} className="mb-1" style={{ color: '#f59e0b' }} />
+              <p className="text-[9px] t-muted uppercase section-label">Active</p>
+              <h3 className="text-lg font-bold" style={{ color: '#f59e0b' }}>{data.sync}</h3>
             </div>
           </GlassCard>
           <GlassCard>
@@ -536,10 +473,12 @@ const App = () => {
                         <div
                           className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
                           style={{
-                            background: client.status === 'online'
-                              ? 'color-mix(in srgb, var(--color-online) 15%, transparent)'
+                            background: client.status === 'sync'
+                              ? 'color-mix(in srgb, #f59e0b 15%, transparent)'
                               : 'color-mix(in srgb, var(--text-muted) 12%, transparent)',
-                            color: client.status === 'online' ? 'var(--color-online)' : 'var(--text-muted)'
+                            color: client.status === 'sync'
+                              ? '#f59e0b'
+                              : 'var(--text-muted)'
                           }}
                         >
                           <User size={18} />
@@ -551,14 +490,29 @@ const App = () => {
                           <div className="flex items-center gap-1.5 text-[10px] t-muted">
                             <span
                               className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                              style={{ background: client.status === 'online' ? 'var(--color-online)' : 'var(--color-offline)' }}
+                              style={{ background: client.status === 'sync' ? '#f59e0b' : 'var(--color-offline)' }}
                             ></span>
-                            {client.bbrainyActive ? 'BBrainy Active' : 'Inactive'}
+                            {client.status === 'sync' ? 'Sync' : client.bbrainyActive ? 'BBrainy Active' : 'Inactive'}
                           </div>
                           {client.extensionStatus === 'inactive' && (
                             <span className="text-[8px] tint-orange rounded px-1 mt-0.5 inline-block border">uninstalled</span>
                           )}
                         </div>
+                        {(() => {
+                          const pending = client.commandLog.filter(e => e.status === 'queued').length;
+                          return pending > 0 ? (
+                            <span
+                              className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ml-auto"
+                              style={{
+                                background: 'color-mix(in srgb, #f59e0b 15%, transparent)',
+                                color: '#f59e0b',
+                                border: '1px solid color-mix(in srgb, #f59e0b 30%, transparent)'
+                              }}
+                            >
+                              {pending} pending
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
                     </GlassCard>
                   </motion.div>
@@ -721,9 +675,8 @@ const App = () => {
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{
-                      background: data.clients.find(c => c.key === selectedClient)?.status === 'online'
-                        ? 'var(--color-online)' : 'var(--accent-yellow)',
-                      animation: data.clients.find(c => c.key === selectedClient)?.status !== 'online' ? 'pulse-dot 2s ease-in-out infinite' : 'none'
+                      background: 'var(--accent-yellow)',
+                      animation: 'pulse-dot 2s ease-in-out infinite'
                     }}
                   ></span>
                   Command Queue
@@ -765,6 +718,59 @@ const App = () => {
               Clear Backlog
             </button>
           </div>
+        </section>
+
+        {/* Sync Tuning — interval controls */}
+        <section className={!data.serverStatus.running ? 'opacity-40 pointer-events-none' : ''}>
+          <h2 className="section-label mb-3 flex items-center gap-2">
+            <Timer size={13} style={{ color: 'var(--text-link)' }} /> Sync Tuning
+          </h2>
+          <GlassCard>
+            {(() => {
+              const iv = data.intervals ?? { backlogPollMs: 15000, presenceCheckMs: 30000, syncScanMs: 30000, serverPresenceMs: 30000, clientPollMs: 15000 };
+              const presets = [
+                { label: 'Fast (3s)', ms: 3000 },
+                { label: 'Normal (15s)', ms: 15000 },
+                { label: 'Relaxed (30s)', ms: 30000 },
+                { label: 'Slow (60s)', ms: 60000 },
+              ];
+              const setServer = (key: string, ms: number) =>
+                vscode.postMessage({ action: 'setServerIntervals', intervals: { [key]: ms } });
+              const setClientAll = (ms: number) =>
+                vscode.postMessage({ action: 'setAllClientsPollInterval', intervalMs: ms });
+              const setClientOne = (ms: number) => {
+                if (selectedClient) vscode.postMessage({ action: 'setClientPollInterval', clientKey: selectedClient, intervalMs: ms });
+              };
+              const row = (label: string, currentMs: number, onChange: (ms: number) => void) => (
+                <div className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid var(--divider)' }}>
+                  <span className="text-[9px] t-secondary font-semibold flex-shrink-0 w-24">{label}</span>
+                  <span className="text-[9px] t-muted font-mono w-10 text-right flex-shrink-0">{(currentMs / 1000).toFixed(0)}s</span>
+                  <div className="flex gap-1 flex-shrink-0">
+                    {presets.map(p => (
+                      <button
+                        key={p.ms}
+                        onClick={() => onChange(p.ms)}
+                        className={`text-[7px] px-1.5 py-0.5 rounded border transition-colors ${currentMs === p.ms ? 'tint-blue' : 'tint-muted'}`}
+                      >{p.label.split(' ')[0]}</button>
+                    ))}
+                  </div>
+                </div>
+              );
+              return (
+                <div className="space-y-0">
+                  <p className="section-label mb-1.5">Server Timers</p>
+                  {row('Backlog Poll', iv.backlogPollMs, ms => setServer('backlogPollMs', ms))}
+                  {row('Presence Check', iv.presenceCheckMs, ms => setServer('presenceCheckMs', ms))}
+                  {row('Sync Scan', iv.syncScanMs, ms => setServer('syncScanMs', ms))}
+                  <div className="pt-2 mt-1">
+                    <p className="section-label mb-1.5">Client Poll Interval</p>
+                    {row('All Clients', iv.clientPollMs, setClientAll)}
+                    {selectedClient && row('Selected↑', iv.clientPollMs, setClientOne)}
+                  </div>
+                </div>
+              );
+            })()}
+          </GlassCard>
         </section>
       </div>
 

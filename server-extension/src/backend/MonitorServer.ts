@@ -1,6 +1,4 @@
 ﻿import * as vscode from 'vscode';
-import { WebSocketServer } from 'ws';
-import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -9,10 +7,9 @@ import { MonitorViewProvider } from './providers/MonitorViewProvider';
 
 export interface Client {
     key: string;
-    ws: any;
     info: any;
     lastSeen: number;
-    status: 'online' | 'offline' | 'idle';
+    status: 'sync' | 'offline';
     clientLabel: string;   // "<username>-<hostname>"
     extensionStatus?: 'active' | 'inactive';
     commandLog: CommandLogEntry[];
@@ -129,7 +126,6 @@ interface PresenceEntry {
 interface ServerPresenceEntry {
     key: string;           // serverKey
     machine: string;       // hostname
-    port: number;
     username: string;
     version: string;
     clients: { key: string; label: string; status: string }[];
@@ -190,11 +186,17 @@ class ServerFallbackManager {
         return results;
     }
 
-    startPolling() {
+    startPolling(intervalMs: number = 15000) {
         this.stopPolling();
         if (!this.isConfigured) { return; }
-        this.backlogPollInterval = setInterval(() => this.pollServerBacklog(), 15000);
-        console.log(`[ServerFallback] Polling server-backlog from: ${this.syncPath}`);
+        // Immediate sweep on start to pick up any results already waiting
+        this.pollResultsDir();
+        this.pollServerBacklog();
+        this.backlogPollInterval = setInterval(() => {
+            this.pollResultsDir();
+            this.pollServerBacklog();
+        }, intervalMs);
+        console.log(`[ServerFallback] Polling results+backlog every ${intervalMs / 1000}s from: ${this.syncPath}`);
     }
 
     stopPolling() {
@@ -266,6 +268,32 @@ class ServerFallbackManager {
         }
     }
 
+    // Poll <syncPath>/results/ — live responses from online clients (NOT added to recentBacklogEntries)
+    private pollResultsDir() {
+        if (!this.isConfigured || !this.onBacklogResponse) { return; }
+        try {
+            const resultsDir = path.join(this.syncPath, 'results');
+            if (!fsPathExists(resultsDir)) { return; }
+            const files = fsListDir(resultsDir).filter(f => f.endsWith('.json'));
+            for (const file of files) {
+                const filePath = path.join(resultsDir, file);
+                try {
+                    const entries: any[] = JSON.parse(fsReadText(filePath));
+                    const clientLabel = file.replace(/\.json$/, '');
+                    fsDeleteFile(filePath);  // delete first to avoid re-read on next cycle
+                    for (const entry of entries) {
+                        console.log(`[ServerFallback] Got live result from ${clientLabel}: ${entry.command}`);
+                        this.onBacklogResponse(clientLabel, { ...entry, channel: 'live' });
+                    }
+                } catch (e) {
+                    console.error(`[ServerFallback] Error reading results file ${file}:`, e);
+                }
+            }
+        } catch (e) {
+            console.error('[ServerFallback] Results poll error:', e);
+        }
+    }
+
     // Poll <syncPath>/server-backlog/ for results written by clients that were offline
     private pollServerBacklog() {
         if (!this.isConfigured || !this.onBacklogResponse) { return; }
@@ -311,22 +339,25 @@ class ServerFallbackManager {
 }
 
 export class MonitorServer {
-    private wss: WebSocketServer | null = null;
-    private server: http.Server | null = null;
     private clients: Map<string, Client> = new Map();
     private provider: MonitorViewProvider | null = null;
     private context: vscode.ExtensionContext | null = null;
     private running: boolean = false;
-    private port: number = 54321;
     private serverId: string = 'default';
-    private heartbeatCheckInterval: NodeJS.Timeout | null = null;
+    private presenceCheckInterval: NodeJS.Timeout | null = null;
     private syncScanInterval: NodeJS.Timeout | null = null;
     private offlineTimeoutMs: number = 300000; // 5 minutes
     private fallback: ServerFallbackManager = new ServerFallbackManager();
     private clientReleasePath: string = '';
     private serverPresenceInterval: NodeJS.Timeout | null = null;
     private version: string = '1.0.0';
-    private configuredPort: number = 54321;
+
+    // ─── Configurable intervals (ms) ─────────────────────────────────
+    private backlogPollMs: number = 15000;      // server reads server-backlog/
+    private presenceCheckMs: number = 30000;    // check client presence staleness
+    private syncScanMs: number = 30000;         // scan presence files in clients/<serverKey>/
+    private serverPresenceMs: number = 30000;   // refresh server's own presence file
+    private clientPollMs: number = 15000;       // target interval pushed to clients
 
     initialize(context: vscode.ExtensionContext) {
         this.context = context;
@@ -335,10 +366,6 @@ export class MonitorServer {
         // Load server key: globalState takes priority, then settings
         const persistedKey = context.globalState.get<string>('serverKey');
         this.serverId = persistedKey || config.get<string>('serverId') || 'default';
-        // Load configured port: globalState takes priority, then settings
-        const persistedPort = context.globalState.get<number>('serverPort');
-        this.configuredPort = persistedPort || config.get<number>('port') || 54321;
-        this.port = this.configuredPort;
         console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`);
         this.loadPersistentClients();
         this.setupFallback();
@@ -363,10 +390,10 @@ export class MonitorServer {
                     }
                 });
             });
-            this.fallback.startPolling();
-            // Scan for presence files every 60s to discover newly-installed clients
+            this.fallback.startPolling(this.backlogPollMs);
+            // Scan for presence files to discover & promote sync clients
             if (this.syncScanInterval) { clearInterval(this.syncScanInterval); }
-            this.syncScanInterval = setInterval(() => this.importSyncClients(), 60000);
+            this.syncScanInterval = setInterval(() => this.importSyncClients(), this.syncScanMs);
         }
     }
 
@@ -381,23 +408,6 @@ export class MonitorServer {
         console.log(`[MonitorServer] Server key changed to: ${newKey}`);
         vscode.window.showInformationMessage(`Server key changed to: ${newKey}`);
         this.triggerUpdate();
-    }
-
-    async changePort(newPort: number) {
-        if (!newPort || newPort < 1024 || newPort > 65535 || !this.context) { return; }
-        this.configuredPort = newPort;
-        await this.context.globalState.update('serverPort', newPort);
-        console.log(`[MonitorServer] Port changed to: ${newPort}`);
-        if (this.running) {
-            vscode.window.showInformationMessage(`Port changed to ${newPort} â€” restarting server...`);
-            this.stop();
-            await new Promise(r => setTimeout(r, 500));
-            await this.start();
-        } else {
-            this.port = newPort;
-            this.triggerUpdate();
-            vscode.window.showInformationMessage(`Port set to ${newPort} â€” will be used on next server start`);
-        }
     }
 
     private serverPresenceFilePath(): string {
@@ -427,7 +437,6 @@ export class MonitorServer {
             const entry: ServerPresenceEntry = {
                 key: this.serverId,
                 machine,
-                port: this.port,
                 username: os.userInfo().username,
                 version: this.version,
                 clients: clientsSnapshot,
@@ -602,28 +611,44 @@ export class MonitorServer {
         });
     }
 
-    // Called when server-backlog file is found â€” client wrote results while server was offline
+    // Called when a client result arrives (via results/ live channel or server-backlog/ offline channel)
     private handleBacklogResponse(clientLabel: string, entry: any) {
-        // Find client by label
         const client = Array.from(this.clients.values()).find(c => c.clientLabel === clientLabel);
         if (!client) {
-            console.warn(`[MonitorServer] Backlog response for unknown clientLabel: ${clientLabel}`);
+            console.warn(`[MonitorServer] Response for unknown clientLabel: ${clientLabel}`);
             return;
         }
-        // Update command log entry to 'executed'
+        // Detect client-reported errors
+        const isError = entry.payload && entry.payload.success === false && entry.payload.error !== undefined;
+        // Update command log entry
         const logEntry = client.commandLog.find(e => e.id === entry.id);
         if (logEntry) {
-            logEntry.status = 'executed';
+            logEntry.status = isError ? 'error' : 'executed';
             logEntry.result = entry.payload;
         } else {
-            client.commandLog.push({ id: entry.id, command: entry.command, status: 'executed', timestamp: entry.timestamp, result: entry.payload });
+            client.commandLog.push({ id: entry.id, command: entry.command, status: isError ? 'error' : 'executed', timestamp: entry.timestamp || Date.now(), result: entry.payload });
         }
-        // Update checkBBrainy status silently (no auto-webview â€” view via Backlog button)
+        // Set lastResponse so the response panel in the UI shows the data
+        if (entry.payload !== undefined && entry.payload !== null) {
+            client.lastResponse = { command: entry.command, data: entry.payload, timestamp: entry.timestamp || Date.now() };
+        }
+        // Update command-specific fields in client.info
+        if (!client.info) { client.info = {}; }
         if (entry.command === 'checkBBrainy' && entry.payload) {
-            if (!client.info) { client.info = {}; }
             client.info.bbrainyStatus = entry.payload;
         }
-        console.log(`[MonitorServer] Processed server-backlog entry for ${clientLabel}: ${entry.command}`);
+        if (entry.command === 'getSystemInfo' && entry.payload?.hostname) {
+            Object.assign(client.info, { hostname: entry.payload.hostname, username: entry.payload.username, os: entry.payload.os, vscodeVersion: entry.payload.vscodeVersion });
+        }
+        if (entry.command === 'getWorkspace' && entry.payload?.workspace) {
+            client.info.workspace = entry.payload.workspace;
+        }
+        if (entry.command === 'getUsageReport' && entry.payload?.totalEntries !== undefined) {
+            client.info.lastUsageReport = entry.payload;
+        }
+        const channelLabel = entry.channel === 'live' ? 'Live result' : 'Backlog result';
+        console.log(`[MonitorServer] ${channelLabel} from ${clientLabel}: ${entry.command} -> ${isError ? 'error' : 'executed'}`);
+        this.savePersistentClients();
         this.triggerUpdate();
     }
 
@@ -645,21 +670,27 @@ export class MonitorServer {
 
         let added = 0;
         for (const entry of entries) {
+            // A presence file is considered "fresh" if lastSeen is within 2 minutes
+            const SYNC_FRESH_MS = 2 * 60 * 1000;
+            const isFresh = (Date.now() - entry.lastSeen) < SYNC_FRESH_MS;
+
             if (this.clients.has(entry.clientKey)) {
                 // Update extensionStatus on existing client from latest presence file
                 const existing = this.clients.get(entry.clientKey)!;
-                // Only update if client is not currently connected via WebSocket
-                if (existing.status !== 'online') {
+                // Update status from presence file
+                {
                     existing.extensionStatus = effectiveExtStatus(entry);
+                    existing.lastSeen = Math.max(existing.lastSeen, entry.lastSeen);
+                    // Promote to 'sync' if presence file is fresh
+                    existing.status = isFresh ? 'sync' : 'offline';
                 }
                 continue;
             }
             this.clients.set(entry.clientKey, {
                 key: entry.clientKey,
-                ws: null,
                 info: { username: entry.username, hostname: entry.hostname },
                 lastSeen: entry.lastSeen,
-                status: 'offline',
+                status: isFresh ? 'sync' : 'offline',
                 clientLabel: entry.clientLabel,
                 commandLog: [],
                 extensionStatus: effectiveExtStatus(entry)
@@ -768,14 +799,11 @@ export class MonitorServer {
             return;
         }
         const config = vscode.workspace.getConfiguration('serverMonitor');
-        // Use configuredPort from UI/globalState; fall back to settings
-        const persistedPort = this.context.globalState.get<number>('serverPort');
-        const basePort = persistedPort || this.configuredPort || config.get<number>('port') || 54321;
         // Prefer globalState key (set via UI) over settings
         const persistedKey = this.context.globalState.get<string>('serverKey');
         this.serverId = persistedKey || config.get<string>('serverId') || 'default';
 
-        console.log(`[MonitorServer] Starting server with serverId: ${this.serverId} on port: ${basePort}`);
+        console.log(`[MonitorServer] Starting server with serverId: ${this.serverId}`);
 
         // Reload clients for the specific Server ID
         this.clients.clear();
@@ -791,57 +819,28 @@ export class MonitorServer {
         // Restore pending disk-queue entries into each client's command log
         this.restorePendingQueueToLog();
 
-        this.server = http.createServer();
-        this.wss = new WebSocketServer({ server: this.server });
+        this.running = true;
 
-        this.wss.on('connection', (ws) => {
-            console.log(`[MonitorServer] New WebSocket connection established`);
-            ws.on('message', (data) => this.handleClientMessage(ws, data));
-            ws.on('close', () => this.handleClientDisconnect(ws));
-            ws.on('error', (err) => {
-                console.error(`[MonitorServer] WebSocket error: ${err.message}`);
-            });
-        });
+        // Start presence check interval (check client presence every 30s)
+        this.startPresenceCheck();
 
-        this.listenWithRetry(basePort);
+        // Write server presence and keep it fresh
+        this.writeServerPresenceFile('online');
+        if (this.serverPresenceInterval) { clearInterval(this.serverPresenceInterval); }
+        this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile('online'), this.serverPresenceMs);
+
+        this.triggerUpdate();
+        console.log(`[MonitorServer] Server started successfully [${this.serverId}]`);
+        vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running (sync-folder mode)`);
     }
 
-    private startHeartbeatCheck() {
-        if (this.heartbeatCheckInterval) {
-            clearInterval(this.heartbeatCheckInterval);
+    private startPresenceCheck() {
+        if (this.presenceCheckInterval) {
+            clearInterval(this.presenceCheckInterval);
         }
-        // Check every 30 seconds for stale offline clients
-        this.heartbeatCheckInterval = setInterval(() => {
-            this.checkHeartbeats();
-        }, 30000);
-    }
-
-    private listenWithRetry(port: number, attempt: number = 0) {
-        if (attempt >= 10) {
-            console.error(`[MonitorServer] Failed to start: Ports ${port - 10} to ${port - 1} are busy`);
-            vscode.window.showErrorMessage(`Failed to start server: Ports ${port - 10} to ${port - 1} are busy.`);
-            return;
-        }
-
-        this.server?.listen(port, () => {
-            this.port = port;
-            this.running = true;
-            this.startHeartbeatCheck();
-            this.writeServerPresenceFile('online');
-            if (this.serverPresenceInterval) { clearInterval(this.serverPresenceInterval); }
-            this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile('online'), 30000);
-            this.triggerUpdate();
-            console.log(`[MonitorServer] âœ… Server started successfully on port ${this.port}`);
-            vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running on port ${this.port}`);
-        }).on('error', (err: any) => {
-            if (err.code === 'EADDRINUSE') {
-                console.log(`[MonitorServer] Port ${port} is in use, trying ${port + 1}...`);
-                this.listenWithRetry(port + 1, attempt + 1);
-            } else {
-                console.error(`[MonitorServer] Server error: ${err.message}`);
-                vscode.window.showErrorMessage(`Server error: ${err.message}`);
-            }
-        });
+        this.presenceCheckInterval = setInterval(() => {
+            this.checkClientPresence();
+        }, this.presenceCheckMs);
     }
 
     stop() {
@@ -852,10 +851,10 @@ export class MonitorServer {
         
         console.log(`[MonitorServer] Stopping server`);
         
-        // Stop heartbeat check
-        if (this.heartbeatCheckInterval) {
-            clearInterval(this.heartbeatCheckInterval);
-            this.heartbeatCheckInterval = null;
+        // Stop presence check
+        if (this.presenceCheckInterval) {
+            clearInterval(this.presenceCheckInterval);
+            this.presenceCheckInterval = null;
         }
 
         // Stop sync-folder scan
@@ -874,157 +873,82 @@ export class MonitorServer {
         // Stop fallback polling
         this.fallback.stopPolling();
         
-        this.wss?.close();
-        this.server?.close();
-        this.wss = null;
-        this.server = null;
         this.running = false;
 
         // When server stops, set active clients to offline but don't clear persistent ones
         for (const client of this.clients.values()) {
             client.status = 'offline';
-            client.ws = null;
         }
 
         this.triggerUpdate();
-        console.log(`[MonitorServer] âœ… Server stopped`);
+        console.log(`[MonitorServer] Server stopped`);
         vscode.window.showInformationMessage('Monitor server stopped');
     }
 
-    private handleClientMessage(ws: any, data: any) {
-        let message;
-        try {
-            message = JSON.parse(data.toString());
-        } catch (e) {
-            console.error(`[MonitorServer] Failed to parse message:`, e);
-            return;
+    // ─── Interval controls ───────────────────────────────────────────
+    /** Change server-side polling intervals at runtime and restart affected timers. */
+    setServerIntervals(opts: { backlogPollMs?: number; presenceCheckMs?: number; syncScanMs?: number; serverPresenceMs?: number }) {
+        const clamp = (v: number | undefined, min: number, max: number, cur: number) =>
+            v !== undefined ? Math.max(min, Math.min(max, v)) : cur;
+
+        this.backlogPollMs    = clamp(opts.backlogPollMs,    3000, 300000, this.backlogPollMs);
+        this.presenceCheckMs  = clamp(opts.presenceCheckMs,  5000, 300000, this.presenceCheckMs);
+        this.syncScanMs       = clamp(opts.syncScanMs,       5000, 300000, this.syncScanMs);
+        this.serverPresenceMs = clamp(opts.serverPresenceMs, 5000, 300000, this.serverPresenceMs);
+
+        if (this.running) {
+            // Restart all timers with new intervals
+            this.fallback.startPolling(this.backlogPollMs);
+
+            if (this.syncScanInterval) { clearInterval(this.syncScanInterval); }
+            this.syncScanInterval = setInterval(() => this.importSyncClients(), this.syncScanMs);
+
+            this.startPresenceCheck();
+
+            if (this.serverPresenceInterval) { clearInterval(this.serverPresenceInterval); }
+            this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile('online'), this.serverPresenceMs);
         }
 
-        console.log(`[MonitorServer] Received message type: ${message.type} from client: ${message.clientKey}`);
-
-        // Accept both serverKey (new protocol) and serverId (legacy) fields
-        const clientServerKey = message.serverKey || message.serverId;
-
-        if (message.type === 'register') {
-            if (clientServerKey !== this.serverId) {
-                console.warn(`[MonitorServer] Client ${message.clientKey} attempted to register with wrong Server Key: ${clientServerKey} (expected: ${this.serverId})`);
-                ws.send(JSON.stringify({ type: 'error', message: 'Invalid Server Key' }));
-                return;
-            }
-            this.registerClient(ws, message);
-        } else if (message.type === 'response') {
-            console.log(`[MonitorServer] Response from ${message.clientKey} for command: ${message.command}`);
-            this.handleResponse(message);
-        } else if (message.type === 'heartbeat') {
-            console.debug(`[MonitorServer] Heartbeat from ${message.clientKey}`);
-            this.updateHeartbeat(message.clientKey);
-        } else {
-            console.warn(`[MonitorServer] Unknown message type: ${message.type} from ${message.clientKey}`);
-        }
-
+        console.log(`[MonitorServer] Server intervals updated — backlog: ${this.backlogPollMs / 1000}s, presence: ${this.presenceCheckMs / 1000}s, sync-scan: ${this.syncScanMs / 1000}s, server-presence: ${this.serverPresenceMs / 1000}s`);
         this.triggerUpdate();
     }
 
-    private registerClient(ws: any, message: any) {
-        const clientLabel = `${message.payload?.username || 'unknown'}-${message.payload?.hostname || 'unknown'}`;
-        const existingClient = this.clients.get(message.clientKey);
-        if (existingClient) {
-            console.log(`[MonitorServer] Updating existing client: ${message.clientKey} (${clientLabel})`);
-            existingClient.ws = ws;
-            existingClient.status = 'online';
-            existingClient.info = message.payload;
-            existingClient.lastSeen = Date.now();
-            existingClient.clientLabel = clientLabel;
-            existingClient.extensionStatus = 'active'; // clear uninstalled badge on reconnect
-        } else {
-            console.log(`[MonitorServer] Registering new client: ${message.clientKey} (${clientLabel})`);
-            const client: Client = {
-                key: message.clientKey,
-                ws: ws,
-                info: message.payload,
-                lastSeen: Date.now(),
-                status: 'online',
-                clientLabel,
-                commandLog: []
-            };
-            this.clients.set(message.clientKey, client);
-        }
-
-        this.savePersistentClients();
-        console.log(`[MonitorServer] Total clients: ${this.clients.size}`);
-        vscode.window.showInformationMessage(`Client registered: ${message.payload?.username}@${message.payload?.hostname}`);
-
-        // Dequeue any pending offline commands and deliver via WebSocket
-        this.dequeueAndSend(message.clientKey, clientLabel);
+    /** Send a setPollInterval command to a specific client (queued via sync folder). */
+    async setClientPollInterval(clientKey: string, intervalMs: number) {
+        this.clientPollMs = Math.max(3000, Math.min(300000, intervalMs));
+        await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: this.clientPollMs });
     }
 
-    private async dequeueAndSend(clientKey: string, clientLabel: string) {
-        if (!this.fallback.isConfigured) { return; }
-        const pending = this.fallback.dequeueCommands(clientLabel);
-        if (pending.length === 0) { return; }
-
-        const client = this.clients.get(clientKey);
-        if (!client) { return; }
-
-        console.log(`[MonitorServer] Delivering ${pending.length} queued command(s) to ${clientLabel} via WebSocket`);
-        vscode.window.showInformationMessage(`Client ${clientLabel} is back online â€” delivering ${pending.length} queued command(s)`);
-
-        for (const cmd of pending) {
-            // Update log entry to 'sent'
-            const logEntry = client.commandLog.find(e => e.id === cmd.id);
-            if (logEntry) {
-                logEntry.status = 'sent';
-            }
-
-            if (client.ws?.readyState === 1 /* OPEN */) {
-                client.ws.send(JSON.stringify({ command: cmd.command, payload: cmd.payload, timestamp: Date.now(), queuedCommandId: cmd.id }));
-                console.log(`[MonitorServer] Delivered queued command "${cmd.command}" (${cmd.id}) to ${clientLabel}`);
-            }
-            // Small delay to avoid flooding
-            await new Promise(r => setTimeout(r, 100));
-        }
-        this.triggerUpdate();
-    }
-
-    private handleClientDisconnect(ws: any) {
-        let disconnectedClient: string | null = null;
-        for (const [key, client] of this.clients) {
-            if (client.ws === ws) {
-                client.status = 'offline';
-                client.ws = null;
-                disconnectedClient = key;
-                console.log(`[MonitorServer] Client disconnected: ${key} (${client.info?.username}@${client.info?.hostname})`);
-                this.triggerUpdate();
-                break;
-            }
-        }
-        if (!disconnectedClient) {
-            console.warn(`[MonitorServer] Disconnect event received but no matching client found`);
+    /** Broadcast setPollInterval command to ALL clients. */
+    async setAllClientsPollInterval(intervalMs: number) {
+        this.clientPollMs = Math.max(3000, Math.min(300000, intervalMs));
+        await this.queryAllClients('setPollInterval');
+        // queryAllClients doesn't forward payload — send individually
+        for (const key of this.clients.keys()) {
+            await this.sendCommand(key, 'setPollInterval', { intervalMs: this.clientPollMs });
         }
     }
 
-    private updateHeartbeat(clientKey: string) {
-        const client = this.clients.get(clientKey);
-        if (client) {
-            client.lastSeen = Date.now();
-            client.status = 'online';
-            this.savePersistentClients();
-            console.debug(`[MonitorServer] Updated heartbeat for ${clientKey}`);
-        } else {
-            console.warn(`[MonitorServer] Heartbeat from unknown client: ${clientKey}`);
-        }
+    /** Return current interval settings for the UI. */
+    getIntervals() {
+        return {
+            backlogPollMs: this.backlogPollMs,
+            presenceCheckMs: this.presenceCheckMs,
+            syncScanMs: this.syncScanMs,
+            serverPresenceMs: this.serverPresenceMs,
+            clientPollMs: this.clientPollMs
+        };
     }
 
-    private checkHeartbeats() {
+    private checkClientPresence() {
         const now = Date.now();
         const keysToRemove: string[] = [];
         
         for (const [key, client] of this.clients) {
-            if (client.status === 'online' && now - client.lastSeen > 90000) {
-                // Mark as offline if no heartbeat for 90 seconds
+            if (client.status === 'sync' && now - client.lastSeen > 2 * 60 * 1000) {
+                // Sync client presence file went stale (>2 min) - demote to offline
                 client.status = 'offline';
-                client.ws = null;
-                console.log(`[MonitorServer] Client marked offline due to missed heartbeat: ${key} (${client.info?.username}@${client.info?.hostname})`);
+                console.log(`[MonitorServer] Sync client demoted to offline (stale presence): ${key}`);
             } else if (client.status === 'offline' && now - client.lastSeen > this.offlineTimeoutMs) {
                 // Remove client if offline for too long (5 minutes by default)
                 keysToRemove.push(key);
@@ -1041,47 +965,6 @@ export class MonitorServer {
             this.triggerUpdate();
         }
     }
-
-    private handleResponse(message: any) {
-        const client = this.clients.get(message.clientKey);
-        if (client) {
-            client.lastResponse = {
-                command: message.command || 'unknown',
-                data: message.payload,
-                timestamp: Date.now()
-            };
-            console.log(`[MonitorServer] Stored response for ${message.clientKey} (${message.command})`, {
-                success: message.payload?.success,
-                totalEntries: message.payload?.totalEntries,
-                agents: message.payload?.agents?.length
-            });
-
-            // Update log entry if this response corresponds to a queued command
-            if (message.queuedCommandId) {
-                const logEntry = client.commandLog.find(e => e.id === message.queuedCommandId);
-                if (logEntry) {
-                    logEntry.status = 'executed';
-                    logEntry.result = message.payload;
-                }
-            }
-
-            // Store BBrainy status if available
-            if (message.command === 'checkBBrainy' && message.payload) {
-                if (!client.info) { client.info = {}; }
-                client.info.bbrainyStatus = message.payload;
-            }
-            
-            // Handle usage report - create webview panel
-            if (message.command === 'getUsageReport' && message.payload?.success && message.payload?.agents) {
-                this.showUsageReportWebview(message.payload, client.info?.username, client.info?.hostname);
-            }
-            
-            this.triggerUpdate();
-        } else {
-            console.warn(`[MonitorServer] Response from unknown client: ${message.clientKey}`);
-        }
-    }
-
     private showUsageReportWebview(usageData: any, username: string = 'Unknown', hostname: string = 'Unknown') {
         try {
             // Prepare chart data for Chart.js
@@ -1408,15 +1291,6 @@ export class MonitorServer {
         `;
     }
 
-    // Commands that make no sense offline (need a live response) â€” never queue these
-    private static readonly NO_QUEUE_COMMANDS = new Set([
-        'checkBBrainy',
-        'forceBBrainy',
-        'getWorkspace',
-        'getSystemInfo',
-        'showBBrainyStatus',
-    ]);
-
     async sendCommand(clientKey: string, command: string, payload?: any) {
         const client = this.clients.get(clientKey);
         if (!client) {
@@ -1425,63 +1299,38 @@ export class MonitorServer {
             return;
         }
 
-        if (client.status === 'offline') {
-            // Online-only commands: show a friendly warning and do NOT queue
-            if (MonitorServer.NO_QUEUE_COMMANDS.has(command)) {
-                vscode.window.showWarningMessage(
-                    `"${command}" requires an active connection â€” ${client.clientLabel} is currently offline.`
-                );
-                return;
-            }
+        // All commands go through the sync-folder queue
+        const cmdId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        const logEntry: CommandLogEntry = { id: cmdId, command, status: 'queued', timestamp: Date.now() };
+        client.commandLog.push(logEntry);
+        this.triggerUpdate();
 
-            // Generate the ID here so both the in-memory log and the queue file share the same ID.
-            // Using a tempId that gets replaced later caused a race: if the user cancelled between
-            // the two triggerUpdate() calls, cancelQueueEntry would not find the entry in the file.
-            const cmdId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-            const logEntry: CommandLogEntry = { id: cmdId, command, status: 'queued', timestamp: Date.now() };
-            client.commandLog.push(logEntry);
+        if (!this.fallback.isConfigured) {
+            logEntry.status = 'error';
+            const syncPath = vscode.workspace.getConfiguration('serverMonitor').get<string>('syncPath') || '(empty)';
+            const msg = `Sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
+            console.error(`[MonitorServer] ${msg}`);
+            vscode.window.showErrorMessage(msg);
+            this.savePersistentClients();
             this.triggerUpdate();
-
-            if (!this.fallback.isConfigured) {
-                logEntry.status = 'error';
-                const syncPath = vscode.workspace.getConfiguration('serverMonitor').get<string>('syncPath') || '(empty)';
-                const msg = `Client offline â€” sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
-                console.error(`[MonitorServer] ${msg}`);
-                vscode.window.showErrorMessage(msg);
-                this.savePersistentClients();
-                this.triggerUpdate();
-                return;
-            }
-
-            try {
-                this.fallback.enqueueCommand(client.clientLabel, clientKey, command, payload, cmdId);
-                this.savePersistentClients();
-                this.triggerUpdate();
-                const msg = `Queued "${command}" for ${client.clientLabel} â†’ ${this.fallback.syncPathValue}\\queue\\${client.clientLabel}.json`;
-                console.log(`[MonitorServer] ${msg}`);
-                vscode.window.showInformationMessage(msg);
-            } catch (e: any) {
-                logEntry.status = 'error';
-                const msg = `Failed to queue command: ${e?.message || e}`;
-                console.error(`[MonitorServer] ${msg}`);
-                vscode.window.showErrorMessage(msg);
-                this.savePersistentClients();
-                this.triggerUpdate();
-            }
             return;
         }
 
-        console.log(`[MonitorServer] Sending command to ${clientKey}: ${command}`, payload || '{}');
-
-        client.ws.send(JSON.stringify({
-            command,
-            payload,
-            timestamp: Date.now()
-        }));
-
-        console.log(`[MonitorServer] Command sent successfully to ${clientKey}`);
+        try {
+            this.fallback.enqueueCommand(client.clientLabel, clientKey, command, payload, cmdId);
+            this.savePersistentClients();
+            this.triggerUpdate();
+            console.log(`[MonitorServer] Queued "${command}" for ${client.clientLabel}`);
+            vscode.window.showInformationMessage(`Queued "${command}" for ${client.clientLabel}`);
+        } catch (e: any) {
+            logEntry.status = 'error';
+            const msg = `Failed to queue command: ${e?.message || e}`;
+            console.error(`[MonitorServer] ${msg}`);
+            vscode.window.showErrorMessage(msg);
+            this.savePersistentClients();
+            this.triggerUpdate();
+        }
     }
-
     // Remove all queued (not-yet-delivered) commands for a client from disk and log
     clearClientQueue(clientKey: string) {
         const client = this.clients.get(clientKey);
@@ -1551,7 +1400,7 @@ export class MonitorServer {
             bbrainyActive: c.info?.bbrainyStatus?.active || false,
             status: c.status,
             lastSeen: c.lastSeen,
-            onlineStatus: c.status === 'online' ? 'online' : 'offline'
+            onlineStatus: c.status === 'sync' ? 'active' : 'offline'
         }));
     }
 
@@ -1573,7 +1422,7 @@ export class MonitorServer {
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.username}</td>
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.hostname}</td>
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">
-                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${asset.onlineStatus === 'online' ? '#34d399' : '#ef4444'};"></span>
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${asset.onlineStatus === 'active' ? '#f59e0b' : '#ef4444'};"></span>
                     ${asset.onlineStatus}
                 </td>
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? '&#10003; Active' : '&#10007; Inactive'}</td>
@@ -1671,8 +1520,8 @@ export class MonitorServer {
                             <div class="stat-label">Total Clients</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${assets.filter(a => a.onlineStatus === 'online').length}</div>
-                            <div class="stat-label">Online</div>
+                            <div class="stat-value">${assets.filter(a => a.onlineStatus === 'active').length}</div>
+                            <div class="stat-label">Active (Sync)</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-value">${assets.filter(a => a.bbrainyActive).length}</div>
@@ -1883,7 +1732,7 @@ export class MonitorServer {
     async generateReport() {
         const now = new Date();
         const clientsArray = Array.from(this.clients.values());
-        const online  = clientsArray.filter(c => c.status === 'online');
+        const sync    = clientsArray.filter(c => c.status === 'sync');
         const offline = clientsArray.filter(c => c.status === 'offline');
         const inactive = clientsArray.filter(c => c.extensionStatus === 'inactive');
 
@@ -1895,14 +1744,12 @@ export class MonitorServer {
                 machine: os.hostname(),
                 username: os.userInfo().username,
                 version: this.version,
-                port: this.port,
-                configuredPort: this.configuredPort,
                 running: this.running,
                 syncPath: this.fallback.syncPathValue || '(not configured)',
             },
             summary: {
                 total: clientsArray.length,
-                online: online.length,
+                sync: sync.length,
                 offline: offline.length,
                 inactive: inactive.length,
             },
@@ -1925,7 +1772,7 @@ export class MonitorServer {
 
         // Build client rows HTML
         const statusColor: Record<string, string> = {
-            online:  '#22c55e',
+            sync:    '#f59e0b',
             offline: '#94a3b8',
             active:  '#22c55e',
             inactive:'#f97316',
@@ -2017,7 +1864,7 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
     <h2>Summary</h2>
     <div class="grid">
       <div class="card"><div class="card-label">Total Clients</div><div class="card-value">${clientsArray.length}</div></div>
-      <div class="card"><div class="card-label">Online</div><div class="card-value green">${online.length}</div></div>
+      <div class="card"><div class="card-label">Active (Sync)</div><div class="card-value amber">${sync.length}</div></div>
       <div class="card"><div class="card-label">Offline</div><div class="card-value red">${offline.length}</div></div>
       <div class="card"><div class="card-label">Uninstalled</div><div class="card-value orange">${inactive.length}</div></div>
     </div>
@@ -2030,8 +1877,7 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
            <div class="info-row"><span class="info-key">Machine</span><span class="info-val">${os.hostname()}</span></div>
            <div class="info-row"><span class="info-key">Username</span><span class="info-val">${os.userInfo().username}</span></div>
            <div class="info-row"><span class="info-key">Version</span><span class="info-val">${this.version}</span></div></div>
-      <div><div class="info-row"><span class="info-key">Active Port</span><span class="info-val">${this.running ? this.port : '(stopped)'}</span></div>
-           <div class="info-row"><span class="info-key">Configured Port</span><span class="info-val">${this.configuredPort}</span></div>
+      <div>
            <div class="info-row"><span class="info-key">Status</span><span class="info-val" style="color:${this.running ? '#22c55e' : '#f87171'}">${this.running ? 'Running' : 'Stopped'}</span></div>
            <div class="info-row"><span class="info-key">Sync Path</span><span class="info-val">${this.fallback.syncPathValue || '(not configured)'}</span></div></div>
     </div>
@@ -2042,7 +1888,7 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
     <table>
       <thead><tr>
         <th>Label</th><th>User</th><th>Host</th><th>Version</th>
-        <th>WS Status</th><th>Ext Status</th><th>BBrainy</th><th>Queue</th><th>Last Seen</th>
+        <th>Sync Status</th><th>Ext Status</th><th>BBrainy</th><th>Queue</th><th>Last Seen</th>
       </tr></thead>
       <tbody>${clientRows || '<tr><td colspan="9" style="text-align:center;color:#475569;padding:20px">No clients registered</td></tr>'}</tbody>
     </table>
@@ -2083,39 +1929,16 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
         }
     }
 
-    /** Returns the first non-loopback IPv4 address found on the LAN interfaces. */
-    private getLocalIpv4(): string {
-        const ifaces = os.networkInterfaces();
-        let vpnFallback: string | null = null;
-        for (const name of Object.keys(ifaces)) {
-            for (const iface of ifaces[name] ?? []) {
-                if (iface.family === 'IPv4' && !iface.internal) {
-                    // Skip point-to-point / VPN links (/32 mask) — unreachable from LAN peers.
-                    // Keep as last-resort fallback in case no real LAN adapter exists.
-                    if (iface.netmask === '255.255.255.255') {
-                        if (!vpnFallback) { vpnFallback = iface.address; }
-                        continue;
-                    }
-                    return iface.address;
-                }
-            }
-        }
-        return vpnFallback ?? 'localhost';
-    }
-
     triggerUpdate() {
         if (this.provider) {
             const clientsArray = Array.from(this.clients.values());
-            const localIp = this.getLocalIpv4();
             this.provider.update({
                 serverStatus: {
                     running: this.running,
-                    port: this.port,
                     serverId: this.serverId
                 },
-                serverUrl: this.running ? `ws://${localIp}:${this.port}` : null,
                 total: this.clients.size,
-                online: clientsArray.filter(c => c.status === 'online').length,
+                sync: clientsArray.filter(c => c.status === 'sync').length,
                 offline: clientsArray.filter(c => c.status === 'offline').length,
                 clients: clientsArray.map(c => ({
                     key: c.key,
@@ -2126,12 +1949,18 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
                     lastSeen: c.lastSeen,
                     status: c.status,
                     clientLabel: c.clientLabel,
-                    commandLog: c.commandLog.slice(-50),  // send last 50 to UI
+                    commandLog: c.commandLog.slice(-50),
                     lastResponse: c.lastResponse,
                     extensionStatus: c.extensionStatus
                 })),
                 backlogCount: this.fallback.getRecentBacklog().length,
-                configuredPort: this.configuredPort
+                intervals: {
+                    backlogPollMs: this.backlogPollMs,
+                    presenceCheckMs: this.presenceCheckMs,
+                    syncScanMs: this.syncScanMs,
+                    serverPresenceMs: this.serverPresenceMs,
+                    clientPollMs: this.clientPollMs
+                }
             });
         }
     }

@@ -61,16 +61,20 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
                 case 'clearBacklog':
                     this.server.clearBacklog();
                     break;
-                case 'changePort': {
-                    const p = parseInt(message.newPort, 10);
-                    if (!isNaN(p)) { await this.server.changePort(p); }
-                    break;
-                }
                 case 'clearClientQueue':
                     this.server.clearClientQueue(message.clientKey);
                     break;
                 case 'cancelQueueEntry':
                     this.server.cancelQueueEntry(message.clientKey, message.entryId);
+                    break;
+                case 'setServerIntervals':
+                    this.server.setServerIntervals(message.intervals);
+                    break;
+                case 'setClientPollInterval':
+                    await this.server.setClientPollInterval(message.clientKey, message.intervalMs);
+                    break;
+                case 'setAllClientsPollInterval':
+                    await this.server.setAllClientsPollInterval(message.intervalMs);
                     break;
             }
         });
