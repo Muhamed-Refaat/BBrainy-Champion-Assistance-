@@ -41,7 +41,10 @@ function fsEnsureDir(dirPath: string): void {
 
 function fsPathExists(p: string): boolean {
     if (isUncPath(p)) {
-        try { execSync(`dir /b "${p}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 5000 }); return true; } catch { return false; }
+        try {
+            const out = execSync(`if exist "${p}" (echo Y) else (echo N)`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 8000 }).toString().trim();
+            return out === 'Y';
+        } catch { return false; }
     }
     return fs.existsSync(p);
 }
@@ -276,22 +279,37 @@ class GitFallbackManager {
         // Keep presence file fresh so server always sees an up-to-date lastSeen
         this.updatePresenceLastSeen();
 
-
         try {
             // Read queue file: <syncPath>/queue/<username-hostname>.json
             const queueFile = path.join(this.fallbackPath, 'queue', `${this.clientLabel}.json`);
-            if (!fsPathExists(queueFile)) { return; }
+
+            // Try to read the queue file directly — skip separate existence check to
+            // reduce UNC round-trips and avoid flaky 'dir /b' on network paths.
+            let raw: string;
+            try {
+                raw = fsReadText(queueFile);
+            } catch {
+                // File doesn't exist or network error — nothing to process
+                return;
+            }
 
             let cmds: FallbackCommand[] = [];
             try {
-                cmds = JSON.parse(fsReadText(queueFile));
-            } catch { return; }
+                cmds = JSON.parse(raw);
+            } catch (parseErr) {
+                console.warn(`[Fallback] Queue file exists but has invalid JSON — deleting:`, parseErr);
+                try { fsDeleteFile(queueFile); } catch {}
+                return;
+            }
 
             if (cmds.length === 0) { return; }
 
             // Filter to only commands addressed to this server — ignore stale entries from other servers.
             cmds = cmds.filter(c => !c.serverKey || c.serverKey === this.serverKey);
-            if (cmds.length === 0) { return; }
+            if (cmds.length === 0) {
+                console.log(`[Fallback] Queue file had commands but none for serverKey="${this.serverKey}" — skipping`);
+                return;
+            }
 
             console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
 
@@ -302,12 +320,6 @@ class GitFallbackManager {
                 fsDeleteFile(queueFile);
             } catch (delErr) {
                 console.error(`[Fallback] Could not delete queue file — skipping to prevent double-execution:`, delErr);
-                return;
-            }
-            // Extra safety: verify the file is actually gone (UNC del can succeed in the shell
-            // but leave the file if a network hiccup occurs between the delete and the stat).
-            if (fsPathExists(queueFile)) {
-                console.warn(`[Fallback] Queue file still present after delete attempt — skipping to prevent double-execution`);
                 return;
             }
 
@@ -404,6 +416,13 @@ class AutoUpdateManager {
             clearInterval(this.checkInterval);
             this.checkInterval = null;
         }
+    }
+
+    setCheckInterval(ms: number, fallbackPath: string) {
+        this.stopChecking();
+        if (!fallbackPath) { return; }
+        this.checkInterval = setInterval(() => this.checkForUpdates(fallbackPath), ms);
+        console.log(`[AutoUpdate] Check interval changed to ${ms / 1000}s`);
     }
 
     private async checkForUpdates(fallbackPath: string) {
@@ -602,6 +621,14 @@ class ClientMonitor {
                 }
                 return { success: false, error: 'intervalMs must be >= 3000' };
             }
+            case 'setUpdateCheckInterval': {
+                const ms = payload?.intervalMs;
+                if (typeof ms === 'number' && ms >= 60000) {
+                    this.autoUpdater.setCheckInterval(ms, vscode.workspace.getConfiguration('clientMonitor').get<string>('clientReleasePath') || '');
+                    return { success: true, intervalMs: ms };
+                }
+                return { success: false, error: 'intervalMs must be >= 60000 (1 minute)' };
+            }
             case 'getAssets':
                 return { acknowledged: true };
             default:
@@ -615,6 +642,7 @@ class ClientMonitor {
             username: os.userInfo().username,
             platform: process.platform,
             vscodeVersion: vscode.version,
+            extensionVersion: this.context.extension?.packageJSON?.version || '1.0.0',
             workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
             extensions: vscode.extensions.all
                 .filter(ext => !ext.packageJSON.isBuiltin)

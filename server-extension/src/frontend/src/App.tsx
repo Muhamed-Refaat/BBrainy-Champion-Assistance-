@@ -736,11 +736,18 @@ const App = () => {
               ];
               const setServer = (key: string, ms: number) =>
                 vscode.postMessage({ action: 'setServerIntervals', intervals: { [key]: ms } });
-              const setClientAll = (ms: number) =>
-                vscode.postMessage({ action: 'setAllClientsPollInterval', intervalMs: ms });
               const setClientOne = (ms: number) => {
                 if (selectedClient) vscode.postMessage({ action: 'setClientPollInterval', clientKey: selectedClient, intervalMs: ms });
               };
+              const setUpdateCheck = (ms: number) => {
+                if (selectedClient) vscode.postMessage({ action: 'setClientUpdateCheckInterval', clientKey: selectedClient, intervalMs: ms });
+              };
+              const updatePresets = [
+                { label: '1m', ms: 60000 },
+                { label: '30m', ms: 1800000 },
+                { label: '1h', ms: 3600000 },
+                { label: '6h', ms: 21600000 },
+              ];
               const row = (label: string, currentMs: number, onChange: (ms: number) => void) => (
                 <div className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid var(--divider)' }}>
                   <span className="text-[9px] t-secondary font-semibold flex-shrink-0 w-24">{label}</span>
@@ -762,11 +769,25 @@ const App = () => {
                   {row('Backlog Poll', iv.backlogPollMs, ms => setServer('backlogPollMs', ms))}
                   {row('Presence Check', iv.presenceCheckMs, ms => setServer('presenceCheckMs', ms))}
                   {row('Sync Scan', iv.syncScanMs, ms => setServer('syncScanMs', ms))}
-                  <div className="pt-2 mt-1">
-                    <p className="section-label mb-1.5">Client Poll Interval</p>
-                    {row('All Clients', iv.clientPollMs, setClientAll)}
-                    {selectedClient && row('Selected↑', iv.clientPollMs, setClientOne)}
-                  </div>
+                  {selectedClient && (
+                    <div className="pt-2 mt-1">
+                      <p className="section-label mb-1.5">Selected Client</p>
+                      {row('Poll Interval', iv.clientPollMs, setClientOne)}
+                      <div className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid var(--divider)' }}>
+                        <span className="text-[9px] t-secondary font-semibold flex-shrink-0 w-24">Update Check</span>
+                        <span className="text-[9px] t-muted font-mono w-10 text-right flex-shrink-0">{((iv.updateCheckMs || 3600000) / 60000).toFixed(0)}m</span>
+                        <div className="flex gap-1 flex-shrink-0">
+                          {updatePresets.map(p => (
+                            <button
+                              key={p.ms}
+                              onClick={() => setUpdateCheck(p.ms)}
+                              className={`text-[7px] px-1.5 py-0.5 rounded border transition-colors ${(iv.updateCheckMs || 3600000) === p.ms ? 'tint-blue' : 'tint-muted'}`}
+                            >{p.label}</button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}

@@ -57,7 +57,10 @@ function fsEnsureDir(dirPath: string): void {
 
 function fsPathExists(p: string): boolean {
     if (isUncPath(p)) {
-        try { execSync(`dir /b "${p}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 5000 }); return true; } catch { return false; }
+        try {
+            const out = execSync(`if exist "${p}" (echo Y) else (echo N)`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 8000 }).toString().trim();
+            return out === 'Y';
+        } catch { return false; }
     }
     return fs.existsSync(p);
 }
@@ -639,12 +642,20 @@ export class MonitorServer {
         }
         if (entry.command === 'getSystemInfo' && entry.payload?.hostname) {
             Object.assign(client.info, { hostname: entry.payload.hostname, username: entry.payload.username, os: entry.payload.os, vscodeVersion: entry.payload.vscodeVersion });
+            if (entry.payload.extensionVersion) {
+                client.info.version = entry.payload.extensionVersion;
+            }
         }
         if (entry.command === 'getWorkspace' && entry.payload?.workspace) {
             client.info.workspace = entry.payload.workspace;
         }
         if (entry.command === 'getUsageReport' && entry.payload?.totalEntries !== undefined) {
             client.info.lastUsageReport = entry.payload;
+            // Auto-open the usage report webview in the server editor
+            this.showUsageReportWebview(entry.payload, client.info?.username || clientLabel, client.info?.hostname || 'Unknown');
+        }
+        if (entry.command === 'displayReminderScreen' && !isError) {
+            // Could auto-open reminder webview here if needed in the future
         }
         const channelLabel = entry.channel === 'live' ? 'Live result' : 'Backlog result';
         console.log(`[MonitorServer] ${channelLabel} from ${clientLabel}: ${entry.command} -> ${isError ? 'error' : 'executed'}`);
@@ -683,12 +694,14 @@ export class MonitorServer {
                     existing.lastSeen = Math.max(existing.lastSeen, entry.lastSeen);
                     // Promote to 'sync' if presence file is fresh
                     existing.status = isFresh ? 'sync' : 'offline';
+                    // Update version from presence file
+                    if (entry.version && existing.info) { existing.info.version = entry.version; }
                 }
                 continue;
             }
             this.clients.set(entry.clientKey, {
                 key: entry.clientKey,
-                info: { username: entry.username, hostname: entry.hostname },
+                info: { username: entry.username, hostname: entry.hostname, version: entry.version || undefined },
                 lastSeen: entry.lastSeen,
                 status: isFresh ? 'sync' : 'offline',
                 clientLabel: entry.clientLabel,
@@ -919,14 +932,10 @@ export class MonitorServer {
         await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: this.clientPollMs });
     }
 
-    /** Broadcast setPollInterval command to ALL clients. */
-    async setAllClientsPollInterval(intervalMs: number) {
-        this.clientPollMs = Math.max(3000, Math.min(300000, intervalMs));
-        await this.queryAllClients('setPollInterval');
-        // queryAllClients doesn't forward payload — send individually
-        for (const key of this.clients.keys()) {
-            await this.sendCommand(key, 'setPollInterval', { intervalMs: this.clientPollMs });
-        }
+    /** Send a setUpdateCheckInterval command to a specific client (queued via sync folder). */
+    async setClientUpdateCheckInterval(clientKey: string, intervalMs: number) {
+        const ms = Math.max(60000, Math.min(86400000, intervalMs));
+        await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms });
     }
 
     /** Return current interval settings for the UI. */

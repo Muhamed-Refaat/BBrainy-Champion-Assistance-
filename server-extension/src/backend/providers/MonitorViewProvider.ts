@@ -73,8 +73,8 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
                 case 'setClientPollInterval':
                     await this.server.setClientPollInterval(message.clientKey, message.intervalMs);
                     break;
-                case 'setAllClientsPollInterval':
-                    await this.server.setAllClientsPollInterval(message.intervalMs);
+                case 'setClientUpdateCheckInterval':
+                    await this.server.setClientUpdateCheckInterval(message.clientKey, message.intervalMs);
                     break;
             }
         });

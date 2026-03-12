@@ -60,8 +60,8 @@ function fsEnsureDir(dirPath) {
 function fsPathExists(p) {
   if (isUncPath(p)) {
     try {
-      (0, import_child_process.execSync)(`dir /b "${p}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 5e3 });
-      return true;
+      const out = (0, import_child_process.execSync)(`if exist "${p}" (echo Y) else (echo N)`, { shell: "cmd.exe", stdio: "pipe", timeout: 8e3 }).toString().trim();
+      return out === "Y";
     } catch {
       return false;
     }
@@ -302,13 +302,21 @@ var GitFallbackManager = class {
     this.updatePresenceLastSeen();
     try {
       const queueFile = path.join(this.fallbackPath, "queue", `${this.clientLabel}.json`);
-      if (!fsPathExists(queueFile)) {
+      let raw;
+      try {
+        raw = fsReadText(queueFile);
+      } catch {
         return;
       }
       let cmds = [];
       try {
-        cmds = JSON.parse(fsReadText(queueFile));
-      } catch {
+        cmds = JSON.parse(raw);
+      } catch (parseErr) {
+        console.warn(`[Fallback] Queue file exists but has invalid JSON \u2014 deleting:`, parseErr);
+        try {
+          fsDeleteFile(queueFile);
+        } catch {
+        }
         return;
       }
       if (cmds.length === 0) {
@@ -316,6 +324,7 @@ var GitFallbackManager = class {
       }
       cmds = cmds.filter((c) => !c.serverKey || c.serverKey === this.serverKey);
       if (cmds.length === 0) {
+        console.log(`[Fallback] Queue file had commands but none for serverKey="${this.serverKey}" \u2014 skipping`);
         return;
       }
       console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
@@ -323,10 +332,6 @@ var GitFallbackManager = class {
         fsDeleteFile(queueFile);
       } catch (delErr) {
         console.error(`[Fallback] Could not delete queue file \u2014 skipping to prevent double-execution:`, delErr);
-        return;
-      }
-      if (fsPathExists(queueFile)) {
-        console.warn(`[Fallback] Queue file still present after delete attempt \u2014 skipping to prevent double-execution`);
         return;
       }
       for (const cmd of cmds) {
@@ -422,6 +427,14 @@ var AutoUpdateManager = class {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
+  }
+  setCheckInterval(ms, fallbackPath) {
+    this.stopChecking();
+    if (!fallbackPath) {
+      return;
+    }
+    this.checkInterval = setInterval(() => this.checkForUpdates(fallbackPath), ms);
+    console.log(`[AutoUpdate] Check interval changed to ${ms / 1e3}s`);
   }
   async checkForUpdates(fallbackPath) {
     try {
@@ -606,6 +619,14 @@ var ClientMonitor = class {
         }
         return { success: false, error: "intervalMs must be >= 3000" };
       }
+      case "setUpdateCheckInterval": {
+        const ms = payload?.intervalMs;
+        if (typeof ms === "number" && ms >= 6e4) {
+          this.autoUpdater.setCheckInterval(ms, vscode.workspace.getConfiguration("clientMonitor").get("clientReleasePath") || "");
+          return { success: true, intervalMs: ms };
+        }
+        return { success: false, error: "intervalMs must be >= 60000 (1 minute)" };
+      }
       case "getAssets":
         return { acknowledged: true };
       default:
@@ -618,6 +639,7 @@ var ClientMonitor = class {
       username: os.userInfo().username,
       platform: process.platform,
       vscodeVersion: vscode.version,
+      extensionVersion: this.context.extension?.packageJSON?.version || "1.0.0",
       workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       extensions: vscode.extensions.all.filter((ext) => !ext.packageJSON.isBuiltin).map((ext) => ({ id: ext.id, isActive: ext.isActive })),
       bbrainyStatus: this.checkBBrainyStatus()
