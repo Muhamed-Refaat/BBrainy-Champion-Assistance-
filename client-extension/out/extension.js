@@ -139,6 +139,13 @@ function fsCopyFile(src, dest) {
   }
   fs.copyFileSync(src, dest);
 }
+function fsRenameFile(src, dest) {
+  if (isUncPath(src) || isUncPath(dest)) {
+    (0, import_child_process.execSync)(`move /Y "${src}" "${dest}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 1e4 });
+    return;
+  }
+  fs.renameSync(src, dest);
+}
 var GitFallbackManager = class {
   pollInterval = null;
   fallbackPath = "";
@@ -149,13 +156,21 @@ var GitFallbackManager = class {
   onCommand = null;
   pollIntervalMs = FALLBACK_POLL_INTERVAL_MS;
   executedIds = /* @__PURE__ */ new Set();
-  configure(fallbackPath, clientKey, clientLabel, serverKey, version2, onCommand) {
+  context = null;
+  configure(fallbackPath, clientKey, clientLabel, serverKey, version2, onCommand, context) {
     this.fallbackPath = fallbackPath;
     this.clientKey = clientKey;
     this.clientLabel = clientLabel;
     this.serverKey = serverKey;
     this.version = version2;
     this.onCommand = onCommand;
+    if (context) {
+      this.context = context;
+      const saved = context.globalState.get("executedIds");
+      if (saved) {
+        this.executedIds = new Set(saved);
+      }
+    }
     this.writePresenceFile();
   }
   // Write/update the presence file so the server can discover this client via sync folder
@@ -300,23 +315,28 @@ var GitFallbackManager = class {
       return;
     }
     this.updatePresenceLastSeen();
+    const queueFile = path.join(this.fallbackPath, "queue", `${this.clientLabel}.json`);
+    const claimedFile = queueFile + `.lock-${process.pid}`;
     try {
-      const queueFile = path.join(this.fallbackPath, "queue", `${this.clientLabel}.json`);
+      try {
+        fsRenameFile(queueFile, claimedFile);
+      } catch {
+      }
       let raw;
       try {
-        raw = fsReadText(queueFile);
+        raw = fsReadText(claimedFile);
       } catch {
         return;
+      }
+      try {
+        fsDeleteFile(claimedFile);
+      } catch {
       }
       let cmds = [];
       try {
         cmds = JSON.parse(raw);
-      } catch (parseErr) {
-        console.warn(`[Fallback] Queue file exists but has invalid JSON \u2014 deleting:`, parseErr);
-        try {
-          fsDeleteFile(queueFile);
-        } catch {
-        }
+      } catch {
+        console.warn(`[Fallback] Queue file has invalid JSON \u2014 discarded`);
         return;
       }
       if (cmds.length === 0) {
@@ -324,16 +344,10 @@ var GitFallbackManager = class {
       }
       cmds = cmds.filter((c) => !c.serverKey || c.serverKey === this.serverKey);
       if (cmds.length === 0) {
-        console.log(`[Fallback] Queue file had commands but none for serverKey="${this.serverKey}" \u2014 skipping`);
+        console.log(`[Fallback] Queue had commands but none for serverKey="${this.serverKey}" \u2014 skipping`);
         return;
       }
       console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
-      try {
-        fsDeleteFile(queueFile);
-      } catch (delErr) {
-        console.error(`[Fallback] Could not delete queue file \u2014 skipping to prevent double-execution:`, delErr);
-        return;
-      }
       for (const cmd of cmds) {
         if (this.executedIds.has(cmd.id)) {
           console.log(`[Fallback] Skipping duplicate command: ${cmd.command} (${cmd.id})`);
@@ -342,16 +356,11 @@ var GitFallbackManager = class {
         try {
           console.log(`[Fallback] Executing queued command: ${cmd.command} (${cmd.id})`);
           const result = await this.onCommand(cmd);
-          this.executedIds.add(cmd.id);
-          if (this.executedIds.size > 500) {
-            const first = this.executedIds.values().next().value;
-            if (first !== void 0) {
-              this.executedIds.delete(first);
-            }
-          }
+          this.addExecutedId(cmd.id);
           this.writeServerBacklog(cmd.id, cmd.command, result);
           console.log(`[Fallback] Wrote server-backlog entry for "${cmd.command}" (${cmd.id})`);
         } catch (e) {
+          this.addExecutedId(cmd.id);
           const errPayload = { success: false, error: e?.message || String(e) };
           this.writeServerBacklog(cmd.id, cmd.command, errPayload);
           console.error(`[Fallback] Error executing queued command ${cmd.command}:`, e);
@@ -361,23 +370,52 @@ var GitFallbackManager = class {
       console.error("[Fallback] Backlog check error:", e);
     }
   }
+  addExecutedId(id) {
+    this.executedIds.add(id);
+    if (this.executedIds.size > 500) {
+      const first = this.executedIds.values().next().value;
+      if (first !== void 0) {
+        this.executedIds.delete(first);
+      }
+    }
+    if (this.context) {
+      this.context.globalState.update("executedIds", [...this.executedIds]);
+    }
+  }
   writeServerBacklog(commandId, command, payload) {
     if (!this.isConfigured) {
       return;
     }
     const targetDir = this.isServerOnline() ? path.join(this.fallbackPath, "results") : path.join(this.fallbackPath, "server-backlog");
     fsEnsureDir(targetDir);
-    const file = path.join(targetDir, `${this.clientLabel}.json`);
-    let existing = [];
-    if (fsPathExists(file)) {
+    const entry = { id: commandId, command, clientKey: this.clientKey, clientLabel: this.clientLabel, timestamp: Date.now(), payload };
+    const baseName = `${this.clientLabel}-${commandId}`;
+    const tmpFile = path.join(targetDir, `${baseName}.tmp`);
+    const finalFile = path.join(targetDir, `${baseName}.json`);
+    fsWriteText(tmpFile, JSON.stringify(entry, null, 2));
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        existing = JSON.parse(fsReadText(file));
-      } catch {
-        existing = [];
+        fsRenameFile(tmpFile, finalFile);
+        return;
+      } catch (e) {
+        if (attempt < 2) {
+          try {
+            (0, import_child_process.execSync)("ping -n 2 127.0.0.1 >nul", { shell: "cmd.exe", stdio: "pipe", timeout: 3e3 });
+          } catch {
+          }
+        } else {
+          console.error(`[Fallback] Failed to rename result .tmp \u2192 .json after retries: ${e?.message || e}`);
+          try {
+            fsWriteText(finalFile, JSON.stringify(entry, null, 2));
+          } catch {
+          }
+          try {
+            fsDeleteFile(tmpFile);
+          } catch {
+          }
+        }
       }
     }
-    existing.push({ id: commandId, command, clientKey: this.clientKey, clientLabel: this.clientLabel, timestamp: Date.now(), payload });
-    fsWriteText(file, JSON.stringify(existing, null, 2));
   }
   // Check whether the server is currently online by reading its presence file.
   // Server is considered online if its presence file has lastSeen within 90 seconds.
@@ -559,7 +597,8 @@ var ClientMonitor = class {
         clientLabel,
         this.serverKey,
         version2,
-        (cmd) => this.executeFallbackCommand(cmd)
+        (cmd) => this.executeFallbackCommand(cmd),
+        this.context
       );
       this.fallback.startPolling();
       this.updateStatusBar("active");

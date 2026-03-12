@@ -374,10 +374,31 @@ class GitFallbackManager {
             ? path.join(this.fallbackPath, 'results')
             : path.join(this.fallbackPath, 'server-backlog');
         fsEnsureDir(targetDir);
-        // Write one file per result entry — eliminates read-modify-write race for multi-instance safety
+        // Write one file per result entry — eliminates read-modify-write race for multi-instance safety.
+        // Two-phase write: write to .tmp first, then rename to .json so the server
+        // (which only scans for .json) never sees a partially-written file.
         const entry = { id: commandId, command, clientKey: this.clientKey, clientLabel: this.clientLabel, timestamp: Date.now(), payload };
-        const file = path.join(targetDir, `${this.clientLabel}-${commandId}.json`);
-        fsWriteText(file, JSON.stringify(entry, null, 2));
+        const baseName = `${this.clientLabel}-${commandId}`;
+        const tmpFile = path.join(targetDir, `${baseName}.tmp`);
+        const finalFile = path.join(targetDir, `${baseName}.json`);
+        fsWriteText(tmpFile, JSON.stringify(entry, null, 2));
+        // Rename .tmp → .json (atomic on the same volume). Retry once on transient UNC lock.
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                fsRenameFile(tmpFile, finalFile);
+                return;
+            } catch (e: any) {
+                if (attempt < 2) {
+                    // Brief delay before retry — UNC lock is usually very short-lived
+                    try { execSync('ping -n 2 127.0.0.1 >nul', { shell: 'cmd.exe', stdio: 'pipe', timeout: 3000 }); } catch {}
+                } else {
+                    console.error(`[Fallback] Failed to rename result .tmp → .json after retries: ${e?.message || e}`);
+                    // Last resort: try direct write to final path
+                    try { fsWriteText(finalFile, JSON.stringify(entry, null, 2)); } catch {}
+                    try { fsDeleteFile(tmpFile); } catch {}
+                }
+            }
+        }
     }
 
     // Check whether the server is currently online by reading its presence file.

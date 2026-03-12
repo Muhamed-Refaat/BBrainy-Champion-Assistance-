@@ -35,6 +35,7 @@ export interface CommandLogEntry {
     command: string;
     status: 'queued' | 'sent' | 'executed' | 'error';
     timestamp: number;
+    completedAt?: number;
     result?: any;
 }
 
@@ -235,7 +236,15 @@ class ServerFallbackManager {
             const id = providedId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
             const entry: QueuedCommand = { id, clientKey, clientLabel, command, payload, timestamp: Date.now(), serverKey: this.serverKey };
             existing.push(entry);
-            fsWriteText(queueFile, JSON.stringify(existing, null, 2));
+            // Two-phase write: .tmp then rename to .json so the client's
+            // rename-before-read never sees a partially-written queue file.
+            const tmpFile = queueFile + '.tmp';
+            fsWriteText(tmpFile, JSON.stringify(existing, null, 2));
+            try { fsRenameFile(tmpFile, queueFile); } catch {
+                // Rename failed (client may have just claimed the file) - direct write fallback
+                fsWriteText(queueFile, JSON.stringify(existing, null, 2));
+                try { fsDeleteFile(tmpFile); } catch {}
+            }
             console.log(`[ServerFallback] Enqueued command "${command}" for ${clientLabel} â†’ ${queueFile}`);
             return id;
         } catch (e: any) {
@@ -657,9 +666,10 @@ export class MonitorServer {
         const logEntry = client.commandLog.find(e => e.id === entry.id);
         if (logEntry) {
             logEntry.status = isError ? 'error' : 'executed';
+            logEntry.completedAt = Date.now();
             logEntry.result = entry.payload;
         } else {
-            client.commandLog.push({ id: entry.id, command: entry.command, status: isError ? 'error' : 'executed', timestamp: entry.timestamp || Date.now(), result: entry.payload });
+            client.commandLog.push({ id: entry.id, command: entry.command, status: isError ? 'error' : 'executed', timestamp: entry.timestamp || Date.now(), completedAt: Date.now(), result: entry.payload });
         }
         // Set lastResponse so the response panel in the UI shows the data
         if (entry.payload !== undefined && entry.payload !== null) {
@@ -972,13 +982,25 @@ export class MonitorServer {
 
     /** Send a setPollInterval command to a specific client (queued via sync folder). */
     async setClientPollInterval(clientKey: string, intervalMs: number) {
-        this.clientPollMs = Math.max(3000, Math.min(300000, intervalMs));
-        await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: this.clientPollMs });
+        const ms = Math.max(3000, Math.min(300000, intervalMs));
+        const client = this.clients.get(clientKey);
+        if (client) {
+            if (!client.info) { client.info = {}; }
+            client.info.pollMs = ms;
+            this.savePersistentClients();
+        }
+        await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms });
     }
 
     /** Send a setUpdateCheckInterval command to a specific client (queued via sync folder). */
     async setClientUpdateCheckInterval(clientKey: string, intervalMs: number) {
         const ms = Math.max(60000, Math.min(86400000, intervalMs));
+        const client = this.clients.get(clientKey);
+        if (client) {
+            if (!client.info) { client.info = {}; }
+            client.info.updateCheckMs = ms;
+            this.savePersistentClients();
+        }
         await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms });
     }
 
@@ -1360,6 +1382,7 @@ export class MonitorServer {
 
         if (!this.fallback.isConfigured) {
             logEntry.status = 'error';
+            logEntry.completedAt = Date.now();
             const syncPath = vscode.workspace.getConfiguration('serverMonitor').get<string>('syncPath') || '(empty)';
             const msg = `Sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
             console.error(`[MonitorServer] ${msg}`);
@@ -1377,6 +1400,7 @@ export class MonitorServer {
             vscode.window.showInformationMessage(`Queued "${command}" for ${client.clientLabel}`);
         } catch (e: any) {
             logEntry.status = 'error';
+            logEntry.completedAt = Date.now();
             const msg = `Failed to queue command: ${e?.message || e}`;
             console.error(`[MonitorServer] ${msg}`);
             vscode.window.showErrorMessage(msg);
@@ -2004,7 +2028,9 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
                     clientLabel: c.clientLabel,
                     commandLog: c.commandLog.slice(-50),
                     lastResponse: c.lastResponse,
-                    extensionStatus: c.extensionStatus
+                    extensionStatus: c.extensionStatus,
+                    pollMs: c.info?.pollMs,
+                    updateCheckMs: c.info?.updateCheckMs
                 })),
                 backlogCount: this.fallback.getRecentBacklog().length,
                 intervals: {

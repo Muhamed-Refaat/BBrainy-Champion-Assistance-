@@ -38,6 +38,7 @@ interface Client {
     command: string;
     status: 'queued' | 'sent' | 'executed' | 'error';
     timestamp: number;
+    completedAt?: number;
     result?: any;
   }>;
   lastResponse?: {
@@ -46,6 +47,8 @@ interface Client {
     timestamp: number;
   };
   extensionStatus?: 'active' | 'inactive';
+  pollMs?: number;
+  updateCheckMs?: number;
 }
 
 interface DashboardData {
@@ -269,6 +272,11 @@ const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], client
                 <span className="text-[9px] t-secondary font-mono truncate flex-1">{entry.command}</span>
                 {(entry.status === 'queued' || entry.status === 'sent') && (
                   <ElapsedTimer since={entry.timestamp} />
+                )}
+                {(entry.status === 'executed' || entry.status === 'error') && entry.completedAt && (
+                  <span className="flex items-center gap-0.5 text-[8px] font-mono" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
+                    <Clock size={8} />{String(Math.floor(Math.max(0, entry.completedAt - entry.timestamp) / 60000)).padStart(2, '0')}:{String(Math.floor((Math.max(0, entry.completedAt - entry.timestamp) / 1000) % 60)).padStart(2, '0')}
+                  </span>
                 )}
                 <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
                   {entry.status}
@@ -777,6 +785,9 @@ const App = () => {
           <GlassCard>
             {(() => {
               const iv = data.intervals ?? { backlogPollMs: 15000, presenceCheckMs: 30000, syncScanMs: 30000, serverPresenceMs: 30000, clientPollMs: 15000 };
+              const selClient = data.clients.find(c => c.key === selectedClient);
+              const clientPoll = selClient?.pollMs ?? iv.clientPollMs;
+              const clientUpdate = selClient?.updateCheckMs ?? 3600000;
               const presets = [
                 { label: 'Fast (3s)', ms: 3000 },
                 { label: 'Normal (15s)', ms: 15000 },
@@ -821,16 +832,16 @@ const App = () => {
                   {selectedClient && (
                     <div className="pt-2 mt-1">
                       <p className="section-label mb-1.5">Selected Client</p>
-                      {row('Poll Interval', iv.clientPollMs, setClientOne)}
+                      {row('Poll Interval', clientPoll, setClientOne)}
                       <div className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid var(--divider)' }}>
                         <span className="text-[9px] t-secondary font-semibold flex-shrink-0 w-24">Update Check</span>
-                        <span className="text-[9px] t-muted font-mono w-10 text-right flex-shrink-0">{((iv.updateCheckMs || 3600000) / 60000).toFixed(0)}m</span>
+                        <span className="text-[9px] t-muted font-mono w-10 text-right flex-shrink-0">{(clientUpdate / 60000).toFixed(0)}m</span>
                         <div className="flex gap-1 flex-shrink-0">
                           {updatePresets.map(p => (
                             <button
                               key={p.ms}
                               onClick={() => setUpdateCheck(p.ms)}
-                              className={`text-[7px] px-1.5 py-0.5 rounded border transition-colors ${(iv.updateCheckMs || 3600000) === p.ms ? 'tint-blue' : 'tint-muted'}`}
+                              className={`text-[7px] px-1.5 py-0.5 rounded border transition-colors ${clientUpdate === p.ms ? 'tint-blue' : 'tint-muted'}`}
                             >{p.label}</button>
                           ))}
                         </div>
