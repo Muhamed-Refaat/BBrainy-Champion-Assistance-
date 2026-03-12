@@ -102,6 +102,14 @@ function fsCopyFile(src: string, dest: string): void {
     fs.copyFileSync(src, dest);
 }
 
+function fsRenameFile(src: string, dest: string): void {
+    if (isUncPath(src) || isUncPath(dest)) {
+        execSync(`move /Y "${src}" "${dest}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 10000 });
+        return;
+    }
+    fs.renameSync(src, dest);
+}
+
 // ─── PresenceEntry ─────────────────────────────────────────────────────────────
 // Written to <syncPath>/clients/<serverKey>/<username-hostname>.json on activation.
 interface PresenceEntry {
@@ -132,6 +140,7 @@ class GitFallbackManager {
     private onCommand: ((cmd: FallbackCommand) => Promise<any>) | null = null;
     private pollIntervalMs: number = FALLBACK_POLL_INTERVAL_MS;
     private executedIds: Set<string> = new Set();
+    private context: vscode.ExtensionContext | null = null;
 
     configure(
         fallbackPath: string,
@@ -139,7 +148,8 @@ class GitFallbackManager {
         clientLabel: string,
         serverKey: string,
         version: string,
-        onCommand: (cmd: FallbackCommand) => Promise<any>
+        onCommand: (cmd: FallbackCommand) => Promise<any>,
+        context?: vscode.ExtensionContext
     ) {
         this.fallbackPath = fallbackPath;
         this.clientKey = clientKey;
@@ -147,6 +157,12 @@ class GitFallbackManager {
         this.serverKey = serverKey;
         this.version = version;
         this.onCommand = onCommand;
+        // Persist executedIds across VS Code sessions for cross-instance dedup
+        if (context) {
+            this.context = context;
+            const saved = context.globalState.get<string[]>('executedIds');
+            if (saved) { this.executedIds = new Set(saved); }
+        }
         // Write presence file immediately — this is the "installation hook"
         this.writePresenceFile();
     }
@@ -279,26 +295,30 @@ class GitFallbackManager {
         // Keep presence file fresh so server always sees an up-to-date lastSeen
         this.updatePresenceLastSeen();
 
-        try {
-            // Read queue file: <syncPath>/queue/<username-hostname>.json
-            const queueFile = path.join(this.fallbackPath, 'queue', `${this.clientLabel}.json`);
+        const queueFile = path.join(this.fallbackPath, 'queue', `${this.clientLabel}.json`);
+        const claimedFile = queueFile + `.lock-${process.pid}`;
 
-            // Try to read the queue file directly — skip separate existence check to
-            // reduce UNC round-trips and avoid flaky 'dir /b' on network paths.
+        try {
+            // Atomic claim: rename the queue file so no other VS Code instance processes it.
+            // If rename fails (no queue file or another instance claimed it), we still
+            // try to read our PID's lock file in case it's an orphan from a previous crash.
+            try { fsRenameFile(queueFile, claimedFile); } catch { /* no queue file or lost race */ }
+
             let raw: string;
             try {
-                raw = fsReadText(queueFile);
+                raw = fsReadText(claimedFile);
             } catch {
-                // File doesn't exist or network error — nothing to process
-                return;
+                return; // Nothing to process
             }
+
+            // Delete lock file before executing to prevent stale data on crash
+            try { fsDeleteFile(claimedFile); } catch {}
 
             let cmds: FallbackCommand[] = [];
             try {
                 cmds = JSON.parse(raw);
-            } catch (parseErr) {
-                console.warn(`[Fallback] Queue file exists but has invalid JSON — deleting:`, parseErr);
-                try { fsDeleteFile(queueFile); } catch {}
+            } catch {
+                console.warn(`[Fallback] Queue file has invalid JSON — discarded`);
                 return;
             }
 
@@ -307,24 +327,13 @@ class GitFallbackManager {
             // Filter to only commands addressed to this server — ignore stale entries from other servers.
             cmds = cmds.filter(c => !c.serverKey || c.serverKey === this.serverKey);
             if (cmds.length === 0) {
-                console.log(`[Fallback] Queue file had commands but none for serverKey="${this.serverKey}" — skipping`);
+                console.log(`[Fallback] Queue had commands but none for serverKey="${this.serverKey}" — skipping`);
                 return;
             }
 
             console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
 
-            // Delete the queue file BEFORE executing. If deletion fails (UNC permission/network
-            // error) bail out entirely — better to miss one cycle than to execute commands
-            // repeatedly on every poll tick.
-            try {
-                fsDeleteFile(queueFile);
-            } catch (delErr) {
-                console.error(`[Fallback] Could not delete queue file — skipping to prevent double-execution:`, delErr);
-                return;
-            }
-
             for (const cmd of cmds) {
-                // Dedup: skip commands we already executed (race-condition safety)
                 if (this.executedIds.has(cmd.id)) {
                     console.log(`[Fallback] Skipping duplicate command: ${cmd.command} (${cmd.id})`);
                     continue;
@@ -332,17 +341,11 @@ class GitFallbackManager {
                 try {
                     console.log(`[Fallback] Executing queued command: ${cmd.command} (${cmd.id})`);
                     const result = await this.onCommand(cmd);
-                    this.executedIds.add(cmd.id);
-                    // Trim dedup set to last 500 entries
-                    if (this.executedIds.size > 500) {
-                        const first = this.executedIds.values().next().value;
-                        if (first !== undefined) { this.executedIds.delete(first); }
-                    }
-
+                    this.addExecutedId(cmd.id);
                     this.writeServerBacklog(cmd.id, cmd.command, result);
                     console.log(`[Fallback] Wrote server-backlog entry for "${cmd.command}" (${cmd.id})`);
                 } catch (e: any) {
-                    // Write error response so the server knows the command failed
+                    this.addExecutedId(cmd.id);
                     const errPayload = { success: false, error: e?.message || String(e) };
                     this.writeServerBacklog(cmd.id, cmd.command, errPayload);
                     console.error(`[Fallback] Error executing queued command ${cmd.command}:`, e);
@@ -353,6 +356,17 @@ class GitFallbackManager {
         }
     }
 
+    private addExecutedId(id: string): void {
+        this.executedIds.add(id);
+        if (this.executedIds.size > 500) {
+            const first = this.executedIds.values().next().value;
+            if (first !== undefined) { this.executedIds.delete(first); }
+        }
+        if (this.context) {
+            this.context.globalState.update('executedIds', [...this.executedIds]);
+        }
+    }
+
     private writeServerBacklog(commandId: string, command: string, payload: any) {
         if (!this.isConfigured) { return; }
         // Route to results/ (server online = live channel) or server-backlog/ (server offline = offline accumulation)
@@ -360,13 +374,10 @@ class GitFallbackManager {
             ? path.join(this.fallbackPath, 'results')
             : path.join(this.fallbackPath, 'server-backlog');
         fsEnsureDir(targetDir);
-        const file = path.join(targetDir, `${this.clientLabel}.json`);
-        let existing: any[] = [];
-        if (fsPathExists(file)) {
-            try { existing = JSON.parse(fsReadText(file)); } catch { existing = []; }
-        }
-        existing.push({ id: commandId, command, clientKey: this.clientKey, clientLabel: this.clientLabel, timestamp: Date.now(), payload });
-        fsWriteText(file, JSON.stringify(existing, null, 2));
+        // Write one file per result entry — eliminates read-modify-write race for multi-instance safety
+        const entry = { id: commandId, command, clientKey: this.clientKey, clientLabel: this.clientLabel, timestamp: Date.now(), payload };
+        const file = path.join(targetDir, `${this.clientLabel}-${commandId}.json`);
+        fsWriteText(file, JSON.stringify(entry, null, 2));
     }
 
     // Check whether the server is currently online by reading its presence file.
@@ -549,7 +560,8 @@ class ClientMonitor {
                 clientLabel,
                 this.serverKey,
                 version,
-                (cmd) => this.executeFallbackCommand(cmd)
+                (cmd) => this.executeFallbackCommand(cmd),
+                this.context
             );
             this.fallback.startPolling();
             this.updateStatusBar('active');

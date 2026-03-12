@@ -99,6 +99,14 @@ function fsDeleteFile(filePath: string): void {
     fs.unlinkSync(filePath);
 }
 
+function fsRenameFile(src: string, dest: string): void {
+    if (isUncPath(src) || isUncPath(dest)) {
+        execSync(`move /Y "${src}" "${dest}"`, { shell: 'cmd.exe', stdio: 'pipe', timeout: 10000 });
+        return;
+    }
+    fs.renameSync(src, dest);
+}
+
 function fsListDir(dirPath: string): string[] {
     if (isUncPath(dirPath)) {
         try {
@@ -280,16 +288,22 @@ class ServerFallbackManager {
             const files = fsListDir(resultsDir).filter(f => f.endsWith('.json'));
             for (const file of files) {
                 const filePath = path.join(resultsDir, file);
+                const claimedPath = filePath + `.lock-${process.pid}`;
+                // Atomic claim: rename before reading to prevent other server instances from processing
+                try { fsRenameFile(filePath, claimedPath); } catch { continue; }
                 try {
-                    const entries: any[] = JSON.parse(fsReadText(filePath));
-                    const clientLabel = file.replace(/\.json$/, '');
-                    fsDeleteFile(filePath);  // delete first to avoid re-read on next cycle
+                    const parsed = JSON.parse(fsReadText(claimedPath));
+                    try { fsDeleteFile(claimedPath); } catch {}
+                    // Handle both formats: array (legacy) or single object (new per-entry)
+                    const entries: any[] = Array.isArray(parsed) ? parsed : [parsed];
                     for (const entry of entries) {
+                        const clientLabel = entry.clientLabel || file.replace(/\.json$/, '');
                         console.log(`[ServerFallback] Got live result from ${clientLabel}: ${entry.command}`);
                         this.onBacklogResponse(clientLabel, { ...entry, channel: 'live' });
                     }
                 } catch (e) {
                     console.error(`[ServerFallback] Error reading results file ${file}:`, e);
+                    try { fsDeleteFile(claimedPath); } catch {}
                 }
             }
         } catch (e) {
@@ -308,17 +322,23 @@ class ServerFallbackManager {
             const newEntries: any[] = [];
             for (const file of files) {
                 const filePath = path.join(backlogDir, file);
+                const claimedPath = filePath + `.lock-${process.pid}`;
+                // Atomic claim: rename before reading to prevent other server instances from processing
+                try { fsRenameFile(filePath, claimedPath); } catch { continue; }
                 try {
-                    const entries: any[] = JSON.parse(fsReadText(filePath));
-                    const clientLabel = file.replace(/\.json$/, '');
+                    const parsed = JSON.parse(fsReadText(claimedPath));
+                    try { fsDeleteFile(claimedPath); } catch {}
+                    // Handle both formats: array (legacy) or single object (new per-entry)
+                    const entries: any[] = Array.isArray(parsed) ? parsed : [parsed];
                     for (const entry of entries) {
+                        const clientLabel = entry.clientLabel || file.replace(/\.json$/, '');
                         console.log(`[ServerFallback] Got server-backlog entry from ${clientLabel}: ${entry.command}`);
                         newEntries.push({ ...entry, clientLabel });
                         this.onBacklogResponse(clientLabel, entry);
                     }
-                    fsDeleteFile(filePath);  // clear once processed
                 } catch (e) {
                     console.error(`[ServerFallback] Error reading backlog file ${file}:`, e);
+                    try { fsDeleteFile(claimedPath); } catch {}
                 }
             }
             if (newEntries.length > 0) {
@@ -369,6 +389,16 @@ export class MonitorServer {
         // Load server key: globalState takes priority, then settings
         const persistedKey = context.globalState.get<string>('serverKey');
         this.serverId = persistedKey || config.get<string>('serverId') || 'default';
+        // Restore persisted intervals
+        const saved = context.globalState.get<Record<string, number>>('serverIntervals');
+        if (saved) {
+            if (saved.backlogPollMs)    this.backlogPollMs    = saved.backlogPollMs;
+            if (saved.presenceCheckMs)  this.presenceCheckMs  = saved.presenceCheckMs;
+            if (saved.syncScanMs)       this.syncScanMs       = saved.syncScanMs;
+            if (saved.serverPresenceMs) this.serverPresenceMs = saved.serverPresenceMs;
+            if (saved.clientPollMs)     this.clientPollMs     = saved.clientPollMs;
+            console.log(`[MonitorServer] Restored persisted intervals: backlog=${this.backlogPollMs}, presence=${this.presenceCheckMs}, syncScan=${this.syncScanMs}, serverPresence=${this.serverPresenceMs}, clientPoll=${this.clientPollMs}`);
+        }
         console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`);
         this.loadPersistentClients();
         this.setupFallback();
@@ -415,7 +445,7 @@ export class MonitorServer {
 
     private serverPresenceFilePath(): string {
         const syncPath = this.fallback.syncPathValue;
-        return path.join(syncPath, 'servers', `${this.serverId}-${os.hostname()}.json`);
+        return path.join(syncPath, 'servers', `${this.serverId}-${os.hostname()}-${process.pid}.json`);
     }
 
     private writeServerPresenceFile(status: 'online' | 'offline'): void {
@@ -923,7 +953,21 @@ export class MonitorServer {
         }
 
         console.log(`[MonitorServer] Server intervals updated — backlog: ${this.backlogPollMs / 1000}s, presence: ${this.presenceCheckMs / 1000}s, sync-scan: ${this.syncScanMs / 1000}s, server-presence: ${this.serverPresenceMs / 1000}s`);
+        // Persist to globalState so intervals survive VS Code restarts
+        this.persistIntervals();
         this.triggerUpdate();
+    }
+
+    /** Save current intervals to globalState. */
+    private persistIntervals() {
+        if (!this.context) return;
+        this.context.globalState.update('serverIntervals', {
+            backlogPollMs: this.backlogPollMs,
+            presenceCheckMs: this.presenceCheckMs,
+            syncScanMs: this.syncScanMs,
+            serverPresenceMs: this.serverPresenceMs,
+            clientPollMs: this.clientPollMs
+        });
     }
 
     /** Send a setPollInterval command to a specific client (queued via sync folder). */

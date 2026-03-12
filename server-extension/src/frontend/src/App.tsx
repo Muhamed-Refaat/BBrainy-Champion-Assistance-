@@ -14,7 +14,10 @@ import {
   X,
   Key,
   Check,
-  Timer
+  Timer,
+  Clock,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -202,8 +205,26 @@ const statusBadgeClass: Record<string, string> = {
   error:    'tint-red',
 };
 
+/** Live elapsed-time counter shown next to queued/sent commands. */
+const ElapsedTimer = ({ since }: { since: number }) => {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - since) / 1000));
+  const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+  const ss = String(secs % 60).padStart(2, '0');
+  return (
+    <span className="flex items-center gap-0.5 text-[8px] font-mono" style={{ color: 'var(--accent-yellow)', opacity: 0.85 }}>
+      <Clock size={8} className="animate-pulse" />{mm}:{ss}
+    </span>
+  );
+};
+
 const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], clientKey: string | null }) => {
   const pending = log.filter(e => e.status === 'queued' || e.status === 'sent');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const clearAll = () => {
     if (clientKey) vscode.postMessage({ action: 'clearClientQueue', clientKey });
   };
@@ -229,24 +250,52 @@ const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], client
           Clear All
         </button>
       </div>
-      <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
-        {[...log].reverse().map(entry => (
-          <div key={entry.id} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg liquid-glass">
-            <span className="text-[9px] t-secondary font-mono truncate flex-1">{entry.command}</span>
-            <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
-              {entry.status}
-            </span>
-            {(entry.status === 'queued' || entry.status === 'sent') && (
-              <button
-                onClick={() => cancel(entry.id)}
-                title="Cancel this command"
-                className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded tint-red transition-colors"
+      <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+        {[...log].reverse().map(entry => {
+          const isFinished = entry.status === 'executed' || entry.status === 'error';
+          const hasResult = isFinished && entry.result;
+          const isExpanded = expandedId === entry.id;
+          return (
+            <div key={entry.id}>
+              <div
+                className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg liquid-glass ${hasResult ? 'cursor-pointer' : ''}`}
+                onClick={hasResult ? () => setExpandedId(isExpanded ? null : entry.id) : undefined}
               >
-                <X size={9} />
-              </button>
-            )}
-          </div>
-        ))}
+                {hasResult && (
+                  isExpanded
+                    ? <ChevronDown size={9} className="flex-shrink-0 t-muted" />
+                    : <ChevronRight size={9} className="flex-shrink-0 t-muted" />
+                )}
+                <span className="text-[9px] t-secondary font-mono truncate flex-1">{entry.command}</span>
+                {(entry.status === 'queued' || entry.status === 'sent') && (
+                  <ElapsedTimer since={entry.timestamp} />
+                )}
+                <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
+                  {entry.status}
+                </span>
+                {(entry.status === 'queued' || entry.status === 'sent') && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); cancel(entry.id); }}
+                    title="Cancel this command"
+                    className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded tint-red transition-colors"
+                  >
+                    <X size={9} />
+                  </button>
+                )}
+              </div>
+              {isExpanded && hasResult && (
+                <div className="mt-0.5 ml-3 px-2 py-1.5 rounded-lg text-[8px] font-mono t-secondary max-h-32 overflow-y-auto" style={{ background: 'var(--glass-bg, rgba(15,23,42,0.7))', border: '1px solid var(--divider)' }}>
+                  <span className="text-[7px] font-semibold" style={{ color: entry.status === 'error' ? 'var(--accent-red, #f87171)' : 'var(--accent-green, #4ade80)' }}>
+                    ↳ {entry.command} {entry.status === 'error' ? 'Error' : 'Response'}
+                  </span>
+                  <pre className="whitespace-pre-wrap break-words mt-1" style={{ lineHeight: '1.4' }}>
+                    {JSON.stringify(entry.result, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
