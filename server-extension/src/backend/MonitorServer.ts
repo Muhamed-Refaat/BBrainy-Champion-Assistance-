@@ -158,12 +158,21 @@ class ServerFallbackManager {
     private onBacklogResponse: ((clientLabel: string, entry: any) => void) | null = null;
     private recentBacklogEntries: any[] = [];
     private onBacklogArrived: ((entries: any[]) => void) | null = null;
+    // Called once after each poll sweep that processed ≥1 entry — used to
+    // batch the save+flush rather than doing it per-entry.
+    private onBatchComplete: (() => void) | null = null;
+    // Batch queue: commands are staged in memory, then flushed to disk in one
+    // write per client queue file.  This avoids N sequential UNC round-trips
+    // when queuing many commands (e.g. queryAll broadcast).
+    private pendingQueue: Map<string, QueuedCommand[]> = new Map();
+    private flushTimer: NodeJS.Timeout | null = null;
 
-    configure(syncPath: string, serverKey: string, onBacklogResponse: (clientLabel: string, entry: any) => void, onBacklogArrived?: (entries: any[]) => void) {
+    configure(syncPath: string, serverKey: string, onBacklogResponse: (clientLabel: string, entry: any) => void, onBacklogArrived?: (entries: any[]) => void, onBatchComplete?: () => void) {
         this.syncPath = syncPath;
         this.serverKey = serverKey;
         this.onBacklogResponse = onBacklogResponse;
         this.onBacklogArrived = onBacklogArrived ?? null;
+        this.onBatchComplete = onBatchComplete ?? null;
     }
 
     get isConfigured(): boolean {
@@ -216,6 +225,60 @@ class ServerFallbackManager {
             clearInterval(this.backlogPollInterval);
             this.backlogPollInterval = null;
         }
+    }
+
+    // Stage a command in memory (no disk write yet).
+    // Call flushPendingQueue() or scheduleFlush() afterwards.
+    stageCommand(clientLabel: string, clientKey: string, command: string, payload?: any, providedId?: string): string {
+        const id = providedId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        const entry: QueuedCommand = { id, clientKey, clientLabel, command, payload, timestamp: Date.now(), serverKey: this.serverKey };
+        if (!this.pendingQueue.has(clientLabel)) { this.pendingQueue.set(clientLabel, []); }
+        this.pendingQueue.get(clientLabel)!.push(entry);
+        return id;
+    }
+
+    // Schedule a flush on the next microtask — coalesces rapid-fire calls
+    // (e.g. queryAll → N × sendCommand) into a single disk write batch.
+    scheduleFlush() {
+        if (this.flushTimer) { return; } // already scheduled
+        this.flushTimer = setTimeout(() => {
+            this.flushTimer = null;
+            this.flushPendingQueue();
+        }, 0);
+    }
+
+    // Write all staged commands to disk — one file write per client.
+    flushPendingQueue(): { succeeded: string[]; failed: string[] } {
+        const succeeded: string[] = [];
+        const failed: string[] = [];
+        if (!this.isConfigured || this.pendingQueue.size === 0) { return { succeeded, failed }; }
+        // Cancel any pending scheduled flush since we're flushing now
+        if (this.flushTimer) { clearTimeout(this.flushTimer); this.flushTimer = null; }
+        const queueDir = path.join(this.syncPath, 'queue');
+        fsEnsureDir(queueDir);
+        for (const [clientLabel, newCmds] of this.pendingQueue) {
+            try {
+                const queueFile = path.join(queueDir, `${clientLabel}.json`);
+                let existing: QueuedCommand[] = [];
+                if (fsPathExists(queueFile)) {
+                    try { existing = JSON.parse(fsReadText(queueFile)); } catch { existing = []; }
+                }
+                existing.push(...newCmds);
+                const tmpFile = queueFile + '.tmp';
+                fsWriteText(tmpFile, JSON.stringify(existing, null, 2));
+                try { fsRenameFile(tmpFile, queueFile); } catch {
+                    fsWriteText(queueFile, JSON.stringify(existing, null, 2));
+                    try { fsDeleteFile(tmpFile); } catch {}
+                }
+                succeeded.push(clientLabel);
+                console.log(`[ServerFallback] Flushed ${newCmds.length} command(s) for ${clientLabel}`);
+            } catch (e: any) {
+                failed.push(clientLabel);
+                console.error(`[ServerFallback] Failed to flush queue for ${clientLabel}: ${e?.message || e}`);
+            }
+        }
+        this.pendingQueue.clear();
+        return { succeeded, failed };
     }
 
     // Append a command to <syncPath>/queue/<username-hostname>.json
@@ -291,6 +354,7 @@ class ServerFallbackManager {
     // Poll <syncPath>/results/ — live responses from online clients (NOT added to recentBacklogEntries)
     private pollResultsDir() {
         if (!this.isConfigured || !this.onBacklogResponse) { return; }
+        let processed = 0;
         try {
             const resultsDir = path.join(this.syncPath, 'results');
             if (!fsPathExists(resultsDir)) { return; }
@@ -303,12 +367,13 @@ class ServerFallbackManager {
                 try {
                     const parsed = JSON.parse(fsReadText(claimedPath));
                     try { fsDeleteFile(claimedPath); } catch {}
-                    // Handle both formats: array (legacy) or single object (new per-entry)
+                    // Handle both formats: array (batch) or single object
                     const entries: any[] = Array.isArray(parsed) ? parsed : [parsed];
                     for (const entry of entries) {
                         const clientLabel = entry.clientLabel || file.replace(/\.json$/, '');
                         console.log(`[ServerFallback] Got live result from ${clientLabel}: ${entry.command}`);
                         this.onBacklogResponse(clientLabel, { ...entry, channel: 'live' });
+                        processed++;
                     }
                 } catch (e) {
                     console.error(`[ServerFallback] Error reading results file ${file}:`, e);
@@ -318,11 +383,14 @@ class ServerFallbackManager {
         } catch (e) {
             console.error('[ServerFallback] Results poll error:', e);
         }
+        // Single save+flush for the entire sweep — avoids N postMessages for N results
+        if (processed > 0) { this.onBatchComplete?.(); }
     }
 
     // Poll <syncPath>/server-backlog/ for results written by clients that were offline
     private pollServerBacklog() {
         if (!this.isConfigured || !this.onBacklogResponse) { return; }
+        let processed = 0;
         try {
             const backlogDir = path.join(this.syncPath, 'server-backlog');
             if (!fsPathExists(backlogDir)) { return; }
@@ -337,13 +405,14 @@ class ServerFallbackManager {
                 try {
                     const parsed = JSON.parse(fsReadText(claimedPath));
                     try { fsDeleteFile(claimedPath); } catch {}
-                    // Handle both formats: array (legacy) or single object (new per-entry)
+                    // Handle both formats: array (batch) or single object
                     const entries: any[] = Array.isArray(parsed) ? parsed : [parsed];
                     for (const entry of entries) {
                         const clientLabel = entry.clientLabel || file.replace(/\.json$/, '');
                         console.log(`[ServerFallback] Got server-backlog entry from ${clientLabel}: ${entry.command}`);
                         newEntries.push({ ...entry, clientLabel });
                         this.onBacklogResponse(clientLabel, entry);
+                        processed++;
                     }
                 } catch (e) {
                     console.error(`[ServerFallback] Error reading backlog file ${file}:`, e);
@@ -359,6 +428,8 @@ class ServerFallbackManager {
         } catch (e) {
             console.error('[ServerFallback] Backlog poll error:', e);
         }
+        // Single save+flush for the entire sweep — avoids N postMessages for N results
+        if (processed > 0) { this.onBatchComplete?.(); }
     }
 
     getRecentBacklog(): any[] {
@@ -380,6 +451,12 @@ export class MonitorServer {
     private syncScanInterval: NodeJS.Timeout | null = null;
     private offlineTimeoutMs: number = 300000; // 5 minutes
     private fallback: ServerFallbackManager = new ServerFallbackManager();
+    // Tracks the previous value of pollMs/updateCheckMs for in-flight interval commands
+    // so we can revert the optimistic UI value if the command is cancelled or errors.
+    private pendingIntervalRollbacks = new Map<string, { clientKey: string; field: 'pollMs' | 'updateCheckMs'; oldValue: number | undefined }>();
+    // True only while the initial sync-folder scan is running (start / key-change).
+    // Included in every snapshot so the webview can show a blocking loading overlay.
+    private isScanning = false;
     private clientReleasePath: string = '';
     private serverPresenceInterval: NodeJS.Timeout | null = null;
     private version: string = '1.0.0';
@@ -390,6 +467,8 @@ export class MonitorServer {
     private syncScanMs: number = 30000;         // scan presence files in clients/<serverKey>/
     private serverPresenceMs: number = 30000;   // refresh server's own presence file
     private clientPollMs: number = 15000;       // target interval pushed to clients
+    private commandTimeoutMs: number = 120000;  // 2 minutes – queued commands time out after this
+    private updateDebounceTimer: NodeJS.Timeout | null = null;
 
     initialize(context: vscode.ExtensionContext) {
         this.context = context;
@@ -431,25 +510,51 @@ export class MonitorServer {
                         this.showBacklogWebview();
                     }
                 });
+            }, () => {
+                // Batch-complete: called once per poll sweep after all results are applied.
+                // One globalState write + one webview postMessage instead of one per result.
+                this.savePersistentClients();
+                this.flushUpdate();
             });
             this.fallback.startPolling(this.backlogPollMs);
             // Scan for presence files to discover & promote sync clients
             if (this.syncScanInterval) { clearInterval(this.syncScanInterval); }
             this.syncScanInterval = setInterval(() => this.importSyncClients(), this.syncScanMs);
+            // Immediate scan — don't wait for the first interval tick
+            this.importSyncClients();
         }
     }
 
     async changeServerKey(newKey: string) {
         if (!newKey || !this.context) { return; }
-        // Remove the presence file under the old key before reassigning
+        // Update in-memory state and persist immediately so the next triggerUpdate
+        // snapshot contains the new key — the UI sees it without waiting for I/O.
         this.removeServerPresenceFile();
         this.serverId = newKey;
-        await this.context.globalState.update('serverKey', newKey);
-        // If server is running, immediately write presence file under new key
-        if (this.running) { this.writeServerPresenceFile('online'); }
-        console.log(`[MonitorServer] Server key changed to: ${newKey}`);
-        vscode.window.showInformationMessage(`Server key changed to: ${newKey}`);
+        // Mark as scanning so that any snapshot that slips out during the deferred
+        // block still carries scanning=true. The frontend also sets it optimistically.
+        this.isScanning = true;
+        // Flush the new key + scanning=true to the UI right away
         this.triggerUpdate();
+        // Heavy I/O deferred so the message handler returns fast
+        setImmediate(async () => {
+            await this.context!.globalState.update('serverKey', newKey);
+            if (this.running) { this.writeServerPresenceFile('online'); }
+            // Switch the client roster to the new key: discard clients that
+            // belonged to the old key and load whatever was previously saved
+            // under the new key (may be empty on first use of this key).
+            this.clients.clear();
+            this.loadPersistentClients();
+            // Reconfigure fallback + immediately scan for clients under the new key
+            // (importSyncClients is called inside setupFallback, then a triggerUpdate
+            // pushes the discovered clients to the UI straight away)
+            this.setupFallback();
+            // Scan complete — clear flag before the final snapshot goes out
+            this.isScanning = false;
+            this.triggerUpdate();
+            console.log(`[MonitorServer] Server key changed to: ${newKey}`);
+            vscode.window.showInformationMessage(`Server key changed to: ${newKey}`);
+        });
     }
 
     private serverPresenceFilePath(): string {
@@ -457,11 +562,36 @@ export class MonitorServer {
         return path.join(syncPath, 'servers', `${this.serverId}-${os.hostname()}-${process.pid}.json`);
     }
 
+    /**
+     * Remove stale presence files left by previous instances of this server
+     * (same serverId + hostname but different PID).
+     */
+    private cleanStaleServerPresenceFiles(): void {
+        if (!this.fallback.isConfigured) { return; }
+        try {
+            const serversDir = path.join(this.fallback.syncPathValue, 'servers');
+            if (!fsPathExists(serversDir)) { return; }
+            const prefix = `${this.serverId}-${os.hostname()}-`;
+            const ownFile = `${this.serverId}-${os.hostname()}-${process.pid}.json`;
+            const files = fsListDir(serversDir).filter(f => f.startsWith(prefix) && f.endsWith('.json') && f !== ownFile);
+            for (const f of files) {
+                try {
+                    fsDeleteFile(path.join(serversDir, f));
+                    console.log(`[MonitorServer] Cleaned stale server presence file: ${f}`);
+                } catch { /* best-effort */ }
+            }
+        } catch (e: any) {
+            console.warn(`[MonitorServer] Could not clean stale server presence files: ${e?.message || e}`);
+        }
+    }
+
     private writeServerPresenceFile(status: 'online' | 'offline'): void {
         if (!this.fallback.isConfigured) { return; }
         try {
             const serversDir = path.join(this.fallback.syncPathValue, 'servers');
             fsEnsureDir(serversDir);
+            // Remove leftover files from previous instances (different PIDs)
+            this.cleanStaleServerPresenceFiles();
             const filePath = this.serverPresenceFilePath();
             let startedAt = Date.now();
             if (status === 'online' && fsPathExists(filePath)) {
@@ -496,11 +626,14 @@ export class MonitorServer {
     removeServerPresenceFile(): void {
         if (!this.fallback.isConfigured) { return; }
         try {
+            // Remove own file
             const filePath = this.serverPresenceFilePath();
             if (fsPathExists(filePath)) {
                 fsDeleteFile(filePath);
                 console.log(`[MonitorServer] Server presence file removed: ${filePath}`);
             }
+            // Also clean up any stale files from previous PIDs
+            this.cleanStaleServerPresenceFiles();
         } catch (e: any) {
             console.warn(`[MonitorServer] Could not remove server presence file: ${e?.message || e}`);
         }
@@ -655,22 +788,28 @@ export class MonitorServer {
 
     // Called when a client result arrives (via results/ live channel or server-backlog/ offline channel)
     private handleBacklogResponse(clientLabel: string, entry: any) {
-        const client = Array.from(this.clients.values()).find(c => c.clientLabel === clientLabel);
+        // Look up by clientKey first (exact Map key), fall back to clientLabel search.
+        // This prevents mismatches when multiple clients share the same label but
+        // have different keys (e.g. after a globalState reset).
+        const client = (entry.clientKey ? this.clients.get(entry.clientKey) : undefined)
+            || Array.from(this.clients.values()).find(c => c.clientLabel === clientLabel);
         if (!client) {
-            console.warn(`[MonitorServer] Response for unknown clientLabel: ${clientLabel}`);
+            console.warn(`[MonitorServer] Response for unknown client: label=${clientLabel}, key=${entry.clientKey}`);
             return;
         }
         // Detect client-reported errors
         const isError = entry.payload && entry.payload.success === false && entry.payload.error !== undefined;
         // Update command log entry
         const logEntry = client.commandLog.find(e => e.id === entry.id);
+        const newStatus = isError ? 'error' : 'executed';
         if (logEntry) {
-            logEntry.status = isError ? 'error' : 'executed';
+            logEntry.status = newStatus;
             logEntry.completedAt = Date.now();
             logEntry.result = entry.payload;
         } else {
-            client.commandLog.push({ id: entry.id, command: entry.command, status: isError ? 'error' : 'executed', timestamp: entry.timestamp || Date.now(), completedAt: Date.now(), result: entry.payload });
+            client.commandLog.push({ id: entry.id, command: entry.command, status: newStatus, timestamp: entry.timestamp || Date.now(), completedAt: Date.now(), result: entry.payload });
         }
+        console.log(`[MonitorServer] Command ${entry.id} (${entry.command}) → ${newStatus} [matched=${!!logEntry}, client=${client.key}]`);
         // Set lastResponse so the response panel in the UI shows the data
         if (entry.payload !== undefined && entry.payload !== null) {
             client.lastResponse = { command: entry.command, data: entry.payload, timestamp: entry.timestamp || Date.now() };
@@ -679,11 +818,17 @@ export class MonitorServer {
         if (!client.info) { client.info = {}; }
         if (entry.command === 'checkBBrainy' && entry.payload) {
             client.info.bbrainyStatus = entry.payload;
+            // Auto-open the BBrainy status webview when the result arrives
+            this.showBBrainyStatusWebview(client.key);
         }
         if (entry.command === 'getSystemInfo' && entry.payload?.hostname) {
             Object.assign(client.info, { hostname: entry.payload.hostname, username: entry.payload.username, os: entry.payload.os, vscodeVersion: entry.payload.vscodeVersion });
             if (entry.payload.extensionVersion) {
                 client.info.version = entry.payload.extensionVersion;
+            }
+            // Also extract bbrainyStatus from getSystemInfo result
+            if (entry.payload.bbrainyStatus) {
+                client.info.bbrainyStatus = entry.payload.bbrainyStatus;
             }
         }
         if (entry.command === 'getWorkspace' && entry.payload?.workspace) {
@@ -697,10 +842,33 @@ export class MonitorServer {
         if (entry.command === 'displayReminderScreen' && !isError) {
             // Could auto-open reminder webview here if needed in the future
         }
+        // Interval commands: revert optimistic value on error, confirm (and update
+        // from client's authoritative payload) on success.
+        if (entry.command === 'setPollInterval') {
+            if (isError) {
+                this.revertIntervalIfPending(entry.id);
+            } else {
+                this.pendingIntervalRollbacks.delete(entry.id);
+                // Update from client's confirmed value (ground truth)
+                if (typeof entry.payload?.intervalMs === 'number') {
+                    client.info.pollMs = entry.payload.intervalMs;
+                }
+            }
+        }
+        if (entry.command === 'setUpdateCheckInterval') {
+            if (isError) {
+                this.revertIntervalIfPending(entry.id);
+            } else {
+                this.pendingIntervalRollbacks.delete(entry.id);
+                if (typeof entry.payload?.intervalMs === 'number') {
+                    client.info.updateCheckMs = entry.payload.intervalMs;
+                }
+            }
+        }
         const channelLabel = entry.channel === 'live' ? 'Live result' : 'Backlog result';
-        console.log(`[MonitorServer] ${channelLabel} from ${clientLabel}: ${entry.command} -> ${isError ? 'error' : 'executed'}`);
-        this.savePersistentClients();
-        this.triggerUpdate();
+        console.log(`[MonitorServer] ${channelLabel} from ${clientLabel}: ${entry.command} -> ${newStatus}`);
+        // save + flush are deferred to onBatchComplete (called once per poll sweep)
+        // so N results in one batch → 1 globalState write + 1 postMessage instead of N.
     }
 
     // Discover clients that wrote a presence file to the sync folder but have never connected via WS.
@@ -858,6 +1026,10 @@ export class MonitorServer {
 
         console.log(`[MonitorServer] Starting server with serverId: ${this.serverId}`);
 
+        // Signal to the webview that a fleet scan is in progress.
+        // The frontend also applies this optimistically on the Start button click.
+        this.isScanning = true;
+
         // Reload clients for the specific Server ID
         this.clients.clear();
         this.loadPersistentClients();
@@ -871,6 +1043,9 @@ export class MonitorServer {
         this.importSyncClients();
         // Restore pending disk-queue entries into each client's command log
         this.restorePendingQueueToLog();
+
+        // Scan complete — clear flag before the final triggerUpdate() builds the snapshot
+        this.isScanning = false;
 
         this.running = true;
 
@@ -945,9 +1120,9 @@ export class MonitorServer {
             v !== undefined ? Math.max(min, Math.min(max, v)) : cur;
 
         this.backlogPollMs    = clamp(opts.backlogPollMs,    3000, 300000, this.backlogPollMs);
-        this.presenceCheckMs  = clamp(opts.presenceCheckMs,  5000, 300000, this.presenceCheckMs);
-        this.syncScanMs       = clamp(opts.syncScanMs,       5000, 300000, this.syncScanMs);
-        this.serverPresenceMs = clamp(opts.serverPresenceMs, 5000, 300000, this.serverPresenceMs);
+        this.presenceCheckMs  = clamp(opts.presenceCheckMs,  3000, 300000, this.presenceCheckMs);
+        this.syncScanMs       = clamp(opts.syncScanMs,       3000, 300000, this.syncScanMs);
+        this.serverPresenceMs = clamp(opts.serverPresenceMs, 3000, 300000, this.serverPresenceMs);
 
         if (this.running) {
             // Restart all timers with new intervals
@@ -986,10 +1161,22 @@ export class MonitorServer {
         const client = this.clients.get(clientKey);
         if (client) {
             if (!client.info) { client.info = {}; }
+            const oldValue = client.info.pollMs;
             client.info.pollMs = ms;
             this.savePersistentClients();
+            const cmdId = await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms });
+            if (cmdId) {
+                // Register rollback so we can revert if the command is cancelled or errors.
+                this.pendingIntervalRollbacks.set(cmdId, { clientKey, field: 'pollMs', oldValue });
+            } else {
+                // sendCommand failed immediately (e.g. sync path not configured) — revert.
+                client.info.pollMs = oldValue;
+                this.savePersistentClients();
+                this.triggerUpdate();
+            }
+        } else {
+            await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms });
         }
-        await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms });
     }
 
     /** Send a setUpdateCheckInterval command to a specific client (queued via sync folder). */
@@ -998,10 +1185,35 @@ export class MonitorServer {
         const client = this.clients.get(clientKey);
         if (client) {
             if (!client.info) { client.info = {}; }
+            const oldValue = client.info.updateCheckMs;
             client.info.updateCheckMs = ms;
             this.savePersistentClients();
+            const cmdId = await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms });
+            if (cmdId) {
+                this.pendingIntervalRollbacks.set(cmdId, { clientKey, field: 'updateCheckMs', oldValue });
+            } else {
+                client.info.updateCheckMs = oldValue;
+                this.savePersistentClients();
+                this.triggerUpdate();
+            }
+        } else {
+            await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms });
         }
-        await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms });
+    }
+
+    /** Revert an optimistically-applied interval value if the command didn't commit. */
+    private revertIntervalIfPending(cmdId: string): void {
+        const rollback = this.pendingIntervalRollbacks.get(cmdId);
+        if (!rollback) { return; }
+        this.pendingIntervalRollbacks.delete(cmdId);
+        const client = this.clients.get(rollback.clientKey);
+        if (!client?.info) { return; }
+        if (rollback.field === 'pollMs') {
+            client.info.pollMs = rollback.oldValue;
+        } else {
+            client.info.updateCheckMs = rollback.oldValue;
+        }
+        console.log(`[MonitorServer] Reverted ${rollback.field} for ${rollback.clientKey} back to ${rollback.oldValue ?? 'default'}`);
     }
 
     /** Return current interval settings for the UI. */
@@ -1018,6 +1230,20 @@ export class MonitorServer {
     private checkClientPresence() {
         const now = Date.now();
         const keysToRemove: string[] = [];
+        let anyChanged = false;
+
+        // Build a set of clientKeys that still have a presence file in the sync folder.
+        // These are "registered" clients that must never be auto-removed — even if
+        // their lastSeen is stale — because importSyncClients would just re-add them
+        // on the next tick, causing a visible oscillation in the dashboard.
+        const registeredInSync = new Set<string>();
+        if (this.fallback.isConfigured) {
+            try {
+                for (const entry of this.fallback.scanRegisteredClients()) {
+                    registeredInSync.add(entry.clientKey);
+                }
+            } catch { /* best-effort */ }
+        }
         
         for (const [key, client] of this.clients) {
             if (client.status === 'sync' && now - client.lastSeen > 2 * 60 * 1000) {
@@ -1025,17 +1251,60 @@ export class MonitorServer {
                 client.status = 'offline';
                 console.log(`[MonitorServer] Sync client demoted to offline (stale presence): ${key}`);
             } else if (client.status === 'offline' && now - client.lastSeen > this.offlineTimeoutMs) {
-                // Remove client if offline for too long (5 minutes by default)
+                if (registeredInSync.has(key)) {
+                    // Client still has a presence file in the sync folder — it belongs
+                    // to this server key and should stay visible as offline/inactive.
+                    // Removing it would cause importSyncClients to re-add it immediately,
+                    // creating a visible oscillation in the dashboard.
+                    continue;
+                }
+                // Remove client if offline for too long and no longer registered in sync
                 keysToRemove.push(key);
                 console.log(`[MonitorServer] Removing stale offline client: ${key} (${client.info?.username}@${client.info?.hostname})`);
+            }
+
+            // ─── Command queue timeout ─────────────────────────────────
+            // Check for stale queued/sent commands that never got a response.
+            if (client.commandLog) {
+                // Lazily read the on-disk queue for this client (once per client per tick)
+                let diskCmdIds: Set<string> | null = null;
+                const loadDiskQueue = () => {
+                    if (diskCmdIds !== null) { return; }
+                    diskCmdIds = new Set<string>();
+                    if (this.fallback.isConfigured) {
+                        try {
+                            const cmds = this.fallback.peekQueuedCommands(client.clientLabel);
+                            for (const cmd of cmds) { diskCmdIds.add(cmd.id); }
+                        } catch { /* ignore read errors */ }
+                    }
+                };
+
+                for (const entry of client.commandLog) {
+                    if ((entry.status === 'queued' || entry.status === 'sent') &&
+                        now - entry.timestamp > this.commandTimeoutMs) {
+                        // Command has been pending past the timeout threshold.
+                        // Only mark as timed-out if the queue file no longer holds it
+                        // (meaning the client consumed it but never responded).
+                        loadDiskQueue();
+                        if (!diskCmdIds!.has(entry.id)) {
+                            entry.status = 'error';
+                            entry.completedAt = now;
+                            entry.result = { success: false, error: 'Timed out – client consumed the command but did not respond' };
+                            anyChanged = true;
+                            console.log(`[MonitorServer] Command ${entry.id} (${entry.command}) timed out for ${client.clientLabel}`);
+                        }
+                    }
+                }
             }
         }
         
         // Remove stale offline clients
         keysToRemove.forEach(key => this.clients.delete(key));
         
-        if (keysToRemove.length > 0) {
-            console.log(`[MonitorServer] Removed ${keysToRemove.length} stale client(s)`);
+        if (keysToRemove.length > 0 || anyChanged) {
+            if (keysToRemove.length > 0) {
+                console.log(`[MonitorServer] Removed ${keysToRemove.length} stale client(s)`);
+            }
             this.savePersistentClients();
             this.triggerUpdate();
         }
@@ -1366,7 +1635,7 @@ export class MonitorServer {
         `;
     }
 
-    async sendCommand(clientKey: string, command: string, payload?: any) {
+    async sendCommand(clientKey: string, command: string, payload?: any): Promise<string | undefined> {
         const client = this.clients.get(clientKey);
         if (!client) {
             console.warn(`[MonitorServer] Attempted to send command to non-existent client: ${clientKey}`);
@@ -1378,6 +1647,12 @@ export class MonitorServer {
         const cmdId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
         const logEntry: CommandLogEntry = { id: cmdId, command, status: 'queued', timestamp: Date.now() };
         client.commandLog.push(logEntry);
+        // Use the debounced triggerUpdate instead of an immediate flushUpdate.
+        // Rapid-fire calls (e.g. queuing 5 commands quickly) will coalesce into
+        // a single snapshot that contains ALL entries — avoiding the flicker where
+        // the webview briefly shows fewer items than the user's optimistic count.
+        // The frontend already injects optimistic entries instantly on each click,
+        // so there is no UX regression from waiting the 150 ms debounce window.
         this.triggerUpdate();
 
         if (!this.fallback.isConfigured) {
@@ -1392,26 +1667,25 @@ export class MonitorServer {
             return;
         }
 
-        try {
-            this.fallback.enqueueCommand(client.clientLabel, clientKey, command, payload, cmdId);
-            this.savePersistentClients();
-            this.triggerUpdate();
-            console.log(`[MonitorServer] Queued "${command}" for ${client.clientLabel}`);
-            vscode.window.showInformationMessage(`Queued "${command}" for ${client.clientLabel}`);
-        } catch (e: any) {
-            logEntry.status = 'error';
-            logEntry.completedAt = Date.now();
-            const msg = `Failed to queue command: ${e?.message || e}`;
-            console.error(`[MonitorServer] ${msg}`);
-            vscode.window.showErrorMessage(msg);
-            this.savePersistentClients();
-            this.triggerUpdate();
-        }
+        // Stage in memory — the disk write is batched so multiple commands
+        // (e.g. queryAll) are written in a single I/O per client queue file.
+        this.fallback.stageCommand(client.clientLabel, clientKey, command, payload, cmdId);
+        // Schedule a flush on the next event-loop tick.  If another sendCommand
+        // runs synchronously before that tick, its entry is coalesced into the
+        // same disk write.
+        this.fallback.scheduleFlush();
+        this.savePersistentClients();
+        console.log(`[MonitorServer] Staged "${command}" for ${client.clientLabel}`);
+        return cmdId;
     }
     // Remove all queued (not-yet-delivered) commands for a client from disk and log
     clearClientQueue(clientKey: string) {
         const client = this.clients.get(clientKey);
         if (!client) { return; }
+        // Revert any optimistic interval values that were applied for queued commands
+        for (const entry of client.commandLog) {
+            this.revertIntervalIfPending(entry.id);
+        }
         // Remove disk queue file
         if (this.fallback.isConfigured) {
             try {
@@ -1437,6 +1711,8 @@ export class MonitorServer {
     cancelQueueEntry(clientKey: string, entryId: string) {
         const client = this.clients.get(clientKey);
         if (!client) { return; }
+        // Revert any optimistic interval value that was applied for this command
+        this.revertIntervalIfPending(entryId);
         // Remove from disk queue file (rewrite without that entry)
         if (this.fallback.isConfigured) {
             try {
@@ -1461,11 +1737,17 @@ export class MonitorServer {
 
     async queryAllClients(command: string) {
         console.log(`[MonitorServer] Broadcasting command to all ${this.clients.size} clients: ${command}`);
-        const promises = Array.from(this.clients.keys()).map(key =>
-            this.sendCommand(key, command)
-        );
-        await Promise.all(promises);
-        console.log(`[MonitorServer] Broadcast complete for command: ${command}`);
+        // Stage all commands in memory first (no disk I/O yet)
+        for (const key of this.clients.keys()) {
+            await this.sendCommand(key, command);
+        }
+        // Single batched disk write for all clients
+        const { succeeded, failed } = this.fallback.flushPendingQueue();
+        if (failed.length > 0) {
+            vscode.window.showWarningMessage(`Failed to queue command for ${failed.length} client(s)`);
+        }
+        this.triggerUpdate();
+        console.log(`[MonitorServer] Broadcast complete: ${succeeded.length} queued, ${failed.length} failed`);
     }
 
     getAllClientsInfo() {
@@ -2007,6 +2289,16 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
     }
 
     triggerUpdate() {
+        // Debounce: coalesce rapid successive calls into one update after 150ms
+        if (this.updateDebounceTimer) { clearTimeout(this.updateDebounceTimer); }
+        this.updateDebounceTimer = setTimeout(() => {
+            this.updateDebounceTimer = null;
+            this.flushUpdate();
+        }, 150);
+    }
+
+    /** Actually build and push the dashboard payload to the webview. */
+    private flushUpdate() {
         if (this.provider) {
             const clientsArray = Array.from(this.clients.values());
             this.provider.update({
@@ -2039,7 +2331,8 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
                     syncScanMs: this.syncScanMs,
                     serverPresenceMs: this.serverPresenceMs,
                     clientPollMs: this.clientPollMs
-                }
+                },
+                scanning: this.isScanning
             });
         }
     }

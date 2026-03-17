@@ -3,6 +3,11 @@
     "displayName":  "Client Monitor",
     "description":  "Client-side monitoring extension for BBrainy Champion Assistant",
     "version":  "1.0.0",
+    "license": "UNLICENSED",
+    "repository": {
+        "type": "git",
+        "url": "https://example.com/bbrainy-champion-assistance.git"
+    },
     "icon":  "resources/icon.png",
     "engines":  {
                     "vscode":  "^1.85.0"

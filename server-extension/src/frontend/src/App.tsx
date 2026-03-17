@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Monitor, 
   RefreshCcw, 
@@ -68,6 +68,8 @@ interface DashboardData {
     serverPresenceMs: number;
     clientPollMs: number;
   };
+  /** True while the server is scanning the sync folder on start / key-change. */
+  scanning?: boolean;
 }
 
 interface CommandModal {
@@ -208,13 +210,27 @@ const statusBadgeClass: Record<string, string> = {
   error:    'tint-red',
 };
 
+/** Shared 1-second tick – all ElapsedTimer instances re-render from one setInterval. */
+let tickListeners: Set<() => void> = new Set();
+let tickInterval: ReturnType<typeof setInterval> | null = null;
+function subscribeTick(cb: () => void) {
+  tickListeners.add(cb);
+  if (!tickInterval) {
+    tickInterval = setInterval(() => tickListeners.forEach(fn => fn()), 1000);
+  }
+  return () => {
+    tickListeners.delete(cb);
+    if (tickListeners.size === 0 && tickInterval) {
+      clearInterval(tickInterval);
+      tickInterval = null;
+    }
+  };
+}
+
 /** Live elapsed-time counter shown next to queued/sent commands. */
 const ElapsedTimer = ({ since }: { since: number }) => {
   const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  useEffect(() => subscribeTick(() => setNow(Date.now())), []);
   const secs = Math.max(0, Math.floor((now - since) / 1000));
   const mm = String(Math.floor(secs / 60)).padStart(2, '0');
   const ss = String(secs % 60).padStart(2, '0');
@@ -225,14 +241,25 @@ const ElapsedTimer = ({ since }: { since: number }) => {
   );
 };
 
-const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], clientKey: string | null }) => {
+const CommandQueueLog = ({ log, clientKey, onOptimisticClear, onOptimisticCancel }: {
+  log: Client['commandLog'],
+  clientKey: string | null,
+  onOptimisticClear?: () => void,
+  onOptimisticCancel?: (entryId: string) => void
+}) => {
   const pending = log.filter(e => e.status === 'queued' || e.status === 'sent');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const clearAll = () => {
-    if (clientKey) vscode.postMessage({ action: 'clearClientQueue', clientKey });
+    if (clientKey) {
+      onOptimisticClear?.();
+      vscode.postMessage({ action: 'clearClientQueue', clientKey });
+    }
   };
   const cancel = (entryId: string) => {
-    if (clientKey) vscode.postMessage({ action: 'cancelQueueEntry', clientKey, entryId });
+    if (clientKey) {
+      onOptimisticCancel?.(entryId);
+      vscode.postMessage({ action: 'cancelQueueEntry', clientKey, entryId });
+    }
   };
 
   if (!log || log.length === 0) {
@@ -254,12 +281,20 @@ const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], client
         </button>
       </div>
       <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+        <AnimatePresence initial={false}>
         {[...log].reverse().map(entry => {
           const isFinished = entry.status === 'executed' || entry.status === 'error';
           const hasResult = isFinished && entry.result;
           const isExpanded = expandedId === entry.id;
           return (
-            <div key={entry.id}>
+            <motion.div
+              key={entry.id}
+              layout
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+              transition={{ duration: 0.2, layout: { duration: 0.15 } }}
+            >
               <div
                 className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg liquid-glass ${hasResult ? 'cursor-pointer' : ''}`}
                 onClick={hasResult ? () => setExpandedId(isExpanded ? null : entry.id) : undefined}
@@ -301,9 +336,10 @@ const CommandQueueLog = ({ log, clientKey }: { log: Client['commandLog'], client
                   </pre>
                 </div>
               )}
-            </div>
+            </motion.div>
           );
         })}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -369,19 +405,68 @@ const App = () => {
   };
 
   useEffect(() => {
-    window.addEventListener('message', (event) => {
+    const handler = (event: MessageEvent) => {
       const message = event.data;
       if (message.type === 'update') {
         setData(message.data);
       }
-    });
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
   }, []);
 
-  const queryAll = (command: string) => vscode.postMessage({ action: 'queryAll', command });
-  const sendCommand = (clientKey: string, command: string, payload?: any) => 
+  // Safety net: auto-clear the scanning overlay after 30 s if the backend
+  // never responds (e.g. extension host crash or very slow UNC mount).
+  useEffect(() => {
+    if (!data.scanning) return;
+    const t = setTimeout(() => setData(prev => ({ ...prev, scanning: false })), 30000);
+    return () => clearTimeout(t);
+  }, [data.scanning]);
+
+  // ─── Optimistic helpers ─────────────────────────────────────────
+  // Immediately update local state so the UI feels instant; the real
+  // backend payload will overwrite when it arrives via postMessage.
+
+  const optimisticId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+  const injectCommandEntry = (clientKey: string, command: string) => {
+    setData(prev => ({
+      ...prev,
+      clients: prev.clients.map(c =>
+        c.key === clientKey
+          ? { ...c, commandLog: [...c.commandLog, { id: optimisticId(), command, status: 'queued' as const, timestamp: Date.now() }] }
+          : c
+      )
+    }));
+  };
+
+  const queryAll = (command: string) => {
+    // Optimistic: inject a queued entry for every client
+    setData(prev => ({
+      ...prev,
+      clients: prev.clients.map(c => ({
+        ...c,
+        commandLog: [...c.commandLog, { id: optimisticId(), command, status: 'queued' as const, timestamp: Date.now() }]
+      }))
+    }));
+    vscode.postMessage({ action: 'queryAll', command });
+  };
+
+  const sendCommand = (clientKey: string, command: string, payload?: any) => {
+    injectCommandEntry(clientKey, command);
     vscode.postMessage({ action: 'sendCommand', clientKey, command, payload });
+  };
+
   const generateReport = () => vscode.postMessage({ action: 'generateReport' });
+
   const toggleServer = () => {
+    const nowStarting = !data.serverStatus.running;
+    // Optimistic: flip running state; show scanning overlay immediately when starting
+    setData(prev => ({
+      ...prev,
+      serverStatus: { ...prev.serverStatus, running: !prev.serverStatus.running },
+      scanning: nowStarting
+    }));
     if (data.serverStatus.running) {
       vscode.postMessage({ action: 'stopServer' });
     } else {
@@ -395,6 +480,8 @@ const App = () => {
   const saveServerKey = () => {
     const trimmed = keyInput.trim();
     if (trimmed && trimmed !== data.serverStatus.serverId) {
+      // Optimistic: reflect the new key in the UI immediately; backend runs async
+      setData(prev => ({ ...prev, serverStatus: { ...prev.serverStatus, serverId: trimmed }, scanning: true }));
       vscode.postMessage({ action: 'changeServerKey', newKey: trimmed });
     }
     setEditingKey(false);
@@ -406,6 +493,30 @@ const App = () => {
 
   return (
     <div className="min-h-screen p-4 t-primary overflow-x-hidden">
+      {/* ── Fleet-scanning overlay ─────────────────────────────────────────
+           Blocks interaction while the server verifies the sync folder.
+           Appears instantly via optimistic setData on Start / key-change,
+           disappears when the backend sends scanning=false in its snapshot. */}
+      {data.scanning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(10,10,18,0.82)', backdropFilter: 'blur(4px)' }}>
+          <div className="flex flex-col items-center gap-3 p-6 rounded-2xl"
+            style={{ background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)', maxWidth: 200 }}>
+            <div className="animate-spin rounded-full"
+              style={{ width: 36, height: 36, border: '3px solid transparent',
+                borderTopColor: 'var(--text-link)', borderRightColor: 'var(--text-link)' }} />
+            <p className="text-xs font-bold text-center" style={{ color: 'var(--text-link)' }}>
+              Scanning Fleet…
+            </p>
+            <p className="text-[10px] t-muted text-center leading-relaxed">
+              Verifying clients for
+              <span className="block font-mono mt-0.5" style={{ color: 'var(--vscode-foreground)' }}>
+                {data.serverStatus.serverId}
+              </span>
+            </p>
+          </div>
+        </div>
+      )}
       {/* Header - Compact for Sidebar */}
       <div className="mb-5">
           <h1 className="text-lg font-extrabold tracking-tight mb-1" style={{ color: 'var(--text-link)' }}>
@@ -629,10 +740,7 @@ const App = () => {
                   </button>
                   <button
                     disabled={!data.serverStatus.running}
-                    onClick={() => {
-                      sendCommand(selectedClient, 'checkBBrainy');
-                      vscode.postMessage({ action: 'showBBrainyStatus', clientKey: selectedClient });
-                    }}
+                    onClick={() => sendCommand(selectedClient, 'checkBBrainy')}
                     className="w-full flex items-center p-2 rounded-lg border tint-green transition-colors text-xs disabled:cursor-not-allowed"
                   >
                     <span className="flex items-center gap-2 leading-none"><Activity size={11} /> Check Status</span>
@@ -738,7 +846,30 @@ const App = () => {
                   ></span>
                   Command Queue
                 </p>
-                <CommandQueueLog log={data.clients.find(c => c.key === selectedClient)?.commandLog ?? []} clientKey={selectedClient} />
+                <CommandQueueLog
+                  log={data.clients.find(c => c.key === selectedClient)?.commandLog ?? []}
+                  clientKey={selectedClient}
+                  onOptimisticClear={() => {
+                    if (!selectedClient) return;
+                    setData(prev => ({
+                      ...prev,
+                      clients: prev.clients.map(c =>
+                        c.key === selectedClient ? { ...c, commandLog: [] } : c
+                      )
+                    }));
+                  }}
+                  onOptimisticCancel={(entryId) => {
+                    if (!selectedClient) return;
+                    setData(prev => ({
+                      ...prev,
+                      clients: prev.clients.map(c =>
+                        c.key === selectedClient
+                          ? { ...c, commandLog: c.commandLog.filter(e => e.id !== entryId) }
+                          : c
+                      )
+                    }));
+                  }}
+                />
               </div>
             )}
           </GlassCard>
@@ -794,13 +925,36 @@ const App = () => {
                 { label: 'Relaxed (30s)', ms: 30000 },
                 { label: 'Slow (60s)', ms: 60000 },
               ];
-              const setServer = (key: string, ms: number) =>
+              const setServer = (key: string, ms: number) => {
+                setData(prev => ({
+                  ...prev,
+                  intervals: { ...prev.intervals!, [key]: ms }
+                }));
                 vscode.postMessage({ action: 'setServerIntervals', intervals: { [key]: ms } });
+              };
               const setClientOne = (ms: number) => {
-                if (selectedClient) vscode.postMessage({ action: 'setClientPollInterval', clientKey: selectedClient, intervalMs: ms });
+                if (!selectedClient) return;
+                setData(prev => ({
+                  ...prev,
+                  clients: prev.clients.map(c =>
+                    c.key === selectedClient
+                      ? { ...c, pollMs: ms, commandLog: [...c.commandLog, { id: optimisticId(), command: 'setPollInterval', status: 'queued' as const, timestamp: Date.now() }] }
+                      : c
+                  )
+                }));
+                vscode.postMessage({ action: 'setClientPollInterval', clientKey: selectedClient, intervalMs: ms });
               };
               const setUpdateCheck = (ms: number) => {
-                if (selectedClient) vscode.postMessage({ action: 'setClientUpdateCheckInterval', clientKey: selectedClient, intervalMs: ms });
+                if (!selectedClient) return;
+                setData(prev => ({
+                  ...prev,
+                  clients: prev.clients.map(c =>
+                    c.key === selectedClient
+                      ? { ...c, updateCheckMs: ms, commandLog: [...c.commandLog, { id: optimisticId(), command: 'setUpdateCheckInterval', status: 'queued' as const, timestamp: Date.now() }] }
+                      : c
+                  )
+                }));
+                vscode.postMessage({ action: 'setClientUpdateCheckInterval', clientKey: selectedClient, intervalMs: ms });
               };
               const updatePresets = [
                 { label: '1m', ms: 60000 },

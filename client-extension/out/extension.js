@@ -146,7 +146,7 @@ function fsRenameFile(src, dest) {
   }
   fs.renameSync(src, dest);
 }
-var GitFallbackManager = class {
+var GitFallbackManager = class _GitFallbackManager {
   pollInterval = null;
   fallbackPath = "";
   clientKey = "";
@@ -157,6 +157,7 @@ var GitFallbackManager = class {
   pollIntervalMs = FALLBACK_POLL_INTERVAL_MS;
   executedIds = /* @__PURE__ */ new Set();
   context = null;
+  _isLeader = false;
   configure(fallbackPath, clientKey, clientLabel, serverKey, version2, onCommand, context) {
     this.fallbackPath = fallbackPath;
     this.clientKey = clientKey;
@@ -172,6 +173,88 @@ var GitFallbackManager = class {
       }
     }
     this.writePresenceFile();
+    this.tryAcquireLeadership();
+  }
+  // ─── Leader election ─────────────────────────────────────────────
+  // Only one VS Code instance per client (same username-hostname) polls
+  // the sync folder.  A small lock file in <syncPath>/leaders/ tracks the
+  // current leader's PID.  Other instances become followers — they still
+  // refresh the presence file but skip queue polling & result writing.
+  leaderFilePath() {
+    return path.join(this.fallbackPath, "leaders", `${this.clientLabel}.json`);
+  }
+  /** Check whether a given process ID is alive on this machine. */
+  static isProcessAlive(pid) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /** Try to claim leadership.  Returns true if this instance is (or becomes) the leader. */
+  tryAcquireLeadership() {
+    if (!this.fallbackPath) {
+      return false;
+    }
+    try {
+      const dir = path.join(this.fallbackPath, "leaders");
+      fsEnsureDir(dir);
+      const lockPath = this.leaderFilePath();
+      if (fsPathExists(lockPath)) {
+        try {
+          const lock = JSON.parse(fsReadText(lockPath));
+          if (lock.pid === process.pid) {
+            this._isLeader = true;
+            lock.timestamp = Date.now();
+            fsWriteText(lockPath, JSON.stringify(lock));
+            return true;
+          }
+          if (_GitFallbackManager.isProcessAlive(lock.pid)) {
+            this._isLeader = false;
+            return false;
+          }
+          console.log(`[Fallback] Previous leader PID ${lock.pid} is dead \u2014 claiming leadership`);
+        } catch {
+        }
+      }
+      fsWriteText(lockPath, JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
+      this._isLeader = true;
+      console.log(`[Fallback] This instance (PID ${process.pid}) is now the leader for ${this.clientLabel}`);
+      return true;
+    } catch (e) {
+      console.warn(`[Fallback] Leader acquisition failed: ${e?.message || e}`);
+      this._isLeader = true;
+      return true;
+    }
+  }
+  /** Release leadership on shutdown so another instance can take over immediately. */
+  releaseLeadership() {
+    if (!this._isLeader || !this.fallbackPath) {
+      return;
+    }
+    try {
+      const lockPath = this.leaderFilePath();
+      if (fsPathExists(lockPath)) {
+        try {
+          const lock = JSON.parse(fsReadText(lockPath));
+          if (lock.pid === process.pid) {
+            fsDeleteFile(lockPath);
+            console.log(`[Fallback] Leadership released (PID ${process.pid})`);
+          }
+        } catch {
+          try {
+            fsDeleteFile(lockPath);
+          } catch {
+          }
+        }
+      }
+    } catch {
+    }
+    this._isLeader = false;
+  }
+  get isLeader() {
+    return this._isLeader;
   }
   // Write/update the presence file so the server can discover this client via sync folder
   writePresenceFile() {
@@ -314,7 +397,11 @@ var GitFallbackManager = class {
     if (!this.isConfigured || !this.onCommand) {
       return;
     }
+    this.tryAcquireLeadership();
     this.updatePresenceLastSeen();
+    if (!this._isLeader) {
+      return;
+    }
     const queueFile = path.join(this.fallbackPath, "queue", `${this.clientLabel}.json`);
     const claimedFile = queueFile + `.lock-${process.pid}`;
     try {
@@ -348,24 +435,36 @@ var GitFallbackManager = class {
         return;
       }
       console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
-      for (const cmd of cmds) {
-        if (this.executedIds.has(cmd.id)) {
-          console.log(`[Fallback] Skipping duplicate command: ${cmd.command} (${cmd.id})`);
-          continue;
-        }
+      const toExecute = cmds.filter((cmd) => !this.executedIds.has(cmd.id));
+      if (toExecute.length === 0) {
+        return;
+      }
+      for (const cmd of toExecute) {
+        this.executedIds.add(cmd.id);
+      }
+      const batchResults = await Promise.all(toExecute.map(async (cmd) => {
         try {
           console.log(`[Fallback] Executing queued command: ${cmd.command} (${cmd.id})`);
-          const result = await this.onCommand(cmd);
-          this.addExecutedId(cmd.id);
-          this.writeServerBacklog(cmd.id, cmd.command, result);
-          console.log(`[Fallback] Wrote server-backlog entry for "${cmd.command}" (${cmd.id})`);
+          const payload = await this.onCommand(cmd);
+          return { id: cmd.id, command: cmd.command, payload };
         } catch (e) {
-          this.addExecutedId(cmd.id);
-          const errPayload = { success: false, error: e?.message || String(e) };
-          this.writeServerBacklog(cmd.id, cmd.command, errPayload);
           console.error(`[Fallback] Error executing queued command ${cmd.command}:`, e);
+          return { id: cmd.id, command: cmd.command, payload: { success: false, error: e?.message || String(e) } };
         }
+      }));
+      if (this.context) {
+        while (this.executedIds.size > 500) {
+          const first = this.executedIds.values().next().value;
+          if (first !== void 0) {
+            this.executedIds.delete(first);
+          } else {
+            break;
+          }
+        }
+        this.context.globalState.update("executedIds", [...this.executedIds]);
       }
+      this.writeServerBacklogBatch(batchResults);
+      console.log(`[Fallback] Wrote batch result file (${batchResults.length} entries) for ${this.clientLabel}`);
     } catch (e) {
       console.error("[Fallback] Backlog check error:", e);
     }
@@ -417,6 +516,53 @@ var GitFallbackManager = class {
       }
     }
   }
+  // Write all results from one checkBacklog() sweep as a single file (array).
+  // One UNC write instead of N — eliminates per-command disk round-trips.
+  // Server's pollResultsDir/pollServerBacklog already handle both single-object
+  // and array-of-objects formats, so no server-side changes are needed.
+  writeServerBacklogBatch(entries) {
+    if (!this.isConfigured || entries.length === 0) {
+      return;
+    }
+    const targetDir = this.isServerOnline() ? path.join(this.fallbackPath, "results") : path.join(this.fallbackPath, "server-backlog");
+    fsEnsureDir(targetDir);
+    const batchEntries = entries.map((e) => ({
+      id: e.id,
+      command: e.command,
+      clientKey: this.clientKey,
+      clientLabel: this.clientLabel,
+      timestamp: Date.now(),
+      payload: e.payload
+    }));
+    const batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const baseName = `${this.clientLabel}-batch-${batchId}`;
+    const tmpFile = path.join(targetDir, `${baseName}.tmp`);
+    const finalFile = path.join(targetDir, `${baseName}.json`);
+    fsWriteText(tmpFile, JSON.stringify(batchEntries, null, 2));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        fsRenameFile(tmpFile, finalFile);
+        return;
+      } catch (e) {
+        if (attempt < 2) {
+          try {
+            (0, import_child_process.execSync)("ping -n 2 127.0.0.1 >nul", { shell: "cmd.exe", stdio: "pipe", timeout: 3e3 });
+          } catch {
+          }
+        } else {
+          console.error(`[Fallback] Failed to rename batch .tmp \u2192 .json after retries: ${e?.message || e}`);
+          try {
+            fsWriteText(finalFile, JSON.stringify(batchEntries, null, 2));
+          } catch {
+          }
+          try {
+            fsDeleteFile(tmpFile);
+          } catch {
+          }
+        }
+      }
+    }
+  }
   // Check whether the server is currently online by reading its presence file.
   // Server is considered online if its presence file has lastSeen within 90 seconds.
   isServerOnline() {
@@ -428,7 +574,8 @@ var GitFallbackManager = class {
       if (!fsPathExists(serversDir)) {
         return false;
       }
-      const files = fsListDir(serversDir).filter((f) => f.endsWith(".json") && f.startsWith(this.serverKey));
+      const keyPrefix = `${this.serverKey}-`;
+      const files = fsListDir(serversDir).filter((f) => f.endsWith(".json") && f.startsWith(keyPrefix));
       for (const file of files) {
         try {
           const entry = JSON.parse(fsReadText(path.join(serversDir, file)));
@@ -1066,6 +1213,7 @@ new Chart(ctx, {
     };
   }
   cleanup() {
+    this.fallback.releaseLeadership();
     this.fallback.markInactive();
     for (const interval of this.notifierIntervals.values()) {
       clearInterval(interval);

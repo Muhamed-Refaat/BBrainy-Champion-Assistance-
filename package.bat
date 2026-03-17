@@ -1,14 +1,16 @@
 @echo off
 REM BBrainy Champion Assistance - Package ^& VSIX Builder
-REM Builds both extensions, bumps versions, and produces .vsix files.
+REM Builds both extensions, bumps versions, and produces .vsix files
+REM for generic, Windows, and Ubuntu/WSL ^(linux-x64^).
 REM
 REM Usage:
 REM   package.bat                        - package with current versions
 REM   package.bat <client-ver>           - e.g. package.bat 1.2.0
 REM   package.bat <client-ver> <srv-ver> - e.g. package.bat 1.2.0 1.0.5
 REM
-REM The packaged client .vsix is also copied to the configured clientReleasePath\updates\
-REM so the auto-update mechanism can pick it up on client machines.
+REM The packaged client .vsix files are copied to:
+REM   - \\cai1-users\share\AI-Champion-Assist\client-release\release
+REM All produced VSIX files are also copied to root .\package\
 
 echo.
 echo [PACKAGE] BBrainy Champion Assistance - Package Script
@@ -19,9 +21,16 @@ setlocal enabledelayedexpansion
 set "buildFailed=0"
 cd /d "%~dp0"
 
+set "ROOT_PACKAGE_DIR=%CD%\package"
+if not exist "%ROOT_PACKAGE_DIR%" mkdir "%ROOT_PACKAGE_DIR%" >nul 2>&1
+
 REM ── Version arguments ────────────────────────────────────────────────────────
-set "CLIENT_VER=1.0.0"
-set "SERVER_VER=1.0.0"
+set "CLIENT_VER="
+set "SERVER_VER="
+set "CLIENT_RELEASE_DIR=\\cai1-users\share\AI-Champion-Assist\client-release\release"
+
+if not "%~1"=="" set "CLIENT_VER=%~1"
+if not "%~2"=="" set "SERVER_VER=%~2"
 
 REM ── Validate semver helper (basic x.y.z check via PowerShell) ────────────────
 if not "%CLIENT_VER%"=="" (
@@ -84,43 +93,50 @@ if errorlevel 1 (
 )
 echo [CLIENT] Built successfully
 
-REM -- Package
-echo [CLIENT] Packaging as VSIX...
-call vsce package --no-dependencies 2>&1
-if errorlevel 1 (
-    echo [CLIENT] Error: vsce package failed
-    set "buildFailed=1"
-    cd ..
-    goto SERVER_SECTION
-)
-
-REM -- Locate the produced .vsix
+REM -- Package generic
 set "CLIENT_VSIX=client-monitor-%CLIENT_CURRENT_VER%.vsix"
-if not exist "%CLIENT_VSIX%" (
-    echo [CLIENT] Warning: Expected %CLIENT_VSIX% not found - skipping copy to release path
-    cd ..
-    goto SERVER_SECTION
+echo [CLIENT] Packaging generic VSIX...
+call :DeleteIfExists "%CLIENT_VSIX%"
+echo y| call vsce package --no-dependencies -o "%CLIENT_VSIX%" 2>&1
+if errorlevel 1 (
+    echo [CLIENT] Error: generic package failed
+    set "buildFailed=1"
 )
-echo [CLIENT] Created: %CLIENT_VSIX%
 
-REM -- Copy to configured clientReleasePath\updates\ (read from package.json)
-for /f "delims=" %%P in ('powershell -NoProfile -Command ^
-    "try { $p = (Get-Content 'package.json' -Raw | ConvertFrom-Json).contributes.configuration.properties.'clientMonitor.clientReleasePath'.default; if ($p) { $p } else { '' } } catch { '' }"') do set "RELEASE_PATH=%%P"
-
-if not "%RELEASE_PATH%"=="" (
-    set "UPDATES_DIR=%RELEASE_PATH%\updates"
-    echo [CLIENT] Copying to release path: !UPDATES_DIR!
-    powershell -NoProfile -Command ^
-        "if (-not (Test-Path '!UPDATES_DIR!')) { try { New-Item -ItemType Directory -Path '!UPDATES_DIR!' -Force | Out-Null } catch {} }" 2>nul
-    copy /Y "%CLIENT_VSIX%" "!UPDATES_DIR!\%CLIENT_VSIX%" >nul 2>&1
-    if errorlevel 1 (
-        echo [CLIENT] Warning: Could not copy VSIX to release path ^(network drive unavailable?^)
-    ) else (
-        echo [CLIENT] Copied to: !UPDATES_DIR!\%CLIENT_VSIX%
-    )
-) else (
-    echo [CLIENT] No clientReleasePath configured - skipping copy
+REM -- Package Windows
+set "CLIENT_VSIX_WIN=client-monitor-%CLIENT_CURRENT_VER%-win32-x64.vsix"
+echo [CLIENT] Packaging Windows VSIX...
+call :DeleteIfExists "%CLIENT_VSIX_WIN%"
+echo y| call vsce package --no-dependencies --target win32-x64 -o "%CLIENT_VSIX_WIN%" 2>&1
+if errorlevel 1 (
+    echo [CLIENT] Warning: Windows target package failed
 )
+
+REM -- Package Ubuntu/WSL
+set "CLIENT_VSIX_LINUX=client-monitor-%CLIENT_CURRENT_VER%-linux-x64.vsix"
+echo [CLIENT] Packaging Ubuntu/WSL VSIX...
+call :DeleteIfExists "%CLIENT_VSIX_LINUX%"
+echo y| call vsce package --no-dependencies --target linux-x64 -o "%CLIENT_VSIX_LINUX%" 2>&1
+if errorlevel 1 (
+    echo [CLIENT] Warning: Linux target package failed
+)
+
+if exist "%CLIENT_VSIX%" echo [CLIENT] Created: %CLIENT_VSIX%
+if exist "%CLIENT_VSIX_WIN%" echo [CLIENT] Created: %CLIENT_VSIX_WIN%
+if exist "%CLIENT_VSIX_LINUX%" echo [CLIENT] Created: %CLIENT_VSIX_LINUX%
+
+REM -- Copy all client VSIX to root package folder
+call :CopyIfExistsToDir "%CLIENT_VSIX%" "%ROOT_PACKAGE_DIR%"
+call :CopyIfExistsToDir "%CLIENT_VSIX_WIN%" "%ROOT_PACKAGE_DIR%"
+call :CopyIfExistsToDir "%CLIENT_VSIX_LINUX%" "%ROOT_PACKAGE_DIR%"
+
+REM -- Copy client VSIX to fixed release folder
+if not defined CLIENT_RELEASE_DIR set "CLIENT_RELEASE_DIR=\\cai1-users\share\AI-Champion-Assist\client-release\release"
+echo [CLIENT] Copying client VSIX files to:
+echo          !CLIENT_RELEASE_DIR!
+call :CopyIfExistsToDir "%CLIENT_VSIX%" "!CLIENT_RELEASE_DIR!"
+call :CopyIfExistsToDir "%CLIENT_VSIX_WIN%" "!CLIENT_RELEASE_DIR!"
+call :CopyIfExistsToDir "%CLIENT_VSIX_LINUX%" "!CLIENT_RELEASE_DIR!"
 
 cd ..
 
@@ -164,22 +180,42 @@ if errorlevel 1 (
 )
 echo [SERVER] Built successfully
 
-REM -- Package
-echo [SERVER] Packaging as VSIX...
-call vsce package --no-dependencies 2>&1
+REM -- Package generic
+set "SERVER_VSIX=server-monitor-%SERVER_CURRENT_VER%.vsix"
+echo [SERVER] Packaging generic VSIX...
+call :DeleteIfExists "%SERVER_VSIX%"
+echo y| call vsce package --no-dependencies -o "%SERVER_VSIX%" 2>&1
 if errorlevel 1 (
-    echo [SERVER] Error: vsce package failed
+    echo [SERVER] Error: generic package failed
     set "buildFailed=1"
-    cd ..
-    goto DONE
 )
 
-set "SERVER_VSIX=server-monitor-%SERVER_CURRENT_VER%.vsix"
-if exist "%SERVER_VSIX%" (
-    echo [SERVER] Created: %SERVER_VSIX%
-) else (
-    echo [SERVER] Warning: Expected %SERVER_VSIX% not found
+REM -- Package Windows
+set "SERVER_VSIX_WIN=server-monitor-%SERVER_CURRENT_VER%-win32-x64.vsix"
+echo [SERVER] Packaging Windows VSIX...
+call :DeleteIfExists "%SERVER_VSIX_WIN%"
+echo y| call vsce package --no-dependencies --target win32-x64 -o "%SERVER_VSIX_WIN%" 2>&1
+if errorlevel 1 (
+    echo [SERVER] Warning: Windows target package failed
 )
+
+REM -- Package Ubuntu/WSL
+set "SERVER_VSIX_LINUX=server-monitor-%SERVER_CURRENT_VER%-linux-x64.vsix"
+echo [SERVER] Packaging Ubuntu/WSL VSIX...
+call :DeleteIfExists "%SERVER_VSIX_LINUX%"
+echo y| call vsce package --no-dependencies --target linux-x64 -o "%SERVER_VSIX_LINUX%" 2>&1
+if errorlevel 1 (
+    echo [SERVER] Warning: Linux target package failed
+)
+
+if exist "%SERVER_VSIX%" echo [SERVER] Created: %SERVER_VSIX%
+if exist "%SERVER_VSIX_WIN%" echo [SERVER] Created: %SERVER_VSIX_WIN%
+if exist "%SERVER_VSIX_LINUX%" echo [SERVER] Created: %SERVER_VSIX_LINUX%
+
+REM -- Copy all server VSIX to root package folder
+call :CopyIfExistsToDir "%SERVER_VSIX%" "%ROOT_PACKAGE_DIR%"
+call :CopyIfExistsToDir "%SERVER_VSIX_WIN%" "%ROOT_PACKAGE_DIR%"
+call :CopyIfExistsToDir "%SERVER_VSIX_LINUX%" "%ROOT_PACKAGE_DIR%"
 
 cd ..
 
@@ -196,6 +232,28 @@ if "%buildFailed%"=="1" (
     echo [PACKAGE] Result: All extensions packaged successfully!
     echo.
     if exist "client-extension\%CLIENT_VSIX%"  echo   client: client-extension\%CLIENT_VSIX%
+    if exist "client-extension\%CLIENT_VSIX_WIN%"  echo   client: client-extension\%CLIENT_VSIX_WIN%
+    if exist "client-extension\%CLIENT_VSIX_LINUX%"  echo   client: client-extension\%CLIENT_VSIX_LINUX%
     if exist "server-extension\%SERVER_VSIX%"  echo   server: server-extension\%SERVER_VSIX%
+    if exist "server-extension\%SERVER_VSIX_WIN%"  echo   server: server-extension\%SERVER_VSIX_WIN%
+    if exist "server-extension\%SERVER_VSIX_LINUX%"  echo   server: server-extension\%SERVER_VSIX_LINUX%
+    if exist "%ROOT_PACKAGE_DIR%" echo   all: %ROOT_PACKAGE_DIR%
     exit /b 0
 )
+
+:CopyIfExistsToDir
+if "%~1"=="" goto :eof
+if not exist "%~1" goto :eof
+if not exist "%~2" mkdir "%~2" >nul 2>&1
+copy /Y "%~1" "%~2\%~nx1" >nul 2>&1
+if errorlevel 1 (
+    echo [COPY] Warning: Failed to copy %~nx1 to %~2
+) else (
+    echo [COPY] Copied: %~nx1 ^> %~2
+)
+goto :eof
+
+:DeleteIfExists
+if "%~1"=="" goto :eof
+if exist "%~1" del /f /q "%~1" >nul 2>&1
+goto :eof
