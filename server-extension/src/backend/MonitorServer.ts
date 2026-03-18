@@ -1156,7 +1156,7 @@ export class MonitorServer {
     }
 
     /** Send a setPollInterval command to a specific client (queued via sync folder). */
-    async setClientPollInterval(clientKey: string, intervalMs: number) {
+    async setClientPollInterval(clientKey: string, intervalMs: number, providedCmdId?: string) {
         const ms = Math.max(3000, Math.min(300000, intervalMs));
         const client = this.clients.get(clientKey);
         if (client) {
@@ -1164,7 +1164,7 @@ export class MonitorServer {
             const oldValue = client.info.pollMs;
             client.info.pollMs = ms;
             this.savePersistentClients();
-            const cmdId = await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms });
+            const cmdId = await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms }, providedCmdId);
             if (cmdId) {
                 // Register rollback so we can revert if the command is cancelled or errors.
                 this.pendingIntervalRollbacks.set(cmdId, { clientKey, field: 'pollMs', oldValue });
@@ -1175,12 +1175,12 @@ export class MonitorServer {
                 this.triggerUpdate();
             }
         } else {
-            await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms });
+            await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms }, providedCmdId);
         }
     }
 
     /** Send a setUpdateCheckInterval command to a specific client (queued via sync folder). */
-    async setClientUpdateCheckInterval(clientKey: string, intervalMs: number) {
+    async setClientUpdateCheckInterval(clientKey: string, intervalMs: number, providedCmdId?: string) {
         const ms = Math.max(60000, Math.min(86400000, intervalMs));
         const client = this.clients.get(clientKey);
         if (client) {
@@ -1188,7 +1188,7 @@ export class MonitorServer {
             const oldValue = client.info.updateCheckMs;
             client.info.updateCheckMs = ms;
             this.savePersistentClients();
-            const cmdId = await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms });
+            const cmdId = await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms }, providedCmdId);
             if (cmdId) {
                 this.pendingIntervalRollbacks.set(cmdId, { clientKey, field: 'updateCheckMs', oldValue });
             } else {
@@ -1197,7 +1197,7 @@ export class MonitorServer {
                 this.triggerUpdate();
             }
         } else {
-            await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms });
+            await this.sendCommand(clientKey, 'setUpdateCheckInterval', { intervalMs: ms }, providedCmdId);
         }
     }
 
@@ -1635,7 +1635,7 @@ export class MonitorServer {
         `;
     }
 
-    async sendCommand(clientKey: string, command: string, payload?: any): Promise<string | undefined> {
+    async sendCommand(clientKey: string, command: string, payload?: any, providedCmdId?: string): Promise<string | undefined> {
         const client = this.clients.get(clientKey);
         if (!client) {
             console.warn(`[MonitorServer] Attempted to send command to non-existent client: ${clientKey}`);
@@ -1644,7 +1644,7 @@ export class MonitorServer {
         }
 
         // All commands go through the sync-folder queue
-        const cmdId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+        const cmdId = providedCmdId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
         const logEntry: CommandLogEntry = { id: cmdId, command, status: 'queued', timestamp: Date.now() };
         client.commandLog.push(logEntry);
         // Use the debounced triggerUpdate instead of an immediate flushUpdate.
@@ -2318,7 +2318,7 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
                     lastSeen: c.lastSeen,
                     status: c.status,
                     clientLabel: c.clientLabel,
-                    commandLog: c.commandLog.slice(-50),
+                    commandLog: c.commandLog.slice(-100),
                     lastResponse: c.lastResponse,
                     extensionStatus: c.extensionStatus,
                     pollMs: c.info?.pollMs,

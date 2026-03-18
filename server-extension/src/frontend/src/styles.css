@@ -8,28 +8,28 @@
    ── */
 :root {
   /* Surfaces */
-  --panel-bg:        var(--vscode-sideBar-background, #1e1e1e);
-  --card-bg:         var(--vscode-editor-inactiveSelectionBackground, rgba(128,128,128,0.08));
-  --card-bg-hover:   var(--vscode-list-hoverBackground, rgba(128,128,128,0.14));
-  --card-selected:   var(--vscode-list-activeSelectionBackground, rgba(14,99,156,0.20));
-  --input-bg:        var(--vscode-input-background, rgba(128,128,128,0.12));
-  --modal-bg:        var(--vscode-editor-background, #252526);
+  --panel-bg:        var(--vscode-sideBar-background, #0f1117);
+  --card-bg:         var(--vscode-editor-inactiveSelectionBackground, rgba(255,255,255,0.05));
+  --card-bg-hover:   var(--vscode-list-hoverBackground, rgba(255,255,255,0.09));
+  --card-selected:   var(--vscode-list-activeSelectionBackground, rgba(14,99,156,0.28));
+  --input-bg:        var(--vscode-input-background, rgba(255,255,255,0.09));
+  --modal-bg:        var(--vscode-editor-background, #1a1b26);
 
   /* Borders / dividers */
-  --border:          var(--vscode-panel-border, rgba(128,128,128,0.20));
+  --border:          var(--vscode-panel-border, rgba(255,255,255,0.13));
   --border-focus:    var(--vscode-focusBorder, #007fd4);
-  --divider:         var(--vscode-widget-border, rgba(128,128,128,0.15));
+  --divider:         var(--vscode-widget-border, rgba(255,255,255,0.08));
 
-  /* Text */
-  --text-primary:    var(--vscode-foreground, #cccccc);
-  --text-secondary:  var(--vscode-descriptionForeground, rgba(128,128,128,0.9));
-  --text-muted:      var(--vscode-disabledForeground, rgba(128,128,128,0.6));
-  --text-link:       var(--vscode-textLink-foreground, #4fc1ff);
+  /* Text — high-contrast fallbacks for dark-theme readability */
+  --text-primary:    var(--vscode-foreground, #e4e4e7);
+  --text-secondary:  var(--vscode-editor-foreground, #c4c4cc);
+  --text-muted:      var(--vscode-descriptionForeground, #8b8fa8);
+  --text-link:       var(--vscode-textLink-foreground, #60aff0);
 
   /* Status colours */
   --color-online:    var(--vscode-testing-iconPassed,  #4ec994);
   --color-offline:   var(--vscode-testing-iconFailed,  #f14c4c);
-  --color-warn:      var(--vscode-statusBarItem-warningBackground, #cc9900);
+  --color-warn:      var(--vscode-statusBarItem-warningBackground, #e5c07b);
   --color-info:      var(--vscode-statusBarItem-remoteBackground, #16825d);
 
   /* Accent palette (works on both themes) */
@@ -39,12 +39,12 @@
   --accent-red:      #f14c4c;
   --accent-purple:   #c586c0;
   --accent-orange:   #ce9178;
-  --accent-yellow:   #dcdcaa;
+  --accent-yellow:   #e5c07b;
 
-  /* Glass card (adapts: very subtle on light, slightly stronger on dark) */
-  --glass-bg:        var(--vscode-editor-inactiveSelectionBackground, rgba(128,128,128,0.07));
-  --glass-border:    var(--vscode-panel-border, rgba(128,128,128,0.18));
-  --glass-shadow:    0 4px 20px rgba(0,0,0,0.12);
+  /* Glass card — slightly more opaque for better text legibility */
+  --glass-bg:        var(--vscode-editor-inactiveSelectionBackground, rgba(255,255,255,0.05));
+  --glass-border:    var(--vscode-panel-border, rgba(255,255,255,0.11));
+  --glass-shadow:    0 2px 14px rgba(0,0,0,0.32), 0 1px 4px rgba(0,0,0,0.22);
 }
 
 /* ── Base ──────────────────────────────────────────────────────────────────── */
@@ -134,18 +134,18 @@ body {
 ::-webkit-scrollbar       { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--divider);
+  background: rgba(255,255,255,0.18);
   border-radius: 3px;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--border); }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
 
-/* Section label */
+/* Section label — uses accent colour for clear visual hierarchy */
 .section-label {
-  font-size: 0.6rem;
+  font-size: 0.625rem;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-link);
 }
 
 /* Overlay backdrop (modal) */
@@ -167,4 +167,73 @@ body {
   background: var(--card-selected) !important;
   border-color: color-mix(in srgb, var(--accent-blue) 50%, transparent) !important;
 }
+
+/* ── Fleet-scanning overlay ──────────────────────────────────────────────── */
+
+/* Expanding pulse ring */
+@keyframes scan-ring-pulse {
+  0%   { transform: scale(0.72); opacity: 0.7; }
+  80%  { transform: scale(1.18); opacity: 0; }
+  100% { transform: scale(1.18); opacity: 0; }
+}
+.scan-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--text-link) 55%, transparent);
+  animation: scan-ring-pulse 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  pointer-events: none;
+}
+
+/* Spinning arc */
+@keyframes scan-arc-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.scan-arc {
+  position: absolute;
+  border: 2px solid transparent;
+  border-top-color: var(--text-link);
+  border-right-color: color-mix(in srgb, var(--text-link) 45%, transparent);
+  animation: scan-arc-spin 1s linear infinite;
+  box-shadow: 0 0 10px -2px color-mix(in srgb, var(--text-link) 60%, transparent);
+}
+
+/* Radar sweep (conic gradient that rotates) */
+@keyframes scan-sweep-rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.scan-sweep {
+  position: absolute;
+  border-radius: 50%;
+  background: conic-gradient(
+    color-mix(in srgb, var(--text-link) 22%, transparent) 0deg,
+    transparent 75deg
+  );
+  animation: scan-sweep-rotate 1.8s linear infinite;
+  z-index: 1;
+}
+
+/* Blinking dots */
+@keyframes scan-blink {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  50%       { opacity: 1;    transform: scale(1.1);  }
+}
+.scan-blink {
+  animation: scan-blink 1.1s ease-in-out infinite;
+}
+
+/* Corner accent marks */
+.scan-corner {
+  position: fixed;
+  width: 20px;
+  height: 20px;
+  border-color: color-mix(in srgb, var(--text-link) 50%, transparent);
+  border-style: solid;
+  pointer-events: none;
+}
+.scan-corner-tl { top: 16px; left: 16px;  border-width: 2px 0 0 2px; border-radius: 3px 0 0 0; }
+.scan-corner-tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; border-radius: 0 3px 0 0; }
+.scan-corner-bl { bottom: 16px; left: 16px;  border-width: 0 0 2px 2px; border-radius: 0 0 0 3px; }
+.scan-corner-br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; border-radius: 0 0 3px 0; }
 

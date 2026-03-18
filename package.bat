@@ -138,6 +138,11 @@ call :CopyIfExistsToDir "%CLIENT_VSIX%" "!CLIENT_RELEASE_DIR!"
 call :CopyIfExistsToDir "%CLIENT_VSIX_WIN%" "!CLIENT_RELEASE_DIR!"
 call :CopyIfExistsToDir "%CLIENT_VSIX_LINUX%" "!CLIENT_RELEASE_DIR!"
 
+REM -- Clean local VSIX cache from client-extension folder
+if exist "%CLIENT_VSIX%" if exist "%ROOT_PACKAGE_DIR%\%CLIENT_VSIX%" call :DeleteIfExists "%CLIENT_VSIX%"
+if exist "%CLIENT_VSIX_WIN%" if exist "%ROOT_PACKAGE_DIR%\%CLIENT_VSIX_WIN%" call :DeleteIfExists "%CLIENT_VSIX_WIN%"
+if exist "%CLIENT_VSIX_LINUX%" if exist "%ROOT_PACKAGE_DIR%\%CLIENT_VSIX_LINUX%" call :DeleteIfExists "%CLIENT_VSIX_LINUX%"
+
 cd ..
 
 REM ════════════════════════════════════════════════════════════════════════════
@@ -217,6 +222,11 @@ call :CopyIfExistsToDir "%SERVER_VSIX%" "%ROOT_PACKAGE_DIR%"
 call :CopyIfExistsToDir "%SERVER_VSIX_WIN%" "%ROOT_PACKAGE_DIR%"
 call :CopyIfExistsToDir "%SERVER_VSIX_LINUX%" "%ROOT_PACKAGE_DIR%"
 
+REM -- Clean local VSIX cache from server-extension folder
+if exist "%SERVER_VSIX%" if exist "%ROOT_PACKAGE_DIR%\%SERVER_VSIX%" call :DeleteIfExists "%SERVER_VSIX%"
+if exist "%SERVER_VSIX_WIN%" if exist "%ROOT_PACKAGE_DIR%\%SERVER_VSIX_WIN%" call :DeleteIfExists "%SERVER_VSIX_WIN%"
+if exist "%SERVER_VSIX_LINUX%" if exist "%ROOT_PACKAGE_DIR%\%SERVER_VSIX_LINUX%" call :DeleteIfExists "%SERVER_VSIX_LINUX%"
+
 cd ..
 
 REM ════════════════════════════════════════════════════════════════════════════
@@ -231,13 +241,16 @@ if "%buildFailed%"=="1" (
 ) else (
     echo [PACKAGE] Result: All extensions packaged successfully!
     echo.
-    if exist "client-extension\%CLIENT_VSIX%"  echo   client: client-extension\%CLIENT_VSIX%
-    if exist "client-extension\%CLIENT_VSIX_WIN%"  echo   client: client-extension\%CLIENT_VSIX_WIN%
-    if exist "client-extension\%CLIENT_VSIX_LINUX%"  echo   client: client-extension\%CLIENT_VSIX_LINUX%
-    if exist "server-extension\%SERVER_VSIX%"  echo   server: server-extension\%SERVER_VSIX%
-    if exist "server-extension\%SERVER_VSIX_WIN%"  echo   server: server-extension\%SERVER_VSIX_WIN%
-    if exist "server-extension\%SERVER_VSIX_LINUX%"  echo   server: server-extension\%SERVER_VSIX_LINUX%
-    if exist "%ROOT_PACKAGE_DIR%" echo   all: %ROOT_PACKAGE_DIR%
+    if exist "%ROOT_PACKAGE_DIR%\%CLIENT_VSIX%"  echo   client: %ROOT_PACKAGE_DIR%\%CLIENT_VSIX%
+    if exist "%ROOT_PACKAGE_DIR%\%CLIENT_VSIX_WIN%"  echo   client: %ROOT_PACKAGE_DIR%\%CLIENT_VSIX_WIN%
+    if exist "%ROOT_PACKAGE_DIR%\%CLIENT_VSIX_LINUX%"  echo   client: %ROOT_PACKAGE_DIR%\%CLIENT_VSIX_LINUX%
+    if exist "%ROOT_PACKAGE_DIR%\%SERVER_VSIX%"  echo   server: %ROOT_PACKAGE_DIR%\%SERVER_VSIX%
+    if exist "%ROOT_PACKAGE_DIR%\%SERVER_VSIX_WIN%"  echo   server: %ROOT_PACKAGE_DIR%\%SERVER_VSIX_WIN%
+    if exist "%ROOT_PACKAGE_DIR%\%SERVER_VSIX_LINUX%"  echo   server: %ROOT_PACKAGE_DIR%\%SERVER_VSIX_LINUX%
+    if exist "%CLIENT_RELEASE_DIR%\%CLIENT_VSIX%" echo   release: %CLIENT_RELEASE_DIR%\%CLIENT_VSIX%
+    if exist "%CLIENT_RELEASE_DIR%\%CLIENT_VSIX_WIN%" echo   release: %CLIENT_RELEASE_DIR%\%CLIENT_VSIX_WIN%
+    if exist "%CLIENT_RELEASE_DIR%\%CLIENT_VSIX_LINUX%" echo   release: %CLIENT_RELEASE_DIR%\%CLIENT_VSIX_LINUX%
+    if exist "%ROOT_PACKAGE_DIR%" echo   package: %ROOT_PACKAGE_DIR%
     exit /b 0
 )
 

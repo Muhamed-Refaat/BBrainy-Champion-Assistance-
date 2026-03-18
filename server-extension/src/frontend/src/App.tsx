@@ -235,8 +235,8 @@ const ElapsedTimer = ({ since }: { since: number }) => {
   const mm = String(Math.floor(secs / 60)).padStart(2, '0');
   const ss = String(secs % 60).padStart(2, '0');
   return (
-    <span className="flex items-center gap-0.5 text-[8px] font-mono" style={{ color: 'var(--accent-yellow)', opacity: 0.85 }}>
-      <Clock size={8} className="animate-pulse" />{mm}:{ss}
+    <span className="flex items-center gap-0.5 text-[9px] font-mono" style={{ color: 'var(--accent-yellow)' }}>
+      <Clock size={9} className="animate-pulse" />{mm}:{ss}
     </span>
   );
 };
@@ -264,13 +264,13 @@ const CommandQueueLog = ({ log, clientKey, onOptimisticClear, onOptimisticCancel
 
   if (!log || log.length === 0) {
     return (
-      <div className="text-[9px] t-muted italic text-center py-2">No command history</div>
+      <div className="text-[10px] t-muted italic text-center py-2">No command history</div>
     );
   }
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[9px] t-warn" style={{ color: pending.length > 0 ? 'var(--accent-yellow)' : 'var(--text-muted)' }}>
+        <span className="text-[10px] font-medium" style={{ color: pending.length > 0 ? 'var(--accent-yellow)' : 'var(--text-secondary)' }}>
           {pending.length > 0 ? `${pending.length} pending` : `${log.length} entries`}
         </span>
         <button
@@ -304,16 +304,16 @@ const CommandQueueLog = ({ log, clientKey, onOptimisticClear, onOptimisticCancel
                     ? <ChevronDown size={9} className="flex-shrink-0 t-muted" />
                     : <ChevronRight size={9} className="flex-shrink-0 t-muted" />
                 )}
-                <span className="text-[9px] t-secondary font-mono truncate flex-1">{entry.command}</span>
+                <span className="text-[10px] t-primary font-mono truncate flex-1">{entry.command}</span>
                 {(entry.status === 'queued' || entry.status === 'sent') && (
                   <ElapsedTimer since={entry.timestamp} />
                 )}
                 {(entry.status === 'executed' || entry.status === 'error') && entry.completedAt && (
-                  <span className="flex items-center gap-0.5 text-[8px] font-mono" style={{ color: 'var(--text-muted)', opacity: 0.8 }}>
-                    <Clock size={8} />{String(Math.floor(Math.max(0, entry.completedAt - entry.timestamp) / 60000)).padStart(2, '0')}:{String(Math.floor((Math.max(0, entry.completedAt - entry.timestamp) / 1000) % 60)).padStart(2, '0')}
+                  <span className="flex items-center gap-0.5 text-[9px] font-mono" style={{ color: 'var(--text-muted)' }}>
+                    <Clock size={9} />{String(Math.floor(Math.max(0, entry.completedAt - entry.timestamp) / 60000)).padStart(2, '0')}:{String(Math.floor((Math.max(0, entry.completedAt - entry.timestamp) / 1000) % 60)).padStart(2, '0')}
                   </span>
                 )}
-                <span className={`text-[8px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded border font-semibold flex-shrink-0 ${statusBadgeClass[entry.status] || ''}`}>
                   {entry.status}
                 </span>
                 {(entry.status === 'queued' || entry.status === 'sent') && (
@@ -327,8 +327,8 @@ const CommandQueueLog = ({ log, clientKey, onOptimisticClear, onOptimisticCancel
                 )}
               </div>
               {isExpanded && hasResult && (
-                <div className="mt-0.5 ml-3 px-2 py-1.5 rounded-lg text-[8px] font-mono t-secondary max-h-32 overflow-y-auto" style={{ background: 'var(--glass-bg, rgba(15,23,42,0.7))', border: '1px solid var(--divider)' }}>
-                  <span className="text-[7px] font-semibold" style={{ color: entry.status === 'error' ? 'var(--accent-red, #f87171)' : 'var(--accent-green, #4ade80)' }}>
+                <div className="mt-0.5 ml-3 px-2 py-1.5 rounded-lg text-[9px] font-mono t-primary max-h-32 overflow-y-auto" style={{ background: 'var(--glass-bg, rgba(15,23,42,0.7))', border: '1px solid var(--divider)' }}>
+                  <span className="text-[8px] font-semibold" style={{ color: entry.status === 'error' ? 'var(--accent-red, #f87171)' : 'var(--accent-green, #4ade80)' }}>
                     ↳ {entry.command} {entry.status === 'error' ? 'Error' : 'Response'}
                   </span>
                   <pre className="whitespace-pre-wrap break-words mt-1" style={{ lineHeight: '1.4' }}>
@@ -355,6 +355,7 @@ const App = () => {
   });
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState(false);
+  const [reportPending, setReportPending] = useState(false);
   const [keyInput, setKeyInput] = useState('');
   const [modal, setModal] = useState<CommandModal>({
     isOpen: false,
@@ -408,7 +409,28 @@ const App = () => {
     const handler = (event: MessageEvent) => {
       const message = event.data;
       if (message.type === 'update') {
-        setData(message.data);
+        // Merge command logs: preserve any "queued" or "sent" entries that
+        // live in the previous local state but are absent from the backend
+        // snapshot. This prevents optimistic entries from being wiped by a
+        // transient intermediate snapshot that arrives before the backend
+        // has confirmed every pending command.
+        setData(prev => {
+          const next: DashboardData = message.data;
+          const mergedClients = next.clients.map(nc => {
+            const pc = prev.clients.find(c => c.key === nc.key);
+            if (!pc) return nc;
+            const backendIds = new Set(nc.commandLog.map(e => e.id));
+            const orphans = pc.commandLog.filter(
+              e => (e.status === 'queued' || e.status === 'sent') && !backendIds.has(e.id)
+            );
+            if (orphans.length === 0) return nc;
+            return {
+              ...nc,
+              commandLog: [...nc.commandLog, ...orphans].sort((a, b) => a.timestamp - b.timestamp)
+            };
+          });
+          return { ...next, clients: mergedClients };
+        });
       }
     };
     window.addEventListener('message', handler);
@@ -429,35 +451,35 @@ const App = () => {
 
   const optimisticId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
-  const injectCommandEntry = (clientKey: string, command: string) => {
+  const injectCommandEntry = (clientKey: string, command: string, cmdId: string) => {
     setData(prev => ({
       ...prev,
       clients: prev.clients.map(c =>
         c.key === clientKey
-          ? { ...c, commandLog: [...c.commandLog, { id: optimisticId(), command, status: 'queued' as const, timestamp: Date.now() }] }
+          ? { ...c, commandLog: [...c.commandLog, { id: cmdId, command, status: 'queued' as const, timestamp: Date.now() }] }
           : c
       )
     }));
   };
 
   const queryAll = (command: string) => {
-    // Optimistic: inject a queued entry for every client
-    setData(prev => ({
-      ...prev,
-      clients: prev.clients.map(c => ({
-        ...c,
-        commandLog: [...c.commandLog, { id: optimisticId(), command, status: 'queued' as const, timestamp: Date.now() }]
-      }))
-    }));
+    // No optimistic injection: each client gets a backend-generated ID we can't predict here.
+    // The 150ms debounce is imperceptible for a broadcast action.
     vscode.postMessage({ action: 'queryAll', command });
   };
 
   const sendCommand = (clientKey: string, command: string, payload?: any) => {
-    injectCommandEntry(clientKey, command);
-    vscode.postMessage({ action: 'sendCommand', clientKey, command, payload });
+    const cmdId = optimisticId();
+    injectCommandEntry(clientKey, command, cmdId);
+    vscode.postMessage({ action: 'sendCommand', clientKey, command, payload, cmdId });
   };
 
-  const generateReport = () => vscode.postMessage({ action: 'generateReport' });
+  const generateReport = () => {
+    if (reportPending) return;
+    setReportPending(true);
+    vscode.postMessage({ action: 'generateReport' });
+    setTimeout(() => setReportPending(false), 20000);
+  };
 
   const toggleServer = () => {
     const nowStarting = !data.serverStatus.running;
@@ -497,26 +519,85 @@ const App = () => {
            Blocks interaction while the server verifies the sync folder.
            Appears instantly via optimistic setData on Start / key-change,
            disappears when the backend sends scanning=false in its snapshot. */}
+      <AnimatePresence>
       {data.scanning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(10,10,18,0.82)', backdropFilter: 'blur(4px)' }}>
-          <div className="flex flex-col items-center gap-3 p-6 rounded-2xl"
-            style={{ background: 'var(--vscode-editor-background)', border: '1px solid var(--vscode-panel-border)', maxWidth: 200 }}>
-            <div className="animate-spin rounded-full"
-              style={{ width: 36, height: 36, border: '3px solid transparent',
-                borderTopColor: 'var(--text-link)', borderRightColor: 'var(--text-link)' }} />
-            <p className="text-xs font-bold text-center" style={{ color: 'var(--text-link)' }}>
-              Scanning Fleet…
-            </p>
-            <p className="text-[10px] t-muted text-center leading-relaxed">
-              Verifying clients for
-              <span className="block font-mono mt-0.5" style={{ color: 'var(--vscode-foreground)' }}>
-                {data.serverStatus.serverId}
-              </span>
-            </p>
-          </div>
-        </div>
+        <motion.div
+          key="scan-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(5,7,15,0.92)', backdropFilter: 'blur(8px)' }}
+        >
+          {/* Animated corner accents */}
+          <div className="scan-corner scan-corner-tl" />
+          <div className="scan-corner scan-corner-tr" />
+          <div className="scan-corner scan-corner-bl" />
+          <div className="scan-corner scan-corner-br" />
+
+          <motion.div
+            initial={{ scale: 0.82, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.88, opacity: 0, y: -8 }}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-col items-center gap-5"
+          >
+            {/* Radar ring stack */}
+            <div className="relative flex items-center justify-center" style={{ width: 120, height: 120 }}>
+              {/* Outer pulse rings */}
+              <div className="scan-ring" style={{ width: 120, height: 120, animationDelay: '0ms' }} />
+              <div className="scan-ring" style={{ width: 120, height: 120, animationDelay: '600ms' }} />
+              {/* Mid ring */}
+              <div className="absolute rounded-full" style={{
+                width: 84, height: 84,
+                border: '1px solid',
+                borderColor: 'color-mix(in srgb, var(--text-link) 25%, transparent)'
+              }} />
+              {/* Spinning arc */}
+              <div className="absolute rounded-full scan-arc" style={{ width: 84, height: 84 }} />
+              {/* Inner filled circle */}
+              <div className="absolute rounded-full flex items-center justify-center" style={{
+                width: 52, height: 52,
+                background: 'color-mix(in srgb, var(--text-link) 10%, rgba(5,7,15,0.9))',
+                border: '1px solid color-mix(in srgb, var(--text-link) 35%, transparent)',
+                boxShadow: '0 0 24px color-mix(in srgb, var(--text-link) 30%, transparent), inset 0 0 12px color-mix(in srgb, var(--text-link) 15%, transparent)'
+              }}>
+                {/* Radar sweep */}
+                <div className="scan-sweep" style={{ width: 52, height: 52 }} />
+                {/* Icon */}
+                <Globe size={20} style={{ color: 'var(--text-link)', position: 'relative', zIndex: 2, filter: 'drop-shadow(0 0 6px var(--text-link))' }} />
+              </div>
+            </div>
+
+            {/* Text block */}
+            <div className="flex flex-col items-center gap-2 text-center">
+              <p className="text-sm font-bold tracking-widest uppercase" style={{
+                color: 'var(--text-link)',
+                letterSpacing: '0.18em',
+                textShadow: '0 0 18px color-mix(in srgb, var(--text-link) 70%, transparent)'
+              }}>Scanning Fleet</p>
+              <div className="flex items-center gap-1.5">
+                <span className="block w-1 h-1 rounded-full scan-blink" style={{ background: 'var(--text-link)', animationDelay: '0ms' }} />
+                <span className="block w-1 h-1 rounded-full scan-blink" style={{ background: 'var(--text-link)', animationDelay: '200ms' }} />
+                <span className="block w-1 h-1 rounded-full scan-blink" style={{ background: 'var(--text-link)', animationDelay: '400ms' }} />
+              </div>
+              <div className="px-3 py-1 rounded-lg mt-1" style={{
+                background: 'color-mix(in srgb, var(--text-link) 10%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--text-link) 28%, transparent)'
+              }}>
+                <p className="text-[9px] font-mono" style={{ color: 'color-mix(in srgb, var(--text-link) 75%, var(--text-primary))' }}>
+                  KEY://{data.serverStatus.serverId}
+                </p>
+              </div>
+              <p className="text-[9px] mt-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                Verifying sync folder…
+              </p>
+            </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
       {/* Header - Compact for Sidebar */}
       <div className="mb-5">
           <h1 className="text-lg font-extrabold tracking-tight mb-1" style={{ color: 'var(--text-link)' }}>
@@ -578,9 +659,12 @@ const App = () => {
         </button>
         <button
           onClick={generateReport}
-          className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border tint-muted transition-all duration-200 text-xs"
+          disabled={reportPending}
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all duration-200 text-xs ${reportPending ? 'tint-blue opacity-70 cursor-not-allowed' : 'tint-muted'}`}
         >
-          <FileJson size={13} /> Report
+          {reportPending
+            ? <><span className="animate-spin inline-block w-3 h-3 border border-current border-t-transparent rounded-full" style={{ borderTopColor: 'transparent' }} /> Generating…</>
+            : <><FileJson size={13} /> Report</>}
         </button>
       </div>
 
@@ -655,7 +739,7 @@ const App = () => {
                           <h3 className="font-bold text-xs truncate" style={{ color: 'var(--text-link)' }}>
                             {client.username} <span className="t-muted font-normal">@</span> {client.hostname}
                           </h3>
-                          <div className="flex items-center gap-1.5 text-[10px] t-muted">
+                          <div className="flex items-center gap-1.5 text-[10px] t-secondary">
                             <span
                               className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                               style={{ background: client.status === 'sync' ? '#f59e0b' : 'var(--color-offline)' }}
@@ -670,7 +754,7 @@ const App = () => {
                           const pending = client.commandLog.filter(e => e.status === 'queued').length;
                           return pending > 0 ? (
                             <span
-                              className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ml-auto"
+                              className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ml-auto"
                               style={{
                                 background: 'color-mix(in srgb, #f59e0b 15%, transparent)',
                                 color: '#f59e0b',
@@ -703,7 +787,7 @@ const App = () => {
           <GlassCard className={!data.serverStatus.running ? 'opacity-40' : ''}>
             {selectedClient && data.serverStatus.running ? (
               <div className="space-y-2">
-                <p className="text-[10px] t-muted mb-2 truncate">Managing: <span className="t-secondary font-semibold">{data.clients.find(c => c.key === selectedClient)?.username}</span></p>
+                <p className="text-[10px] t-secondary mb-2 truncate">Managing: <span className="t-primary font-semibold">{data.clients.find(c => c.key === selectedClient)?.username}</span></p>
 
                 {/* System Management */}
                 <div className="pb-2" style={{ borderBottom: '1px solid var(--divider)' }}>
@@ -715,7 +799,7 @@ const App = () => {
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--card-bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = ''}
                   >
-                    <span className="flex items-center gap-2 t-secondary"><RefreshCcw size={11} /> Refresh Node</span>
+                    <span className="flex items-center gap-2 t-primary"><RefreshCcw size={11} /> Refresh Node</span>
                   </button>
                   <button
                     disabled={!data.serverStatus.running}
@@ -724,7 +808,7 @@ const App = () => {
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--card-bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = ''}
                   >
-                    <span className="flex items-center gap-2 t-secondary"><FolderOpen size={11} /> Peek Directory</span>
+                    <span className="flex items-center gap-2 t-primary"><FolderOpen size={11} /> Peek Directory</span>
                   </button>
                 </div>
 
@@ -825,8 +909,8 @@ const App = () => {
                 <p className="section-label mb-2">
                   ↳ {data.clients.find(c => c.key === selectedClient)?.lastResponse?.command} Response
                 </p>
-                <div className="space-y-1 max-h-48 overflow-y-auto t-secondary font-mono">
-                  <pre className="whitespace-pre-wrap break-words text-[9px]">
+                <div className="space-y-1 max-h-48 overflow-y-auto t-primary font-mono">
+                  <pre className="whitespace-pre-wrap break-words text-[10px]">
                     {JSON.stringify(data.clients.find(c => c.key === selectedClient)?.lastResponse?.data, null, 2)}
                   </pre>
                 </div>
@@ -934,27 +1018,29 @@ const App = () => {
               };
               const setClientOne = (ms: number) => {
                 if (!selectedClient) return;
+                const cmdId = optimisticId();
                 setData(prev => ({
                   ...prev,
                   clients: prev.clients.map(c =>
                     c.key === selectedClient
-                      ? { ...c, pollMs: ms, commandLog: [...c.commandLog, { id: optimisticId(), command: 'setPollInterval', status: 'queued' as const, timestamp: Date.now() }] }
+                      ? { ...c, pollMs: ms, commandLog: [...c.commandLog, { id: cmdId, command: 'setPollInterval', status: 'queued' as const, timestamp: Date.now() }] }
                       : c
                   )
                 }));
-                vscode.postMessage({ action: 'setClientPollInterval', clientKey: selectedClient, intervalMs: ms });
+                vscode.postMessage({ action: 'setClientPollInterval', clientKey: selectedClient, intervalMs: ms, cmdId });
               };
               const setUpdateCheck = (ms: number) => {
                 if (!selectedClient) return;
+                const cmdId = optimisticId();
                 setData(prev => ({
                   ...prev,
                   clients: prev.clients.map(c =>
                     c.key === selectedClient
-                      ? { ...c, updateCheckMs: ms, commandLog: [...c.commandLog, { id: optimisticId(), command: 'setUpdateCheckInterval', status: 'queued' as const, timestamp: Date.now() }] }
+                      ? { ...c, updateCheckMs: ms, commandLog: [...c.commandLog, { id: cmdId, command: 'setUpdateCheckInterval', status: 'queued' as const, timestamp: Date.now() }] }
                       : c
                   )
                 }));
-                vscode.postMessage({ action: 'setClientUpdateCheckInterval', clientKey: selectedClient, intervalMs: ms });
+                vscode.postMessage({ action: 'setClientUpdateCheckInterval', clientKey: selectedClient, intervalMs: ms, cmdId });
               };
               const updatePresets = [
                 { label: '1m', ms: 60000 },
@@ -964,14 +1050,14 @@ const App = () => {
               ];
               const row = (label: string, currentMs: number, onChange: (ms: number) => void) => (
                 <div className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid var(--divider)' }}>
-                  <span className="text-[9px] t-secondary font-semibold flex-shrink-0 w-24">{label}</span>
-                  <span className="text-[9px] t-muted font-mono w-10 text-right flex-shrink-0">{(currentMs / 1000).toFixed(0)}s</span>
+                  <span className="text-[10px] t-secondary font-semibold flex-shrink-0 w-24">{label}</span>
+                  <span className="text-[10px] t-muted font-mono w-10 text-right flex-shrink-0">{(currentMs / 1000).toFixed(0)}s</span>
                   <div className="flex gap-1 flex-shrink-0">
                     {presets.map(p => (
                       <button
                         key={p.ms}
                         onClick={() => onChange(p.ms)}
-                        className={`text-[7px] px-1.5 py-0.5 rounded border transition-colors ${currentMs === p.ms ? 'tint-blue' : 'tint-muted'}`}
+                        className={`text-[8px] px-1.5 py-0.5 rounded border transition-colors ${currentMs === p.ms ? 'tint-blue' : 'tint-muted'}`}
                       >{p.label.split(' ')[0]}</button>
                     ))}
                   </div>
@@ -988,14 +1074,14 @@ const App = () => {
                       <p className="section-label mb-1.5">Selected Client</p>
                       {row('Poll Interval', clientPoll, setClientOne)}
                       <div className="flex items-center justify-between gap-2 py-1.5" style={{ borderBottom: '1px solid var(--divider)' }}>
-                        <span className="text-[9px] t-secondary font-semibold flex-shrink-0 w-24">Update Check</span>
-                        <span className="text-[9px] t-muted font-mono w-10 text-right flex-shrink-0">{(clientUpdate / 60000).toFixed(0)}m</span>
+                        <span className="text-[10px] t-secondary font-semibold flex-shrink-0 w-24">Update Check</span>
+                        <span className="text-[10px] t-muted font-mono w-10 text-right flex-shrink-0">{(clientUpdate / 60000).toFixed(0)}m</span>
                         <div className="flex gap-1 flex-shrink-0">
                           {updatePresets.map(p => (
                             <button
                               key={p.ms}
                               onClick={() => setUpdateCheck(p.ms)}
-                              className={`text-[7px] px-1.5 py-0.5 rounded border transition-colors ${clientUpdate === p.ms ? 'tint-blue' : 'tint-muted'}`}
+                              className={`text-[8px] px-1.5 py-0.5 rounded border transition-colors ${clientUpdate === p.ms ? 'tint-blue' : 'tint-muted'}`}
                             >{p.label}</button>
                           ))}
                         </div>

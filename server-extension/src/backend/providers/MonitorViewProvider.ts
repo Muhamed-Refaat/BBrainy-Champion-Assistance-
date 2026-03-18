@@ -32,7 +32,7 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.onDidReceiveMessage(async (message) => {
             switch (message.action) {
                 case 'sendCommand':
-                    await this.server.sendCommand(message.clientKey, message.command, message.payload);
+                    await this.server.sendCommand(message.clientKey, message.command, message.payload, message.cmdId);
                     break;
                 case 'queryAll':
                     await this.server.queryAllClients(message.command);
@@ -71,10 +71,10 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
                     this.server.setServerIntervals(message.intervals);
                     break;
                 case 'setClientPollInterval':
-                    await this.server.setClientPollInterval(message.clientKey, message.intervalMs);
+                    await this.server.setClientPollInterval(message.clientKey, message.intervalMs, message.cmdId);
                     break;
                 case 'setClientUpdateCheckInterval':
-                    await this.server.setClientUpdateCheckInterval(message.clientKey, message.intervalMs);
+                    await this.server.setClientUpdateCheckInterval(message.clientKey, message.intervalMs, message.cmdId);
                     break;
             }
         });
