@@ -1,1348 +1,16 @@
-"use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-// src/backend/extension.ts
-var extension_exports = {};
-__export(extension_exports, {
-  activate: () => activate,
-  deactivate: () => deactivate
-});
-module.exports = __toCommonJS(extension_exports);
-var vscode3 = __toESM(require("vscode"));
-
-// src/backend/MonitorServer.ts
-var vscode = __toESM(require("vscode"));
-var fs = __toESM(require("fs"));
-var path = __toESM(require("path"));
-var os = __toESM(require("os"));
-var import_child_process = require("child_process");
-function isUncPath(p) {
-  return process.platform === "win32" && p.startsWith("\\\\");
-}
-function fsEnsureDir(dirPath) {
-  if (isUncPath(dirPath)) {
-    try {
-      (0, import_child_process.execSync)(`mkdir "${dirPath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 1e4 });
-    } catch {
-    }
-    return;
-  }
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-function fsPathExists(p) {
-  if (isUncPath(p)) {
-    try {
-      const out = (0, import_child_process.execSync)(`if exist "${p}" (echo Y) else (echo N)`, { shell: "cmd.exe", stdio: "pipe", timeout: 8e3 }).toString().trim();
-      return out === "Y";
-    } catch {
-      return false;
-    }
-  }
-  return fs.existsSync(p);
-}
-function fsReadText(filePath) {
-  if (isUncPath(filePath)) {
-    const tmp = path.join(os.tmpdir(), `bba-rd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.tmp`);
-    try {
-      (0, import_child_process.execSync)(`copy /Y "${filePath}" "${tmp}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 15e3 });
-      const data = fs.readFileSync(tmp, "utf-8");
-      try {
-        fs.unlinkSync(tmp);
-      } catch {
-      }
-      return data;
-    } catch (e) {
-      try {
-        fs.unlinkSync(tmp);
-      } catch {
-      }
-      throw e;
-    }
-  }
-  return fs.readFileSync(filePath, "utf-8");
-}
-function fsWriteText(filePath, content) {
-  if (isUncPath(filePath)) {
-    const tmp = path.join(os.tmpdir(), `bba-wr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.tmp`);
-    try {
-      fs.writeFileSync(tmp, content, "utf-8");
-      (0, import_child_process.execSync)(`copy /Y "${tmp}" "${filePath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 15e3 });
-      try {
-        fs.unlinkSync(tmp);
-      } catch {
-      }
-    } catch (e) {
-      try {
-        fs.unlinkSync(tmp);
-      } catch {
-      }
-      throw e;
-    }
-    return;
-  }
-  fs.writeFileSync(filePath, content);
-}
-function fsDeleteFile(filePath) {
-  if (isUncPath(filePath)) {
-    try {
-      (0, import_child_process.execSync)(`del /F /Q "${filePath}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 5e3 });
-    } catch {
-    }
-    return;
-  }
-  fs.unlinkSync(filePath);
-}
-function fsRenameFile(src, dest) {
-  if (isUncPath(src) || isUncPath(dest)) {
-    (0, import_child_process.execSync)(`move /Y "${src}" "${dest}"`, { shell: "cmd.exe", stdio: "pipe", timeout: 1e4 });
-    return;
-  }
-  fs.renameSync(src, dest);
-}
-function fsListDir(dirPath) {
-  if (isUncPath(dirPath)) {
-    try {
-      const buf = (0, import_child_process.execSync)(`dir /b "${dirPath}"`, { shell: "cmd.exe", timeout: 1e4 });
-      return buf.toString("utf-8").split(/\r?\n/).filter((f) => f.trim().length > 0);
-    } catch {
-      return [];
-    }
-  }
-  return fs.readdirSync(dirPath);
-}
-var ServerFallbackManager = class {
-  syncPath = "";
-  serverKey = "";
-  backlogPollInterval = null;
-  onBacklogResponse = null;
-  recentBacklogEntries = [];
-  onBacklogArrived = null;
-  // Called once after each poll sweep that processed ≥1 entry — used to
-  // batch the save+flush rather than doing it per-entry.
-  onBatchComplete = null;
-  // Batch queue: commands are staged in memory, then flushed to disk in one
-  // write per client queue file.  This avoids N sequential UNC round-trips
-  // when queuing many commands (e.g. queryAll broadcast).
-  pendingQueue = /* @__PURE__ */ new Map();
-  flushTimer = null;
-  configure(syncPath, serverKey, onBacklogResponse, onBacklogArrived, onBatchComplete) {
-    this.syncPath = syncPath;
-    this.serverKey = serverKey;
-    this.onBacklogResponse = onBacklogResponse;
-    this.onBacklogArrived = onBacklogArrived ?? null;
-    this.onBatchComplete = onBatchComplete ?? null;
-  }
-  get isConfigured() {
-    return !!this.syncPath;
-  }
-  get syncPathValue() {
-    return this.syncPath;
-  }
-  // Scan <syncPath>/clients/<serverKey>/ for presence files written by clients on activation
-  scanRegisteredClients() {
-    if (!this.isConfigured) {
-      return [];
-    }
-    const clientsDir = path.join(this.syncPath, "clients", this.serverKey);
-    if (!fsPathExists(clientsDir)) {
-      return [];
-    }
-    const results = [];
-    try {
-      const files = fsListDir(clientsDir).filter((f) => f.endsWith(".json"));
-      for (const file of files) {
-        try {
-          const entry = JSON.parse(fsReadText(path.join(clientsDir, file)));
-          if (entry.clientKey && entry.clientLabel) {
-            results.push(entry);
-          }
-        } catch (e) {
-          console.warn(`[ServerFallback] Skipping malformed presence file: ${file}`);
-        }
-      }
-    } catch (e) {
-      console.warn("[ServerFallback] Error scanning clients dir:", e);
-    }
-    return results;
-  }
-  startPolling(intervalMs = 15e3) {
-    this.stopPolling();
-    if (!this.isConfigured) {
-      return;
-    }
-    this.pollResultsDir();
-    this.pollServerBacklog();
-    this.backlogPollInterval = setInterval(() => {
-      this.pollResultsDir();
-      this.pollServerBacklog();
-    }, intervalMs);
-    console.log(`[ServerFallback] Polling results+backlog every ${intervalMs / 1e3}s from: ${this.syncPath}`);
-  }
-  stopPolling() {
-    if (this.backlogPollInterval) {
-      clearInterval(this.backlogPollInterval);
-      this.backlogPollInterval = null;
-    }
-  }
-  // Stage a command in memory (no disk write yet).
-  // Call flushPendingQueue() or scheduleFlush() afterwards.
-  stageCommand(clientLabel, clientKey, command, payload, providedId) {
-    const id = providedId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const entry = { id, clientKey, clientLabel, command, payload, timestamp: Date.now(), serverKey: this.serverKey };
-    if (!this.pendingQueue.has(clientLabel)) {
-      this.pendingQueue.set(clientLabel, []);
-    }
-    this.pendingQueue.get(clientLabel).push(entry);
-    return id;
-  }
-  // Schedule a flush on the next microtask — coalesces rapid-fire calls
-  // (e.g. queryAll → N × sendCommand) into a single disk write batch.
-  scheduleFlush() {
-    if (this.flushTimer) {
-      return;
-    }
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = null;
-      this.flushPendingQueue();
-    }, 0);
-  }
-  // Write all staged commands to disk — one file write per client.
-  flushPendingQueue() {
-    const succeeded = [];
-    const failed = [];
-    if (!this.isConfigured || this.pendingQueue.size === 0) {
-      return { succeeded, failed };
-    }
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
-    const queueDir = path.join(this.syncPath, "queue");
-    fsEnsureDir(queueDir);
-    for (const [clientLabel, newCmds] of this.pendingQueue) {
-      try {
-        const queueFile = path.join(queueDir, `${clientLabel}.json`);
-        let existing = [];
-        if (fsPathExists(queueFile)) {
-          try {
-            existing = JSON.parse(fsReadText(queueFile));
-          } catch {
-            existing = [];
-          }
-        }
-        existing.push(...newCmds);
-        const tmpFile = queueFile + ".tmp";
-        fsWriteText(tmpFile, JSON.stringify(existing, null, 2));
-        try {
-          fsRenameFile(tmpFile, queueFile);
-        } catch {
-          fsWriteText(queueFile, JSON.stringify(existing, null, 2));
-          try {
-            fsDeleteFile(tmpFile);
-          } catch {
-          }
-        }
-        succeeded.push(clientLabel);
-        console.log(`[ServerFallback] Flushed ${newCmds.length} command(s) for ${clientLabel}`);
-      } catch (e) {
-        failed.push(clientLabel);
-        console.error(`[ServerFallback] Failed to flush queue for ${clientLabel}: ${e?.message || e}`);
-      }
-    }
-    this.pendingQueue.clear();
-    return { succeeded, failed };
-  }
-  // Append a command to <syncPath>/queue/<username-hostname>.json
-  enqueueCommand(clientLabel, clientKey, command, payload, providedId) {
-    if (!this.isConfigured) {
-      throw new Error(`Sync path is not configured. Set serverMonitor.syncPath in settings.`);
-    }
-    try {
-      const queueDir = path.join(this.syncPath, "queue");
-      fsEnsureDir(queueDir);
-      const queueFile = path.join(queueDir, `${clientLabel}.json`);
-      let existing = [];
-      if (fsPathExists(queueFile)) {
-        try {
-          existing = JSON.parse(fsReadText(queueFile));
-        } catch {
-          existing = [];
-        }
-      }
-      const id = providedId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-      const entry = { id, clientKey, clientLabel, command, payload, timestamp: Date.now(), serverKey: this.serverKey };
-      existing.push(entry);
-      const tmpFile = queueFile + ".tmp";
-      fsWriteText(tmpFile, JSON.stringify(existing, null, 2));
-      try {
-        fsRenameFile(tmpFile, queueFile);
-      } catch {
-        fsWriteText(queueFile, JSON.stringify(existing, null, 2));
-        try {
-          fsDeleteFile(tmpFile);
-        } catch {
-        }
-      }
-      console.log(`[ServerFallback] Enqueued command "${command}" for ${clientLabel} \xE2\u2020\u2019 ${queueFile}`);
-      return id;
-    } catch (e) {
-      throw new Error(`Failed to write queue file at "${this.syncPath}\\queue\\${clientLabel}.json": ${e?.message || e}`);
-    }
-  }
-  // Read the queue file for a client WITHOUT deleting it (used for UI display on startup)
-  peekQueuedCommands(clientLabel) {
-    if (!this.isConfigured) {
-      return [];
-    }
-    const queueFile = path.join(this.syncPath, "queue", `${clientLabel}.json`);
-    if (!fsPathExists(queueFile)) {
-      return [];
-    }
-    try {
-      return JSON.parse(fsReadText(queueFile));
-    } catch {
-      return [];
-    }
-  }
-  // List all client labels that have a pending queue file
-  listQueuedClients() {
-    if (!this.isConfigured) {
-      return [];
-    }
-    const queueDir = path.join(this.syncPath, "queue");
-    if (!fsPathExists(queueDir)) {
-      return [];
-    }
-    return fsListDir(queueDir).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, ""));
-  }
-  // Read and clear the queue file for a client (called when client comes online)
-  dequeueCommands(clientLabel) {
-    if (!this.isConfigured) {
-      return [];
-    }
-    const queueFile = path.join(this.syncPath, "queue", `${clientLabel}.json`);
-    if (!fsPathExists(queueFile)) {
-      return [];
-    }
-    try {
-      const cmds = JSON.parse(fsReadText(queueFile));
-      fsDeleteFile(queueFile);
-      console.log(`[ServerFallback] Dequeued ${cmds.length} command(s) for ${clientLabel}`);
-      return cmds;
-    } catch (e) {
-      console.error(`[ServerFallback] Error reading queue for ${clientLabel}:`, e);
-      return [];
-    }
-  }
-  // Poll <syncPath>/results/ — live responses from online clients (NOT added to recentBacklogEntries)
-  pollResultsDir() {
-    if (!this.isConfigured || !this.onBacklogResponse) {
-      return;
-    }
-    let processed = 0;
-    try {
-      const resultsDir = path.join(this.syncPath, "results");
-      if (!fsPathExists(resultsDir)) {
-        return;
-      }
-      const files = fsListDir(resultsDir).filter((f) => f.endsWith(".json"));
-      for (const file of files) {
-        const filePath = path.join(resultsDir, file);
-        const claimedPath = filePath + `.lock-${process.pid}`;
-        try {
-          fsRenameFile(filePath, claimedPath);
-        } catch {
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(fsReadText(claimedPath));
-          try {
-            fsDeleteFile(claimedPath);
-          } catch {
-          }
-          const entries = Array.isArray(parsed) ? parsed : [parsed];
-          for (const entry of entries) {
-            const clientLabel = entry.clientLabel || file.replace(/\.json$/, "");
-            console.log(`[ServerFallback] Got live result from ${clientLabel}: ${entry.command}`);
-            this.onBacklogResponse(clientLabel, { ...entry, channel: "live" });
-            processed++;
-          }
-        } catch (e) {
-          console.error(`[ServerFallback] Error reading results file ${file}:`, e);
-          try {
-            fsDeleteFile(claimedPath);
-          } catch {
-          }
-        }
-      }
-    } catch (e) {
-      console.error("[ServerFallback] Results poll error:", e);
-    }
-    if (processed > 0) {
-      this.onBatchComplete?.();
-    }
-  }
-  // Poll <syncPath>/server-backlog/ for results written by clients that were offline
-  pollServerBacklog() {
-    if (!this.isConfigured || !this.onBacklogResponse) {
-      return;
-    }
-    let processed = 0;
-    try {
-      const backlogDir = path.join(this.syncPath, "server-backlog");
-      if (!fsPathExists(backlogDir)) {
-        return;
-      }
-      const files = fsListDir(backlogDir).filter((f) => f.endsWith(".json"));
-      const newEntries = [];
-      for (const file of files) {
-        const filePath = path.join(backlogDir, file);
-        const claimedPath = filePath + `.lock-${process.pid}`;
-        try {
-          fsRenameFile(filePath, claimedPath);
-        } catch {
-          continue;
-        }
-        try {
-          const parsed = JSON.parse(fsReadText(claimedPath));
-          try {
-            fsDeleteFile(claimedPath);
-          } catch {
-          }
-          const entries = Array.isArray(parsed) ? parsed : [parsed];
-          for (const entry of entries) {
-            const clientLabel = entry.clientLabel || file.replace(/\.json$/, "");
-            console.log(`[ServerFallback] Got server-backlog entry from ${clientLabel}: ${entry.command}`);
-            newEntries.push({ ...entry, clientLabel });
-            this.onBacklogResponse(clientLabel, entry);
-            processed++;
-          }
-        } catch (e) {
-          console.error(`[ServerFallback] Error reading backlog file ${file}:`, e);
-          try {
-            fsDeleteFile(claimedPath);
-          } catch {
-          }
-        }
-      }
-      if (newEntries.length > 0) {
-        this.recentBacklogEntries.push(...newEntries);
-        if (this.onBacklogArrived) {
-          this.onBacklogArrived(newEntries);
-        }
-      }
-    } catch (e) {
-      console.error("[ServerFallback] Backlog poll error:", e);
-    }
-    if (processed > 0) {
-      this.onBatchComplete?.();
-    }
-  }
-  getRecentBacklog() {
-    return this.recentBacklogEntries;
-  }
-  clearRecentBacklog() {
-    this.recentBacklogEntries = [];
-  }
-};
-var MonitorServer = class {
-  clients = /* @__PURE__ */ new Map();
-  provider = null;
-  context = null;
-  running = false;
-  serverId = "default";
-  presenceCheckInterval = null;
-  syncScanInterval = null;
-  offlineTimeoutMs = 3e5;
-  // 5 minutes
-  fallback = new ServerFallbackManager();
-  // Tracks the previous value of pollMs/updateCheckMs for in-flight interval commands
-  // so we can revert the optimistic UI value if the command is cancelled or errors.
-  pendingIntervalRollbacks = /* @__PURE__ */ new Map();
-  // True only while the initial sync-folder scan is running (start / key-change).
-  // Included in every snapshot so the webview can show a blocking loading overlay.
-  isScanning = false;
-  clientReleasePath = "";
-  serverPresenceInterval = null;
-  version = "1.0.0";
-  // ─── Configurable intervals (ms) ─────────────────────────────────
-  backlogPollMs = 15e3;
-  // server reads server-backlog/
-  presenceCheckMs = 3e4;
-  // check client presence staleness
-  syncScanMs = 3e4;
-  // scan presence files in clients/<serverKey>/
-  serverPresenceMs = 3e4;
-  // refresh server's own presence file
-  clientPollMs = 15e3;
-  // target interval pushed to clients
-  commandTimeoutMs = 12e4;
-  // 2 minutes – queued commands time out after this
-  updateDebounceTimer = null;
-  initialize(context) {
-    this.context = context;
-    this.version = context.extension?.packageJSON?.version || "1.0.0";
-    const config = vscode.workspace.getConfiguration("serverMonitor");
-    const persistedKey = context.globalState.get("serverKey");
-    this.serverId = persistedKey || config.get("serverId") || "default";
-    const saved = context.globalState.get("serverIntervals");
-    if (saved) {
-      if (saved.backlogPollMs)
-        this.backlogPollMs = saved.backlogPollMs;
-      if (saved.presenceCheckMs)
-        this.presenceCheckMs = saved.presenceCheckMs;
-      if (saved.syncScanMs)
-        this.syncScanMs = saved.syncScanMs;
-      if (saved.serverPresenceMs)
-        this.serverPresenceMs = saved.serverPresenceMs;
-      if (saved.clientPollMs)
-        this.clientPollMs = saved.clientPollMs;
-      console.log(`[MonitorServer] Restored persisted intervals: backlog=${this.backlogPollMs}, presence=${this.presenceCheckMs}, syncScan=${this.syncScanMs}, serverPresence=${this.serverPresenceMs}, clientPoll=${this.clientPollMs}`);
-    }
-    console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`);
-    this.loadPersistentClients();
-    this.setupFallback();
-    console.log(`[MonitorServer] Loaded ${this.clients.size} persistent clients`);
-  }
-  setupFallback() {
-    const config = vscode.workspace.getConfiguration("serverMonitor");
-    const syncPath = config.get("syncPath") || "";
-    this.clientReleasePath = config.get("clientReleasePath") || "";
-    if (syncPath) {
-      this.fallback.configure(syncPath, this.serverId, (clientLabel, entry) => {
-        this.handleBacklogResponse(clientLabel, entry);
-      }, (newEntries) => {
-        const count = newEntries.length;
-        vscode.window.showInformationMessage(
-          `${count} backlog result${count === 1 ? "" : "s"} received from offline clients`,
-          "View Backlog"
-        ).then((selection) => {
-          if (selection === "View Backlog") {
-            this.showBacklogWebview();
-          }
-        });
-      }, () => {
-        this.savePersistentClients();
-        this.flushUpdate();
-      });
-      this.fallback.startPolling(this.backlogPollMs);
-      if (this.syncScanInterval) {
-        clearInterval(this.syncScanInterval);
-      }
-      this.syncScanInterval = setInterval(() => this.importSyncClients(), this.syncScanMs);
-      this.importSyncClients();
-    }
-  }
-  async changeServerKey(newKey) {
-    if (!newKey || !this.context) {
-      return;
-    }
-    this.removeServerPresenceFile();
-    this.serverId = newKey;
-    this.isScanning = true;
-    this.triggerUpdate();
-    setImmediate(async () => {
-      await this.context.globalState.update("serverKey", newKey);
-      if (this.running) {
-        this.writeServerPresenceFile("online");
-      }
-      this.clients.clear();
-      this.loadPersistentClients();
-      this.setupFallback();
-      this.isScanning = false;
-      this.triggerUpdate();
-      console.log(`[MonitorServer] Server key changed to: ${newKey}`);
-      vscode.window.showInformationMessage(`Server key changed to: ${newKey}`);
-    });
-  }
-  serverPresenceFilePath() {
-    const syncPath = this.fallback.syncPathValue;
-    return path.join(syncPath, "servers", `${this.serverId}-${os.hostname()}-${process.pid}.json`);
-  }
-  /**
-   * Remove stale presence files left by previous instances of this server
-   * (same serverId + hostname but different PID).
-   */
-  cleanStaleServerPresenceFiles() {
-    if (!this.fallback.isConfigured) {
-      return;
-    }
-    try {
-      const serversDir = path.join(this.fallback.syncPathValue, "servers");
-      if (!fsPathExists(serversDir)) {
-        return;
-      }
-      const prefix = `${this.serverId}-${os.hostname()}-`;
-      const ownFile = `${this.serverId}-${os.hostname()}-${process.pid}.json`;
-      const files = fsListDir(serversDir).filter((f) => f.startsWith(prefix) && f.endsWith(".json") && f !== ownFile);
-      for (const f of files) {
-        try {
-          fsDeleteFile(path.join(serversDir, f));
-          console.log(`[MonitorServer] Cleaned stale server presence file: ${f}`);
-        } catch {
-        }
-      }
-    } catch (e) {
-      console.warn(`[MonitorServer] Could not clean stale server presence files: ${e?.message || e}`);
-    }
-  }
-  writeServerPresenceFile(status) {
-    if (!this.fallback.isConfigured) {
-      return;
-    }
-    try {
-      const serversDir = path.join(this.fallback.syncPathValue, "servers");
-      fsEnsureDir(serversDir);
-      this.cleanStaleServerPresenceFiles();
-      const filePath = this.serverPresenceFilePath();
-      let startedAt = Date.now();
-      if (status === "online" && fsPathExists(filePath)) {
-        try {
-          const existing = JSON.parse(fsReadText(filePath));
-          if (existing.status === "online") {
-            startedAt = existing.startedAt;
-          }
-        } catch {
-        }
-      }
-      const clientsSnapshot = Array.from(this.clients.values()).map((c) => ({
-        key: c.key,
-        label: c.clientLabel,
-        status: c.status
-      }));
-      const machine = os.hostname();
-      const entry = {
-        key: this.serverId,
-        machine,
-        username: os.userInfo().username,
-        version: this.version,
-        clients: clientsSnapshot,
-        startedAt,
-        lastSeen: Date.now(),
-        status
-      };
-      fsWriteText(filePath, JSON.stringify(entry, null, 2));
-      console.log(`[MonitorServer] Server presence file written (${status}): ${filePath}`);
-    } catch (e) {
-      console.warn(`[MonitorServer] Could not write server presence file: ${e?.message || e}`);
-    }
-  }
-  removeServerPresenceFile() {
-    if (!this.fallback.isConfigured) {
-      return;
-    }
-    try {
-      const filePath = this.serverPresenceFilePath();
-      if (fsPathExists(filePath)) {
-        fsDeleteFile(filePath);
-        console.log(`[MonitorServer] Server presence file removed: ${filePath}`);
-      }
-      this.cleanStaleServerPresenceFiles();
-    } catch (e) {
-      console.warn(`[MonitorServer] Could not remove server presence file: ${e?.message || e}`);
-    }
-  }
-  showBacklogWebview() {
-    const e = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const badge = (ok) => `<span class="r-badge ${ok ? "ok" : "err"}">${ok ? "&#10004; ok" : "&#10006; err"}</span>`;
-    const fmt = (ts) => {
-      try {
-        return new Date(ts).toLocaleString();
-      } catch {
-        return e(ts);
-      }
-    };
-    const kv = (k, v) => `<span class="r-key">${e(k)}</span><span class="r-val">${v}</span>`;
-    const renderUsageReport = (p) => {
-      const agents = p.agents || [];
-      let h = `<div class="r-card"><div class="r-kv">`;
-      h += kv("Status", badge(!!p.success));
-      if (p.timeframe) {
-        h += kv("Timeframe", e(p.timeframe));
-      }
-      if (p.totalEntries !== void 0) {
-        h += kv("Total entries", `<strong>${e(p.totalEntries)}</strong>`);
-      }
-      if (p.dateRange?.earliest) {
-        h += kv("From", e(fmt(p.dateRange.earliest)));
-        h += kv("To", e(fmt(p.dateRange.latest)));
-      }
-      h += `</div>`;
-      if (agents.length > 0) {
-        h += `<table class="r-subtable"><thead><tr><th>Agent</th><th>Count</th><th>%</th></tr></thead><tbody>`;
-        agents.forEach((a) => {
-          h += `<tr><td>${e(a.name)}</td><td>${e(a.count)}</td><td>${e(a.percentage)}%</td></tr>`;
-        });
-        h += `</tbody></table>`;
-      } else {
-        h += `<span class="r-none">No agent data for this period.</span>`;
-      }
-      return h + `</div>`;
-    };
-    const renderCheckBBrainy = (p) => {
-      let h = `<div class="r-card"><div class="r-kv">`;
-      h += kv("Status", badge(!!p.success));
-      if (p.installed !== void 0) {
-        h += kv("Installed", badge(!!p.installed));
-      }
-      if (p.version) {
-        h += kv("Version", e(p.version));
-      }
-      if (p.active !== void 0) {
-        h += kv("Active", badge(!!p.active));
-      }
-      if (p.message) {
-        h += kv("Message", e(p.message));
-      }
-      return h + `</div></div>`;
-    };
-    const renderSystemInfo = (p) => {
-      let h = `<div class="r-card"><div class="r-kv">`;
-      ["hostname", "username", "os", "platform", "arch", "cpu", "memory", "vscodeVersion", "nodeVersion"].forEach((k) => {
-        if (p[k] !== void 0) {
-          h += kv(k, e(p[k]));
-        }
-      });
-      return h + `</div></div>`;
-    };
-    const renderWorkspace = (p) => {
-      let h = `<div class="r-card"><div class="r-kv">`;
-      if (p.name) {
-        h += kv("Name", e(p.name));
-      }
-      if (p.workspace) {
-        h += kv("Workspace", e(p.workspace));
-      }
-      const roots = p.rootPaths || (p.rootPath ? [p.rootPath] : []);
-      if (roots.length) {
-        h += kv("Root", e(roots.join(", ")));
-      }
-      return h + `</div></div>`;
-    };
-    const renderResult = (cmd, payload) => {
-      if (payload === null || payload === void 0) {
-        return `<span class="r-none">&mdash;</span>`;
-      }
-      if (typeof payload !== "object") {
-        return `<pre class="r-pre">${e(String(payload))}</pre>`;
-      }
-      if (cmd === "getUsageReport" || cmd === "generateReport") {
-        return renderUsageReport(payload);
-      }
-      if (cmd === "checkBBrainy" || cmd === "forceBBrainy" || cmd === "showBBrainyStatus") {
-        return renderCheckBBrainy(payload);
-      }
-      if (cmd === "getSystemInfo") {
-        return renderSystemInfo(payload);
-      }
-      if (cmd === "getWorkspace") {
-        return renderWorkspace(payload);
-      }
-      const json = JSON.stringify(payload, null, 2);
-      if (json.length < 300) {
-        return `<pre class="r-pre">${e(json)}</pre>`;
-      }
-      return `<details class="r-details"><summary>{ &hellip; } show JSON</summary><pre class="r-pre">${e(json)}</pre></details>`;
-    };
-    const entries = this.fallback.getRecentBacklog();
-    const grouped = {};
-    for (const entry of entries) {
-      const label = entry.clientLabel || "unknown";
-      if (!grouped[label]) {
-        grouped[label] = [];
-      }
-      grouped[label].push(entry);
-    }
-    const panel = vscode.window.createWebviewPanel(
-      "serverBacklog",
-      `Server Backlog (${entries.length})`,
-      vscode.ViewColumn.Beside,
-      { enableScripts: true }
-    );
-    const sections = Object.entries(grouped).map(([label, ents]) => {
-      const rows = ents.map((ent) => `<tr>
-                <td class="cell time">${e(fmt(ent.timestamp || Date.now()))}</td>
-                <td class="cell cmd">${e(ent.command || "")}</td>
-                <td class="cell result-cell">${renderResult(ent.command || "", ent.payload ?? ent.result ?? null)}</td>
-            </tr>`).join("");
-      return `<div class="section"><h3>${e(label)}</h3>
+"use strict";var q=Object.create;var A=Object.defineProperty;var W=Object.getOwnPropertyDescriptor;var O=Object.getOwnPropertyNames;var V=Object.getPrototypeOf,Q=Object.prototype.hasOwnProperty;var J=(l,e)=>{for(var t in e)A(l,t,{get:e[t],enumerable:!0})},N=(l,e,t,s)=>{if(e&&typeof e=="object"||typeof e=="function")for(let n of O(e))!Q.call(l,n)&&n!==t&&A(l,n,{get:()=>e[n],enumerable:!(s=W(e,n))||s.enumerable});return l};var I=(l,e,t)=>(t=l!=null?q(V(l)):{},N(e||!l||!l.__esModule?A(t,"default",{value:l,enumerable:!0}):t,l)),K=l=>N(A({},"__esModule",{value:!0}),l);var G={};J(G,{activate:()=>H,deactivate:()=>Y});module.exports=K(G);var w=I(require("vscode"));var h=I(require("vscode")),f=I(require("fs")),v=I(require("path")),b=I(require("os")),C=require("child_process");function M(l){return process.platform==="win32"&&l.startsWith("\\\\")}function z(l){if(M(l)){try{(0,C.execSync)(`mkdir "${l}"`,{shell:"cmd.exe",stdio:"pipe",timeout:1e4})}catch{}return}f.mkdirSync(l,{recursive:!0})}function k(l){if(M(l))try{return(0,C.execSync)(`if exist "${l}" (echo Y) else (echo N)`,{shell:"cmd.exe",stdio:"pipe",timeout:8e3}).toString().trim()==="Y"}catch{return!1}return f.existsSync(l)}function $(l){if(M(l)){let e=v.join(b.tmpdir(),`bba-rd-${Date.now()}-${Math.random().toString(36).slice(2,6)}.tmp`);try{(0,C.execSync)(`copy /Y "${l}" "${e}"`,{shell:"cmd.exe",stdio:"pipe",timeout:15e3});let t=f.readFileSync(e,"utf-8");try{f.unlinkSync(e)}catch{}return t}catch(t){try{f.unlinkSync(e)}catch{}throw t}}return f.readFileSync(l,"utf-8")}function R(l,e){if(M(l)){let t=v.join(b.tmpdir(),`bba-wr-${Date.now()}-${Math.random().toString(36).slice(2,6)}.tmp`);try{f.writeFileSync(t,e,"utf-8"),(0,C.execSync)(`copy /Y "${t}" "${l}"`,{shell:"cmd.exe",stdio:"pipe",timeout:15e3});try{f.unlinkSync(t)}catch{}}catch(s){try{f.unlinkSync(t)}catch{}throw s}return}f.writeFileSync(l,e)}function x(l){if(M(l)){try{(0,C.execSync)(`del /F /Q "${l}"`,{shell:"cmd.exe",stdio:"pipe",timeout:5e3})}catch{}return}f.unlinkSync(l)}function L(l,e){if(M(l)||M(e)){(0,C.execSync)(`move /Y "${l}" "${e}"`,{shell:"cmd.exe",stdio:"pipe",timeout:1e4});return}f.renameSync(l,e)}function U(l){if(M(l))try{return(0,C.execSync)(`dir /b "${l}"`,{shell:"cmd.exe",timeout:1e4}).toString("utf-8").split(/\r?\n/).filter(t=>t.trim().length>0)}catch{return[]}return f.readdirSync(l)}var T=class{syncPath="";serverKey="";backlogPollInterval=null;onBacklogResponse=null;recentBacklogEntries=[];onBacklogArrived=null;onBatchComplete=null;pendingQueue=new Map;flushTimer=null;configure(e,t,s,n,r){this.syncPath=e,this.serverKey=t,this.onBacklogResponse=s,this.onBacklogArrived=n??null,this.onBatchComplete=r??null}get isConfigured(){return!!this.syncPath}get syncPathValue(){return this.syncPath}scanRegisteredClients(){if(!this.isConfigured)return[];let e=v.join(this.syncPath,"clients",this.serverKey);if(!k(e))return[];let t=[];try{let s=U(e).filter(n=>n.endsWith(".json"));for(let n of s)try{let r=JSON.parse($(v.join(e,n)));r.clientKey&&r.clientLabel&&t.push(r)}catch{console.warn(`[ServerFallback] Skipping malformed presence file: ${n}`)}}catch(s){console.warn("[ServerFallback] Error scanning clients dir:",s)}return t}startPolling(e=15e3){this.stopPolling(),this.isConfigured&&(this.pollResultsDir(),this.pollServerBacklog(),this.backlogPollInterval=setInterval(()=>{this.pollResultsDir(),this.pollServerBacklog()},e),console.log(`[ServerFallback] Polling results+backlog every ${e/1e3}s from: ${this.syncPath}`))}stopPolling(){this.backlogPollInterval&&(clearInterval(this.backlogPollInterval),this.backlogPollInterval=null)}stageCommand(e,t,s,n,r){let i=r??`${Date.now()}-${Math.random().toString(36).substring(2,8)}`,o={id:i,clientKey:t,clientLabel:e,command:s,payload:n,timestamp:Date.now(),serverKey:this.serverKey};return this.pendingQueue.has(e)||this.pendingQueue.set(e,[]),this.pendingQueue.get(e).push(o),i}scheduleFlush(){this.flushTimer||(this.flushTimer=setTimeout(()=>{this.flushTimer=null,this.flushPendingQueue()},0))}clearStagedCommands(e){this.pendingQueue.delete(e)}flushPendingQueue(){let e=[],t=[];if(!this.isConfigured||this.pendingQueue.size===0)return{succeeded:e,failed:t};this.flushTimer&&(clearTimeout(this.flushTimer),this.flushTimer=null);let s=v.join(this.syncPath,"queue");z(s);for(let[n,r]of this.pendingQueue)try{let i=v.join(s,`${n}.json`),o=[];if(k(i))try{o=JSON.parse($(i))}catch{o=[]}o.push(...r);let d=i+".tmp";R(d,JSON.stringify(o,null,2));try{L(d,i)}catch{R(i,JSON.stringify(o,null,2));try{x(d)}catch{}}e.push(n),console.log(`[ServerFallback] Flushed ${r.length} command(s) for ${n}`)}catch(i){t.push(n),console.error(`[ServerFallback] Failed to flush queue for ${n}: ${i?.message||i}`)}return this.pendingQueue.clear(),{succeeded:e,failed:t}}enqueueCommand(e,t,s,n,r){if(!this.isConfigured)throw new Error("Sync path is not configured. Set serverMonitor.syncPath in settings.");try{let i=v.join(this.syncPath,"queue");z(i);let o=v.join(i,`${e}.json`),d=[];if(k(o))try{d=JSON.parse($(o))}catch{d=[]}let g=r??`${Date.now()}-${Math.random().toString(36).substring(2,8)}`,m={id:g,clientKey:t,clientLabel:e,command:s,payload:n,timestamp:Date.now(),serverKey:this.serverKey};d.push(m);let c=o+".tmp";R(c,JSON.stringify(d,null,2));try{L(c,o)}catch{R(o,JSON.stringify(d,null,2));try{x(c)}catch{}}return console.log(`[ServerFallback] Enqueued command "${s}" for ${e} \xE2\u2020\u2019 ${o}`),g}catch(i){throw new Error(`Failed to write queue file at "${this.syncPath}\\queue\\${e}.json": ${i?.message||i}`)}}peekQueuedCommands(e){if(!this.isConfigured)return[];let t=v.join(this.syncPath,"queue",`${e}.json`);if(!k(t))return[];try{return JSON.parse($(t))}catch{return[]}}listQueuedClients(){if(!this.isConfigured)return[];let e=v.join(this.syncPath,"queue");return k(e)?U(e).filter(t=>t.endsWith(".json")).map(t=>t.replace(/\.json$/,"")):[]}dequeueCommands(e){if(!this.isConfigured)return[];let t=v.join(this.syncPath,"queue",`${e}.json`);if(!k(t))return[];try{let s=JSON.parse($(t));return x(t),console.log(`[ServerFallback] Dequeued ${s.length} command(s) for ${e}`),s}catch(s){return console.error(`[ServerFallback] Error reading queue for ${e}:`,s),[]}}pollResultsDir(){if(!this.isConfigured||!this.onBacklogResponse)return;let e=0;try{let t=v.join(this.syncPath,"results");if(!k(t))return;let s=U(t).filter(n=>n.endsWith(".json"));for(let n of s){let r=v.join(t,n),i=r+`.lock-${process.pid}`;try{L(r,i)}catch{continue}try{let o=JSON.parse($(i));try{x(i)}catch{}let d=Array.isArray(o)?o:[o];for(let g of d){let m=g.clientLabel||n.replace(/\.json$/,"");console.log(`[ServerFallback] Got live result from ${m}: ${g.command}`),this.onBacklogResponse(m,{...g,channel:"live"}),e++}}catch(o){console.error(`[ServerFallback] Error reading results file ${n}:`,o);try{x(i)}catch{}}}}catch(t){console.error("[ServerFallback] Results poll error:",t)}e>0&&this.onBatchComplete?.()}pollServerBacklog(){if(!this.isConfigured||!this.onBacklogResponse)return;let e=0;try{let t=v.join(this.syncPath,"server-backlog");if(!k(t))return;let s=U(t).filter(r=>r.endsWith(".json")),n=[];for(let r of s){let i=v.join(t,r),o=i+`.lock-${process.pid}`;try{L(i,o)}catch{continue}try{let d=JSON.parse($(o));try{x(o)}catch{}let g=Array.isArray(d)?d:[d];for(let m of g){let c=m.clientLabel||r.replace(/\.json$/,"");console.log(`[ServerFallback] Got server-backlog entry from ${c}: ${m.command}`),n.push({...m,clientLabel:c}),this.onBacklogResponse(c,m),e++}}catch(d){console.error(`[ServerFallback] Error reading backlog file ${r}:`,d);try{x(o)}catch{}}}n.length>0&&(this.recentBacklogEntries.push(...n),this.onBacklogArrived&&this.onBacklogArrived(n))}catch(t){console.error("[ServerFallback] Backlog poll error:",t)}e>0&&this.onBatchComplete?.()}getRecentBacklog(){return this.recentBacklogEntries}clearRecentBacklog(){this.recentBacklogEntries=[]}},E=class{clients=new Map;provider=null;context=null;running=!1;serverId="default";presenceCheckInterval=null;syncScanInterval=null;offlineTimeoutMs=3e5;fallback=new T;pendingIntervalRollbacks=new Map;isScanning=!1;clientReleasePath="";serverPresenceInterval=null;version="1.0.0";cancelledCommandIds=new Set;backlogPollMs=15e3;presenceCheckMs=3e4;syncScanMs=3e4;serverPresenceMs=3e4;clientPollMs=15e3;commandTimeoutMs=12e4;updateDebounceTimer=null;initialize(e){this.context=e,this.version=e.extension?.packageJSON?.version||"1.0.0";let t=h.workspace.getConfiguration("serverMonitor"),s=e.globalState.get("serverKey");this.serverId=s||t.get("serverId")||"default";let n=e.globalState.get("serverIntervals");n&&(n.backlogPollMs&&(this.backlogPollMs=n.backlogPollMs),n.presenceCheckMs&&(this.presenceCheckMs=n.presenceCheckMs),n.syncScanMs&&(this.syncScanMs=n.syncScanMs),n.serverPresenceMs&&(this.serverPresenceMs=n.serverPresenceMs),n.clientPollMs&&(this.clientPollMs=n.clientPollMs),console.log(`[MonitorServer] Restored persisted intervals: backlog=${this.backlogPollMs}, presence=${this.presenceCheckMs}, syncScan=${this.syncScanMs}, serverPresence=${this.serverPresenceMs}, clientPoll=${this.clientPollMs}`)),console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`),this.loadPersistentClients(),this.setupFallback(),console.log(`[MonitorServer] Loaded ${this.clients.size} persistent clients`)}setupFallback(){let e=h.workspace.getConfiguration("serverMonitor"),t=e.get("syncPath")||"";this.clientReleasePath=e.get("clientReleasePath")||"",t&&(this.fallback.configure(t,this.serverId,(s,n)=>{this.handleBacklogResponse(s,n)},s=>{let n=s.length;h.window.showInformationMessage(`${n} backlog result${n===1?"":"s"} received from offline clients`,"View Backlog").then(r=>{r==="View Backlog"&&this.showBacklogWebview()})},()=>{this.savePersistentClients(),this.flushUpdate()}),this.fallback.startPolling(this.backlogPollMs),this.syncScanInterval&&clearInterval(this.syncScanInterval),this.syncScanInterval=setInterval(()=>this.importSyncClients(),this.syncScanMs),this.importSyncClients())}async changeServerKey(e){!e||!this.context||(this.removeServerPresenceFile(),this.serverId=e,this.isScanning=!0,this.triggerUpdate(),setImmediate(async()=>{await this.context.globalState.update("serverKey",e),this.running&&this.writeServerPresenceFile("online"),this.clients.clear(),this.loadPersistentClients(),this.setupFallback(),this.isScanning=!1,this.triggerUpdate(),console.log(`[MonitorServer] Server key changed to: ${e}`),h.window.showInformationMessage(`Server key changed to: ${e}`)}))}serverPresenceFilePath(){let e=this.fallback.syncPathValue;return v.join(e,"servers",`${this.serverId}-${b.hostname()}-${process.pid}.json`)}cleanStaleServerPresenceFiles(){if(this.fallback.isConfigured)try{let e=v.join(this.fallback.syncPathValue,"servers");if(!k(e))return;let t=`${this.serverId}-${b.hostname()}-`,s=`${this.serverId}-${b.hostname()}-${process.pid}.json`,n=U(e).filter(r=>r.startsWith(t)&&r.endsWith(".json")&&r!==s);for(let r of n)try{x(v.join(e,r)),console.log(`[MonitorServer] Cleaned stale server presence file: ${r}`)}catch{}}catch(e){console.warn(`[MonitorServer] Could not clean stale server presence files: ${e?.message||e}`)}}writeServerPresenceFile(e){if(this.fallback.isConfigured)try{let t=v.join(this.fallback.syncPathValue,"servers");z(t),this.cleanStaleServerPresenceFiles();let s=this.serverPresenceFilePath(),n=Date.now();if(e==="online"&&k(s))try{let d=JSON.parse($(s));d.status==="online"&&(n=d.startedAt)}catch{}let r=Array.from(this.clients.values()).map(d=>({key:d.key,label:d.clientLabel,status:d.status})),i=b.hostname(),o={key:this.serverId,machine:i,username:b.userInfo().username,version:this.version,clients:r,startedAt:n,lastSeen:Date.now(),status:e};R(s,JSON.stringify(o,null,2)),console.log(`[MonitorServer] Server presence file written (${e}): ${s}`)}catch(t){console.warn(`[MonitorServer] Could not write server presence file: ${t?.message||t}`)}}removeServerPresenceFile(){if(this.fallback.isConfigured)try{let e=this.serverPresenceFilePath();k(e)&&(x(e),console.log(`[MonitorServer] Server presence file removed: ${e}`)),this.cleanStaleServerPresenceFiles()}catch(e){console.warn(`[MonitorServer] Could not remove server presence file: ${e?.message||e}`)}}showBacklogWebview(){let e=a=>String(a??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"),t=a=>`<span class="r-badge ${a?"ok":"err"}">${a?"&#10004; ok":"&#10006; err"}</span>`,s=a=>{try{return new Date(a).toLocaleString()}catch{return e(a)}},n=(a,p)=>`<span class="r-key">${e(a)}</span><span class="r-val">${p}</span>`,r=a=>{let p=a.agents||[],u='<div class="r-card"><div class="r-kv">';return u+=n("Status",t(!!a.success)),a.timeframe&&(u+=n("Timeframe",e(a.timeframe))),a.totalEntries!==void 0&&(u+=n("Total entries",`<strong>${e(a.totalEntries)}</strong>`)),a.dateRange?.earliest&&(u+=n("From",e(s(a.dateRange.earliest))),u+=n("To",e(s(a.dateRange.latest)))),u+="</div>",p.length>0?(u+='<table class="r-subtable"><thead><tr><th>Agent</th><th>Count</th><th>%</th></tr></thead><tbody>',p.forEach(S=>{u+=`<tr><td>${e(S.name)}</td><td>${e(S.count)}</td><td>${e(S.percentage)}%</td></tr>`}),u+="</tbody></table>"):u+='<span class="r-none">No agent data for this period.</span>',u+"</div>"},i=a=>{let p='<div class="r-card"><div class="r-kv">';return p+=n("Status",t(!!a.success)),a.installed!==void 0&&(p+=n("Installed",t(!!a.installed))),a.version&&(p+=n("Version",e(a.version))),a.active!==void 0&&(p+=n("Active",t(!!a.active))),a.message&&(p+=n("Message",e(a.message))),p+"</div></div>"},o=a=>{let p='<div class="r-card"><div class="r-kv">';return["hostname","username","os","platform","arch","cpu","memory","vscodeVersion","nodeVersion"].forEach(u=>{a[u]!==void 0&&(p+=n(u,e(a[u])))}),p+"</div></div>"},d=a=>{let p='<div class="r-card"><div class="r-kv">';a.name&&(p+=n("Name",e(a.name))),a.workspace&&(p+=n("Workspace",e(a.workspace)));let u=a.rootPaths||(a.rootPath?[a.rootPath]:[]);return u.length&&(p+=n("Root",e(u.join(", ")))),p+"</div></div>"},g=(a,p)=>{if(p==null)return'<span class="r-none">&mdash;</span>';if(typeof p!="object")return`<pre class="r-pre">${e(String(p))}</pre>`;if(a==="getUsageReport"||a==="generateReport")return r(p);if(a==="checkBBrainy"||a==="forceBBrainy"||a==="showBBrainyStatus")return i(p);if(a==="getSystemInfo")return o(p);if(a==="getWorkspace")return d(p);let u=JSON.stringify(p,null,2);return u.length<300?`<pre class="r-pre">${e(u)}</pre>`:`<details class="r-details"><summary>{ &hellip; } show JSON</summary><pre class="r-pre">${e(u)}</pre></details>`},m=this.fallback.getRecentBacklog(),c={};for(let a of m){let p=a.clientLabel||"unknown";c[p]||(c[p]=[]),c[p].push(a)}let y=h.window.createWebviewPanel("serverBacklog",`Server Backlog (${m.length})`,h.ViewColumn.Beside,{enableScripts:!0}),B=Object.entries(c).map(([a,p])=>{let u=p.map(S=>`<tr>
+                <td class="cell time">${e(s(S.timestamp||Date.now()))}</td>
+                <td class="cell cmd">${e(S.command||"")}</td>
+                <td class="cell result-cell">${g(S.command||"",S.payload??S.result??null)}</td>
+            </tr>`).join("");return`<div class="section"><h3>${e(a)}</h3>
             <table><colgroup><col class="col-time"><col class="col-cmd"><col class="col-result"></colgroup>
             <thead><tr><th>Time</th><th>Command</th><th>Result</th></tr></thead>
-            <tbody>${rows}</tbody></table></div>`;
-    }).join("");
-    const count = entries.length;
-    panel.webview.html = [
-      '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><style>',
-      ":root{color-scheme:dark}",
-      "body{background:var(--vscode-editor-background,#1e1e2e);color:var(--vscode-foreground,#cdd6f4);",
-      "  font-family:var(--vscode-font-family,ui-sans-serif,system-ui,sans-serif);padding:24px;margin:0}",
-      "h2{margin:0 0 4px;font-size:1.1rem}",
-      "h3{color:var(--vscode-charts-green,#a6e3a1);font-size:.85rem;border-bottom:1px solid var(--vscode-panel-border,#313244);padding-bottom:6px;margin:0 0 8px}",
-      ".section{margin-bottom:28px}",
-      "table{width:100%;border-collapse:collapse;table-layout:fixed}",
-      "col.col-time{width:140px}col.col-cmd{width:160px}col.col-result{width:auto}",
-      "th{text-align:left;font-size:.7rem;color:var(--vscode-descriptionForeground,#6c7086);padding-bottom:6px;font-weight:600;text-transform:uppercase;border-bottom:1px solid var(--vscode-panel-border,#313244)}",
-      ".cell{padding:6px 8px 6px 0;vertical-align:top;font-size:.75rem;border-bottom:1px solid var(--vscode-panel-border,#252535)}",
-      ".time{color:var(--vscode-descriptionForeground,#a6adc8);white-space:nowrap}",
-      ".cmd{color:var(--vscode-textLink-foreground,#89b4fa);font-family:monospace;font-size:.75rem}",
-      ".result-cell{color:var(--vscode-foreground,#cdd6f4)}",
-      ".r-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:.7rem;opacity:.85}",
-      ".toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}",
-      ".empty{color:var(--vscode-descriptionForeground,#6c7086);font-style:italic;margin-top:20px}",
-      "button{background:var(--vscode-button-secondaryBackground,#313244);border:1px solid var(--vscode-panel-border,#45475a);",
-      "  color:var(--vscode-button-secondaryForeground,#cdd6f4);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.8rem}",
-      "button:hover{background:var(--vscode-button-secondaryHoverBackground,#45475a)}",
-      ".r-card{background:var(--vscode-editor-inactiveSelectionBackground,#2a2a3e);border-radius:6px;padding:8px 10px;font-size:.73rem}",
-      ".r-kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;margin-bottom:6px}",
-      ".r-key{color:var(--vscode-descriptionForeground,#888);font-weight:600;white-space:nowrap}",
-      ".r-val{color:var(--vscode-foreground,#cdd6f4);word-break:break-word}",
-      ".r-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.68rem;font-weight:700}",
-      ".r-badge.ok{background:rgba(166,227,161,.15);color:var(--vscode-charts-green,#a6e3a1)}",
-      ".r-badge.err{background:rgba(241,76,76,.15);color:var(--vscode-charts-red,#f38ba8)}",
-      ".r-subtable{width:100%;border-collapse:collapse;margin-top:6px}",
-      ".r-subtable th{font-size:.66rem;color:var(--vscode-descriptionForeground,#888);border-bottom:1px solid var(--vscode-panel-border,#313244);padding:2px 6px 3px 0}",
-      ".r-subtable td{font-size:.7rem;padding:2px 6px 2px 0;border-bottom:1px solid var(--vscode-panel-border,#25253a)}",
-      ".r-none{opacity:.4}",
-      ".r-details summary{font-size:.65rem;color:var(--vscode-textLink-foreground,#89b4fa);cursor:pointer;user-select:none;padding:2px 0}",
-      ".r-details .r-pre{margin-top:4px}",
-      "</style></head><body>",
-      `<div class="toolbar"><h2>Server Backlog &mdash; ${count} result${count === 1 ? "" : "s"}</h2>`,
-      '<button onclick="clearAll()">Clear All</button></div>',
-      count === 0 ? '<p class="empty">No backlog entries.</p>' : sections,
-      "<script>",
-      "const vscode=acquireVsCodeApi();",
-      'function clearAll(){vscode.postMessage({action:"clearBacklog"});}',
-      "</script></body></html>"
-    ].join("\n");
-    panel.webview.onDidReceiveMessage((msg) => {
-      if (msg.action === "clearBacklog") {
-        this.fallback.clearRecentBacklog();
-        panel.dispose();
-        this.triggerUpdate();
-      }
-    });
-  }
-  // Called when a client result arrives (via results/ live channel or server-backlog/ offline channel)
-  handleBacklogResponse(clientLabel, entry) {
-    const client = (entry.clientKey ? this.clients.get(entry.clientKey) : void 0) || Array.from(this.clients.values()).find((c) => c.clientLabel === clientLabel);
-    if (!client) {
-      console.warn(`[MonitorServer] Response for unknown client: label=${clientLabel}, key=${entry.clientKey}`);
-      return;
-    }
-    const isError = entry.payload && entry.payload.success === false && entry.payload.error !== void 0;
-    const logEntry = client.commandLog.find((e) => e.id === entry.id);
-    const newStatus = isError ? "error" : "executed";
-    if (logEntry) {
-      logEntry.status = newStatus;
-      logEntry.completedAt = Date.now();
-      logEntry.result = entry.payload;
-    } else {
-      client.commandLog.push({ id: entry.id, command: entry.command, status: newStatus, timestamp: entry.timestamp || Date.now(), completedAt: Date.now(), result: entry.payload });
-    }
-    console.log(`[MonitorServer] Command ${entry.id} (${entry.command}) \u2192 ${newStatus} [matched=${!!logEntry}, client=${client.key}]`);
-    if (entry.payload !== void 0 && entry.payload !== null) {
-      client.lastResponse = { command: entry.command, data: entry.payload, timestamp: entry.timestamp || Date.now() };
-    }
-    if (!client.info) {
-      client.info = {};
-    }
-    if (entry.command === "checkBBrainy" && entry.payload) {
-      client.info.bbrainyStatus = entry.payload;
-      this.showBBrainyStatusWebview(client.key);
-    }
-    if (entry.command === "getSystemInfo" && entry.payload?.hostname) {
-      Object.assign(client.info, { hostname: entry.payload.hostname, username: entry.payload.username, os: entry.payload.os, vscodeVersion: entry.payload.vscodeVersion });
-      if (entry.payload.extensionVersion) {
-        client.info.version = entry.payload.extensionVersion;
-      }
-      if (entry.payload.bbrainyStatus) {
-        client.info.bbrainyStatus = entry.payload.bbrainyStatus;
-      }
-    }
-    if (entry.command === "getWorkspace" && entry.payload?.workspace) {
-      client.info.workspace = entry.payload.workspace;
-    }
-    if (entry.command === "getUsageReport" && entry.payload?.totalEntries !== void 0) {
-      client.info.lastUsageReport = entry.payload;
-      this.showUsageReportWebview(entry.payload, client.info?.username || clientLabel, client.info?.hostname || "Unknown");
-    }
-    if (entry.command === "displayReminderScreen" && !isError) {
-    }
-    if (entry.command === "setPollInterval") {
-      if (isError) {
-        this.revertIntervalIfPending(entry.id);
-      } else {
-        this.pendingIntervalRollbacks.delete(entry.id);
-        if (typeof entry.payload?.intervalMs === "number") {
-          client.info.pollMs = entry.payload.intervalMs;
-        }
-      }
-    }
-    if (entry.command === "setUpdateCheckInterval") {
-      if (isError) {
-        this.revertIntervalIfPending(entry.id);
-      } else {
-        this.pendingIntervalRollbacks.delete(entry.id);
-        if (typeof entry.payload?.intervalMs === "number") {
-          client.info.updateCheckMs = entry.payload.intervalMs;
-        }
-      }
-    }
-    const channelLabel = entry.channel === "live" ? "Live result" : "Backlog result";
-    console.log(`[MonitorServer] ${channelLabel} from ${clientLabel}: ${entry.command} -> ${newStatus}`);
-  }
-  // Discover clients that wrote a presence file to the sync folder but have never connected via WS.
-  // Adds them as offline stubs and persists them to globalState so they survive restarts.
-  importSyncClients() {
-    const entries = this.fallback.scanRegisteredClients();
-    if (entries.length === 0) {
-      return;
-    }
-    const INACTIVE_GRACE_MS = 2 * 60 * 60 * 1e3;
-    const effectiveExtStatus = (entry) => {
-      if (entry.status === "inactive" && Date.now() - entry.lastSeen < INACTIVE_GRACE_MS) {
-        return "active";
-      }
-      return entry.status ?? "active";
-    };
-    let added = 0;
-    for (const entry of entries) {
-      const SYNC_FRESH_MS = 2 * 60 * 1e3;
-      const isFresh = Date.now() - entry.lastSeen < SYNC_FRESH_MS;
-      if (this.clients.has(entry.clientKey)) {
-        const existing = this.clients.get(entry.clientKey);
-        {
-          existing.extensionStatus = effectiveExtStatus(entry);
-          existing.lastSeen = Math.max(existing.lastSeen, entry.lastSeen);
-          existing.status = isFresh ? "sync" : "offline";
-          if (entry.version && existing.info) {
-            existing.info.version = entry.version;
-          }
-        }
-        continue;
-      }
-      this.clients.set(entry.clientKey, {
-        key: entry.clientKey,
-        info: { username: entry.username, hostname: entry.hostname, version: entry.version || void 0 },
-        lastSeen: entry.lastSeen,
-        status: isFresh ? "sync" : "offline",
-        clientLabel: entry.clientLabel,
-        commandLog: [],
-        extensionStatus: effectiveExtStatus(entry)
-      });
-      console.log(`[MonitorServer] Discovered new client via presence file: ${entry.clientLabel} (${entry.clientKey})`);
-      added++;
-    }
-    if (added > 0) {
-      this.savePersistentClients();
-      this.triggerUpdate();
-      console.log(`[MonitorServer] Imported ${added} new client(s) from sync folder`);
-    }
-  }
-  loadPersistentClients() {
-    if (!this.context || !this.serverId) {
-      console.warn(`[MonitorServer] Cannot load persistent clients: context=${!!this.context}, serverId=${this.serverId}`);
-      return;
-    }
-    const allSaved = this.context.globalState.get("persistentAssets") || {};
-    const savedClients = allSaved[this.serverId] || [];
-    console.log(`[MonitorServer] Loading ${savedClients.length} persistent clients for serverId: ${this.serverId}`);
-    savedClients.forEach((c) => {
-      this.clients.set(c.key, {
-        ...c,
-        ws: null,
-        status: "offline",
-        clientLabel: c.clientLabel || `${c.info?.username || "unknown"}-${c.info?.hostname || "unknown"}`,
-        commandLog: []
-        // reset log on each new VS Code session
-      });
-    });
-  }
-  // After loadPersistentClients + setupFallback: scan disk queue files and show pending commands in the log
-  restorePendingQueueToLog() {
-    if (!this.fallback.isConfigured) {
-      return;
-    }
-    const pendingLabels = this.fallback.listQueuedClients();
-    for (const label of pendingLabels) {
-      const client = Array.from(this.clients.values()).find((c) => c.clientLabel === label);
-      if (!client) {
-        continue;
-      }
-      const cmds = this.fallback.peekQueuedCommands(label);
-      for (const cmd of cmds) {
-        if (!client.commandLog.find((e) => e.id === cmd.id)) {
-          client.commandLog.push({ id: cmd.id, command: cmd.command, status: "queued", timestamp: cmd.timestamp });
-        }
-      }
-      console.log(`[MonitorServer] Restored ${cmds.length} pending queued command(s) to log for ${label}`);
-    }
-  }
-  deduplicateClients() {
-    const seenKeys = /* @__PURE__ */ new Set();
-    const keysToRemove = [];
-    for (const [key, client] of this.clients) {
-      const uniqueId = `${client.info?.hostname}:${client.info?.username}`;
-      if (seenKeys.has(uniqueId)) {
-        keysToRemove.push(key);
-        console.log(`[MonitorServer] Found duplicate client: ${key} (${client.info?.username}@${client.info?.hostname})`);
-      } else {
-        seenKeys.add(uniqueId);
-      }
-    }
-    keysToRemove.forEach((key) => this.clients.delete(key));
-    if (keysToRemove.length > 0) {
-      this.savePersistentClients();
-      console.log(`[MonitorServer] Removed ${keysToRemove.length} duplicate client entries`);
-      vscode.window.showInformationMessage(`Cleaned up ${keysToRemove.length} duplicate clients on startup`);
-    }
-  }
-  savePersistentClients() {
-    if (!this.context || !this.serverId) {
-      console.error(`[MonitorServer] Cannot save persistent clients: context=${!!this.context}, serverId=${this.serverId}`);
-      return;
-    }
-    const allSaved = this.context.globalState.get("persistentAssets") || {};
-    allSaved[this.serverId] = Array.from(this.clients.values()).map((c) => ({
-      key: c.key,
-      info: c.info,
-      lastSeen: c.lastSeen,
-      clientLabel: c.clientLabel,
-      commandLog: c.commandLog.slice(-100)
-      // keep last 100 log entries
-    }));
-    this.context.globalState.update("persistentAssets", allSaved);
-    console.debug(`[MonitorServer] Saved ${this.clients.size} clients to persistent storage`);
-  }
-  setProvider(provider) {
-    this.provider = provider;
-  }
-  async start() {
-    if (this.running) {
-      console.warn(`[MonitorServer] Already running, ignoring start request`);
-      return;
-    }
-    if (!this.context) {
-      console.error(`[MonitorServer] Cannot start: context not initialized`);
-      vscode.window.showErrorMessage("Server not initialized with Context");
-      return;
-    }
-    const config = vscode.workspace.getConfiguration("serverMonitor");
-    const persistedKey = this.context.globalState.get("serverKey");
-    this.serverId = persistedKey || config.get("serverId") || "default";
-    console.log(`[MonitorServer] Starting server with serverId: ${this.serverId}`);
-    this.isScanning = true;
-    this.clients.clear();
-    this.loadPersistentClients();
-    this.deduplicateClients();
-    this.setupFallback();
-    this.importSyncClients();
-    this.restorePendingQueueToLog();
-    this.isScanning = false;
-    this.running = true;
-    this.startPresenceCheck();
-    this.writeServerPresenceFile("online");
-    if (this.serverPresenceInterval) {
-      clearInterval(this.serverPresenceInterval);
-    }
-    this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile("online"), this.serverPresenceMs);
-    this.triggerUpdate();
-    console.log(`[MonitorServer] Server started successfully [${this.serverId}]`);
-    vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running (sync-folder mode)`);
-  }
-  startPresenceCheck() {
-    if (this.presenceCheckInterval) {
-      clearInterval(this.presenceCheckInterval);
-    }
-    this.presenceCheckInterval = setInterval(() => {
-      this.checkClientPresence();
-    }, this.presenceCheckMs);
-  }
-  stop() {
-    if (!this.running) {
-      console.warn(`[MonitorServer] Not running, ignoring stop request`);
-      return;
-    }
-    console.log(`[MonitorServer] Stopping server`);
-    if (this.presenceCheckInterval) {
-      clearInterval(this.presenceCheckInterval);
-      this.presenceCheckInterval = null;
-    }
-    if (this.syncScanInterval) {
-      clearInterval(this.syncScanInterval);
-      this.syncScanInterval = null;
-    }
-    this.writeServerPresenceFile("offline");
-    if (this.serverPresenceInterval) {
-      clearInterval(this.serverPresenceInterval);
-      this.serverPresenceInterval = null;
-    }
-    this.fallback.stopPolling();
-    this.running = false;
-    for (const client of this.clients.values()) {
-      client.status = "offline";
-    }
-    this.triggerUpdate();
-    console.log(`[MonitorServer] Server stopped`);
-    vscode.window.showInformationMessage("Monitor server stopped");
-  }
-  // ─── Interval controls ───────────────────────────────────────────
-  /** Change server-side polling intervals at runtime and restart affected timers. */
-  setServerIntervals(opts) {
-    const clamp = (v, min, max, cur) => v !== void 0 ? Math.max(min, Math.min(max, v)) : cur;
-    this.backlogPollMs = clamp(opts.backlogPollMs, 3e3, 3e5, this.backlogPollMs);
-    this.presenceCheckMs = clamp(opts.presenceCheckMs, 3e3, 3e5, this.presenceCheckMs);
-    this.syncScanMs = clamp(opts.syncScanMs, 3e3, 3e5, this.syncScanMs);
-    this.serverPresenceMs = clamp(opts.serverPresenceMs, 3e3, 3e5, this.serverPresenceMs);
-    if (this.running) {
-      this.fallback.startPolling(this.backlogPollMs);
-      if (this.syncScanInterval) {
-        clearInterval(this.syncScanInterval);
-      }
-      this.syncScanInterval = setInterval(() => this.importSyncClients(), this.syncScanMs);
-      this.startPresenceCheck();
-      if (this.serverPresenceInterval) {
-        clearInterval(this.serverPresenceInterval);
-      }
-      this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile("online"), this.serverPresenceMs);
-    }
-    console.log(`[MonitorServer] Server intervals updated \u2014 backlog: ${this.backlogPollMs / 1e3}s, presence: ${this.presenceCheckMs / 1e3}s, sync-scan: ${this.syncScanMs / 1e3}s, server-presence: ${this.serverPresenceMs / 1e3}s`);
-    this.persistIntervals();
-    this.triggerUpdate();
-  }
-  /** Save current intervals to globalState. */
-  persistIntervals() {
-    if (!this.context)
-      return;
-    this.context.globalState.update("serverIntervals", {
-      backlogPollMs: this.backlogPollMs,
-      presenceCheckMs: this.presenceCheckMs,
-      syncScanMs: this.syncScanMs,
-      serverPresenceMs: this.serverPresenceMs,
-      clientPollMs: this.clientPollMs
-    });
-  }
-  /** Send a setPollInterval command to a specific client (queued via sync folder). */
-  async setClientPollInterval(clientKey, intervalMs, providedCmdId) {
-    const ms = Math.max(3e3, Math.min(3e5, intervalMs));
-    const client = this.clients.get(clientKey);
-    if (client) {
-      if (!client.info) {
-        client.info = {};
-      }
-      const oldValue = client.info.pollMs;
-      client.info.pollMs = ms;
-      this.savePersistentClients();
-      const cmdId = await this.sendCommand(clientKey, "setPollInterval", { intervalMs: ms }, providedCmdId);
-      if (cmdId) {
-        this.pendingIntervalRollbacks.set(cmdId, { clientKey, field: "pollMs", oldValue });
-      } else {
-        client.info.pollMs = oldValue;
-        this.savePersistentClients();
-        this.triggerUpdate();
-      }
-    } else {
-      await this.sendCommand(clientKey, "setPollInterval", { intervalMs: ms }, providedCmdId);
-    }
-  }
-  /** Send a setUpdateCheckInterval command to a specific client (queued via sync folder). */
-  async setClientUpdateCheckInterval(clientKey, intervalMs, providedCmdId) {
-    const ms = Math.max(6e4, Math.min(864e5, intervalMs));
-    const client = this.clients.get(clientKey);
-    if (client) {
-      if (!client.info) {
-        client.info = {};
-      }
-      const oldValue = client.info.updateCheckMs;
-      client.info.updateCheckMs = ms;
-      this.savePersistentClients();
-      const cmdId = await this.sendCommand(clientKey, "setUpdateCheckInterval", { intervalMs: ms }, providedCmdId);
-      if (cmdId) {
-        this.pendingIntervalRollbacks.set(cmdId, { clientKey, field: "updateCheckMs", oldValue });
-      } else {
-        client.info.updateCheckMs = oldValue;
-        this.savePersistentClients();
-        this.triggerUpdate();
-      }
-    } else {
-      await this.sendCommand(clientKey, "setUpdateCheckInterval", { intervalMs: ms }, providedCmdId);
-    }
-  }
-  /** Revert an optimistically-applied interval value if the command didn't commit. */
-  revertIntervalIfPending(cmdId) {
-    const rollback = this.pendingIntervalRollbacks.get(cmdId);
-    if (!rollback) {
-      return;
-    }
-    this.pendingIntervalRollbacks.delete(cmdId);
-    const client = this.clients.get(rollback.clientKey);
-    if (!client?.info) {
-      return;
-    }
-    if (rollback.field === "pollMs") {
-      client.info.pollMs = rollback.oldValue;
-    } else {
-      client.info.updateCheckMs = rollback.oldValue;
-    }
-    console.log(`[MonitorServer] Reverted ${rollback.field} for ${rollback.clientKey} back to ${rollback.oldValue ?? "default"}`);
-  }
-  /** Return current interval settings for the UI. */
-  getIntervals() {
-    return {
-      backlogPollMs: this.backlogPollMs,
-      presenceCheckMs: this.presenceCheckMs,
-      syncScanMs: this.syncScanMs,
-      serverPresenceMs: this.serverPresenceMs,
-      clientPollMs: this.clientPollMs
-    };
-  }
-  checkClientPresence() {
-    const now = Date.now();
-    const keysToRemove = [];
-    let anyChanged = false;
-    const registeredInSync = /* @__PURE__ */ new Set();
-    if (this.fallback.isConfigured) {
-      try {
-        for (const entry of this.fallback.scanRegisteredClients()) {
-          registeredInSync.add(entry.clientKey);
-        }
-      } catch {
-      }
-    }
-    for (const [key, client] of this.clients) {
-      if (client.status === "sync" && now - client.lastSeen > 2 * 60 * 1e3) {
-        client.status = "offline";
-        console.log(`[MonitorServer] Sync client demoted to offline (stale presence): ${key}`);
-      } else if (client.status === "offline" && now - client.lastSeen > this.offlineTimeoutMs) {
-        if (registeredInSync.has(key)) {
-          continue;
-        }
-        keysToRemove.push(key);
-        console.log(`[MonitorServer] Removing stale offline client: ${key} (${client.info?.username}@${client.info?.hostname})`);
-      }
-      if (client.commandLog) {
-        let diskCmdIds = null;
-        const loadDiskQueue = () => {
-          if (diskCmdIds !== null) {
-            return;
-          }
-          diskCmdIds = /* @__PURE__ */ new Set();
-          if (this.fallback.isConfigured) {
-            try {
-              const cmds = this.fallback.peekQueuedCommands(client.clientLabel);
-              for (const cmd of cmds) {
-                diskCmdIds.add(cmd.id);
-              }
-            } catch {
-            }
-          }
-        };
-        for (const entry of client.commandLog) {
-          if ((entry.status === "queued" || entry.status === "sent") && now - entry.timestamp > this.commandTimeoutMs) {
-            loadDiskQueue();
-            if (!diskCmdIds.has(entry.id)) {
-              entry.status = "error";
-              entry.completedAt = now;
-              entry.result = { success: false, error: "Timed out \u2013 client consumed the command but did not respond" };
-              anyChanged = true;
-              console.log(`[MonitorServer] Command ${entry.id} (${entry.command}) timed out for ${client.clientLabel}`);
-            }
-          }
-        }
-      }
-    }
-    keysToRemove.forEach((key) => this.clients.delete(key));
-    if (keysToRemove.length > 0 || anyChanged) {
-      if (keysToRemove.length > 0) {
-        console.log(`[MonitorServer] Removed ${keysToRemove.length} stale client(s)`);
-      }
-      this.savePersistentClients();
-      this.triggerUpdate();
-    }
-  }
-  showUsageReportWebview(usageData, username = "Unknown", hostname2 = "Unknown") {
-    try {
-      const chartData = {
-        labels: usageData.agents.map((a) => a.name),
-        datasets: [{
-          label: "Usage Count",
-          data: usageData.agents.map((a) => a.count),
-          backgroundColor: [
-            "rgba(59, 130, 246, 0.2)",
-            // blue
-            "rgba(16, 185, 129, 0.2)",
-            // emerald
-            "rgba(168, 85, 247, 0.2)",
-            // purple
-            "rgba(251, 146, 60, 0.2)",
-            // orange
-            "rgba(244, 63, 94, 0.2)",
-            // red
-            "rgba(236, 72, 153, 0.2)"
-            // pink
-          ],
-          borderColor: [
-            "rgba(59, 130, 246, 1)",
-            "rgba(16, 185, 129, 1)",
-            "rgba(168, 85, 247, 1)",
-            "rgba(251, 146, 60, 1)",
-            "rgba(244, 63, 94, 1)",
-            "rgba(236, 72, 153, 1)"
-          ],
-          borderWidth: 2
-        }]
-      };
-      const panel = vscode.window.createWebviewPanel(
-        "bbrainyUsageReport",
-        `BBrainy Usage: ${usageData.timeframe}`,
-        vscode.ViewColumn.One,
-        {
-          enableScripts: true,
-          retainContextWhenHidden: true
-        }
-      );
-      panel.webview.html = this.getUsageReportHtml(usageData, chartData, username, hostname2);
-      console.log(`[MonitorServer] Opened usage report webview for ${username}@${hostname2}: ${usageData.timeframe}`);
-    } catch (error) {
-      console.error(`[MonitorServer] Failed to show usage report:`, error);
-      vscode.window.showErrorMessage(`Failed to show usage report: ${error}`);
-    }
-  }
-  getUsageReportHtml(usageData, chartData, username, hostname2) {
-    const agentRows = usageData.agents.map(
-      (agent) => `<tr>
-                <td><span class="agent-name">${agent.name}</span></td>
-                <td class="count">${agent.count}</td>
-                <td class="percentage">${agent.percentage}%</td>
-            </tr>`
-    ).join("");
-    return `
+            <tbody>${u}</tbody></table></div>`}).join(""),P=m.length;y.webview.html=['<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><style>',":root{color-scheme:dark}","body{background:var(--vscode-editor-background,#1e1e2e);color:var(--vscode-foreground,#cdd6f4);","  font-family:var(--vscode-font-family,ui-sans-serif,system-ui,sans-serif);padding:24px;margin:0}","h2{margin:0 0 4px;font-size:1.1rem}","h3{color:var(--vscode-charts-green,#a6e3a1);font-size:.85rem;border-bottom:1px solid var(--vscode-panel-border,#313244);padding-bottom:6px;margin:0 0 8px}",".section{margin-bottom:28px}","table{width:100%;border-collapse:collapse;table-layout:fixed}","col.col-time{width:140px}col.col-cmd{width:160px}col.col-result{width:auto}","th{text-align:left;font-size:.7rem;color:var(--vscode-descriptionForeground,#6c7086);padding-bottom:6px;font-weight:600;text-transform:uppercase;border-bottom:1px solid var(--vscode-panel-border,#313244)}",".cell{padding:6px 8px 6px 0;vertical-align:top;font-size:.75rem;border-bottom:1px solid var(--vscode-panel-border,#252535)}",".time{color:var(--vscode-descriptionForeground,#a6adc8);white-space:nowrap}",".cmd{color:var(--vscode-textLink-foreground,#89b4fa);font-family:monospace;font-size:.75rem}",".result-cell{color:var(--vscode-foreground,#cdd6f4)}",".r-pre{margin:0;white-space:pre-wrap;word-break:break-word;font-size:.7rem;opacity:.85}",".toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}",".empty{color:var(--vscode-descriptionForeground,#6c7086);font-style:italic;margin-top:20px}","button{background:var(--vscode-button-secondaryBackground,#313244);border:1px solid var(--vscode-panel-border,#45475a);","  color:var(--vscode-button-secondaryForeground,#cdd6f4);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.8rem}","button:hover{background:var(--vscode-button-secondaryHoverBackground,#45475a)}",".r-card{background:var(--vscode-editor-inactiveSelectionBackground,#2a2a3e);border-radius:6px;padding:8px 10px;font-size:.73rem}",".r-kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 10px;margin-bottom:6px}",".r-key{color:var(--vscode-descriptionForeground,#888);font-weight:600;white-space:nowrap}",".r-val{color:var(--vscode-foreground,#cdd6f4);word-break:break-word}",".r-badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.68rem;font-weight:700}",".r-badge.ok{background:rgba(166,227,161,.15);color:var(--vscode-charts-green,#a6e3a1)}",".r-badge.err{background:rgba(241,76,76,.15);color:var(--vscode-charts-red,#f38ba8)}",".r-subtable{width:100%;border-collapse:collapse;margin-top:6px}",".r-subtable th{font-size:.66rem;color:var(--vscode-descriptionForeground,#888);border-bottom:1px solid var(--vscode-panel-border,#313244);padding:2px 6px 3px 0}",".r-subtable td{font-size:.7rem;padding:2px 6px 2px 0;border-bottom:1px solid var(--vscode-panel-border,#25253a)}",".r-none{opacity:.4}",".r-details summary{font-size:.65rem;color:var(--vscode-textLink-foreground,#89b4fa);cursor:pointer;user-select:none;padding:2px 0}",".r-details .r-pre{margin-top:4px}","</style></head><body>",`<div class="toolbar"><h2>Server Backlog &mdash; ${P} result${P===1?"":"s"}</h2>`,'<button onclick="clearAll()">Clear All</button></div>',P===0?'<p class="empty">No backlog entries.</p>':B,"<script>","const vscode=acquireVsCodeApi();",'function clearAll(){vscode.postMessage({action:"clearBacklog"});}',"</script></body></html>"].join(`
+`),y.webview.onDidReceiveMessage(a=>{a.action==="clearBacklog"&&(this.fallback.clearRecentBacklog(),y.dispose(),this.triggerUpdate())})}handleBacklogResponse(e,t){if(t.id&&this.cancelledCommandIds.has(t.id)){this.cancelledCommandIds.delete(t.id),console.log(`[MonitorServer] Suppressed result for cancelled command ${t.id} (${t.command})`);return}let s=(t.clientKey?this.clients.get(t.clientKey):void 0)||Array.from(this.clients.values()).find(d=>d.clientLabel===e);if(!s){console.warn(`[MonitorServer] Response for unknown client: label=${e}, key=${t.clientKey}`);return}let n=t.payload&&t.payload.success===!1&&t.payload.error!==void 0,r=s.commandLog.find(d=>d.id===t.id),i=n?"error":"executed";r?(r.status=i,r.completedAt=Date.now(),r.result=t.payload):s.commandLog.push({id:t.id,command:t.command,status:i,timestamp:t.timestamp||Date.now(),completedAt:Date.now(),result:t.payload}),console.log(`[MonitorServer] Command ${t.id} (${t.command}) \u2192 ${i} [matched=${!!r}, client=${s.key}]`),t.payload!==void 0&&t.payload!==null&&(s.lastResponse={command:t.command,data:t.payload,timestamp:t.timestamp||Date.now()}),s.info||(s.info={}),t.command==="checkBBrainy"&&t.payload&&(s.info.bbrainyStatus=t.payload,this.showBBrainyStatusWebview(s.key)),t.command==="getSystemInfo"&&t.payload?.hostname&&(Object.assign(s.info,{hostname:t.payload.hostname,username:t.payload.username,os:t.payload.os,vscodeVersion:t.payload.vscodeVersion}),t.payload.extensionVersion&&(s.info.version=t.payload.extensionVersion),t.payload.bbrainyStatus&&(s.info.bbrainyStatus=t.payload.bbrainyStatus)),t.command==="getWorkspace"&&t.payload?.workspace&&(s.info.workspace=t.payload.workspace),t.command==="getUsageReport"&&t.payload?.totalEntries!==void 0&&(s.info.lastUsageReport=t.payload,this.showUsageReportWebview(t.payload,s.info?.username||e,s.info?.hostname||"Unknown")),t.command,t.command==="setPollInterval"&&(n?this.revertIntervalIfPending(t.id):(this.pendingIntervalRollbacks.delete(t.id),typeof t.payload?.intervalMs=="number"&&(s.info.pollMs=t.payload.intervalMs))),t.command==="setUpdateCheckInterval"&&(n?this.revertIntervalIfPending(t.id):(this.pendingIntervalRollbacks.delete(t.id),typeof t.payload?.intervalMs=="number"&&(s.info.updateCheckMs=t.payload.intervalMs)));let o=t.channel==="live"?"Live result":"Backlog result";console.log(`[MonitorServer] ${o} from ${e}: ${t.command} -> ${i}`)}importSyncClients(){let e=this.fallback.scanRegisteredClients();if(e.length===0)return;let t=2*60*60*1e3,s=r=>r.status==="inactive"&&Date.now()-r.lastSeen<t?"active":r.status??"active",n=0;for(let r of e){let o=Date.now()-r.lastSeen<12e4;if(this.clients.has(r.clientKey)){let d=this.clients.get(r.clientKey);d.extensionStatus=s(r),d.lastSeen=Math.max(d.lastSeen,r.lastSeen),d.status=o?"sync":"offline",r.version&&d.info&&(d.info.version=r.version);continue}this.clients.set(r.clientKey,{key:r.clientKey,info:{username:r.username,hostname:r.hostname,version:r.version||void 0},lastSeen:r.lastSeen,status:o?"sync":"offline",clientLabel:r.clientLabel,commandLog:[],extensionStatus:s(r)}),console.log(`[MonitorServer] Discovered new client via presence file: ${r.clientLabel} (${r.clientKey})`),n++}n>0&&(this.savePersistentClients(),this.triggerUpdate(),console.log(`[MonitorServer] Imported ${n} new client(s) from sync folder`))}loadPersistentClients(){if(!this.context||!this.serverId){console.warn(`[MonitorServer] Cannot load persistent clients: context=${!!this.context}, serverId=${this.serverId}`);return}let t=(this.context.globalState.get("persistentAssets")||{})[this.serverId]||[];console.log(`[MonitorServer] Loading ${t.length} persistent clients for serverId: ${this.serverId}`),t.forEach(s=>{this.clients.set(s.key,{...s,ws:null,status:"offline",clientLabel:s.clientLabel||`${s.info?.username||"unknown"}-${s.info?.hostname||"unknown"}`,commandLog:[]})})}restorePendingQueueToLog(){if(!this.fallback.isConfigured)return;let e=this.fallback.listQueuedClients();for(let t of e){let s=Array.from(this.clients.values()).find(r=>r.clientLabel===t);if(!s)continue;let n=this.fallback.peekQueuedCommands(t);for(let r of n)s.commandLog.find(i=>i.id===r.id)||s.commandLog.push({id:r.id,command:r.command,status:"queued",timestamp:r.timestamp});console.log(`[MonitorServer] Restored ${n.length} pending queued command(s) to log for ${t}`)}}deduplicateClients(){let e=new Set,t=[];for(let[s,n]of this.clients){let r=`${n.info?.hostname}:${n.info?.username}`;e.has(r)?(t.push(s),console.log(`[MonitorServer] Found duplicate client: ${s} (${n.info?.username}@${n.info?.hostname})`)):e.add(r)}t.forEach(s=>this.clients.delete(s)),t.length>0&&(this.savePersistentClients(),console.log(`[MonitorServer] Removed ${t.length} duplicate client entries`),h.window.showInformationMessage(`Cleaned up ${t.length} duplicate clients on startup`))}savePersistentClients(){if(!this.context||!this.serverId){console.error(`[MonitorServer] Cannot save persistent clients: context=${!!this.context}, serverId=${this.serverId}`);return}let e=this.context.globalState.get("persistentAssets")||{};e[this.serverId]=Array.from(this.clients.values()).map(t=>({key:t.key,info:t.info,lastSeen:t.lastSeen,clientLabel:t.clientLabel,commandLog:t.commandLog.slice(-100)})),this.context.globalState.update("persistentAssets",e),console.debug(`[MonitorServer] Saved ${this.clients.size} clients to persistent storage`)}setProvider(e){this.provider=e}async start(){if(this.running){console.warn("[MonitorServer] Already running, ignoring start request");return}if(!this.context){console.error("[MonitorServer] Cannot start: context not initialized"),h.window.showErrorMessage("Server not initialized with Context");return}let e=h.workspace.getConfiguration("serverMonitor"),t=this.context.globalState.get("serverKey");this.serverId=t||e.get("serverId")||"default",console.log(`[MonitorServer] Starting server with serverId: ${this.serverId}`),this.isScanning=!0,this.flushUpdate(),setImmediate(async()=>{this.clients.clear(),this.loadPersistentClients(),this.deduplicateClients(),this.setupFallback(),this.importSyncClients(),this.restorePendingQueueToLog(),this.running=!0,this.startPresenceCheck(),this.writeServerPresenceFile("online"),this.serverPresenceInterval&&clearInterval(this.serverPresenceInterval),this.serverPresenceInterval=setInterval(()=>this.writeServerPresenceFile("online"),this.serverPresenceMs),await new Promise(s=>setTimeout(s,600)),this.isScanning=!1,this.triggerUpdate(),console.log(`[MonitorServer] Server started successfully [${this.serverId}]`),h.window.showInformationMessage(`Monitor server [${this.serverId}] running`)})}async scanFleetNow(){!this.running||this.isScanning||(this.isScanning=!0,this.flushUpdate(),setImmediate(async()=>{this.importSyncClients(),this.checkClientPresence(),await new Promise(e=>setTimeout(e,600)),this.isScanning=!1,this.triggerUpdate()}))}startPresenceCheck(){this.presenceCheckInterval&&clearInterval(this.presenceCheckInterval),this.presenceCheckInterval=setInterval(()=>{this.checkClientPresence()},this.presenceCheckMs)}stop(){if(!this.running){console.warn("[MonitorServer] Not running, ignoring stop request");return}console.log("[MonitorServer] Stopping server"),this.presenceCheckInterval&&(clearInterval(this.presenceCheckInterval),this.presenceCheckInterval=null),this.syncScanInterval&&(clearInterval(this.syncScanInterval),this.syncScanInterval=null),this.writeServerPresenceFile("offline"),this.serverPresenceInterval&&(clearInterval(this.serverPresenceInterval),this.serverPresenceInterval=null),this.fallback.stopPolling(),this.running=!1;for(let e of this.clients.values())e.status="offline";this.triggerUpdate(),console.log("[MonitorServer] Server stopped"),h.window.showInformationMessage("Monitor server stopped")}setServerIntervals(e){let t=(s,n,r,i)=>s!==void 0?Math.max(n,Math.min(r,s)):i;this.backlogPollMs=t(e.backlogPollMs,3e3,3e5,this.backlogPollMs),this.presenceCheckMs=t(e.presenceCheckMs,3e3,3e5,this.presenceCheckMs),this.syncScanMs=t(e.syncScanMs,3e3,3e5,this.syncScanMs),this.serverPresenceMs=t(e.serverPresenceMs,3e3,3e5,this.serverPresenceMs),this.running&&(this.fallback.startPolling(this.backlogPollMs),this.syncScanInterval&&clearInterval(this.syncScanInterval),this.syncScanInterval=setInterval(()=>this.importSyncClients(),this.syncScanMs),this.startPresenceCheck(),this.serverPresenceInterval&&clearInterval(this.serverPresenceInterval),this.serverPresenceInterval=setInterval(()=>this.writeServerPresenceFile("online"),this.serverPresenceMs)),console.log(`[MonitorServer] Server intervals updated \u2014 backlog: ${this.backlogPollMs/1e3}s, presence: ${this.presenceCheckMs/1e3}s, sync-scan: ${this.syncScanMs/1e3}s, server-presence: ${this.serverPresenceMs/1e3}s`),this.persistIntervals(),this.triggerUpdate()}persistIntervals(){this.context&&this.context.globalState.update("serverIntervals",{backlogPollMs:this.backlogPollMs,presenceCheckMs:this.presenceCheckMs,syncScanMs:this.syncScanMs,serverPresenceMs:this.serverPresenceMs,clientPollMs:this.clientPollMs})}async setClientPollInterval(e,t,s){let n=Math.max(3e3,Math.min(3e5,t)),r=this.clients.get(e);if(r){r.info||(r.info={});let i=r.info.pollMs;r.info.pollMs=n,this.savePersistentClients();let o=await this.sendCommand(e,"setPollInterval",{intervalMs:n},s);o?this.pendingIntervalRollbacks.set(o,{clientKey:e,field:"pollMs",oldValue:i}):(r.info.pollMs=i,this.savePersistentClients(),this.triggerUpdate())}else await this.sendCommand(e,"setPollInterval",{intervalMs:n},s)}async setClientUpdateCheckInterval(e,t,s){let n=Math.max(6e4,Math.min(864e5,t)),r=this.clients.get(e);if(r){r.info||(r.info={});let i=r.info.updateCheckMs;r.info.updateCheckMs=n,this.savePersistentClients();let o=await this.sendCommand(e,"setUpdateCheckInterval",{intervalMs:n},s);o?this.pendingIntervalRollbacks.set(o,{clientKey:e,field:"updateCheckMs",oldValue:i}):(r.info.updateCheckMs=i,this.savePersistentClients(),this.triggerUpdate())}else await this.sendCommand(e,"setUpdateCheckInterval",{intervalMs:n},s)}revertIntervalIfPending(e){let t=this.pendingIntervalRollbacks.get(e);if(!t)return;this.pendingIntervalRollbacks.delete(e);let s=this.clients.get(t.clientKey);s?.info&&(t.field==="pollMs"?s.info.pollMs=t.oldValue:s.info.updateCheckMs=t.oldValue,console.log(`[MonitorServer] Reverted ${t.field} for ${t.clientKey} back to ${t.oldValue??"default"}`))}getIntervals(){return{backlogPollMs:this.backlogPollMs,presenceCheckMs:this.presenceCheckMs,syncScanMs:this.syncScanMs,serverPresenceMs:this.serverPresenceMs,clientPollMs:this.clientPollMs}}checkClientPresence(){let e=Date.now(),t=[],s=!1,n=new Set;if(this.fallback.isConfigured)try{for(let r of this.fallback.scanRegisteredClients())n.add(r.clientKey)}catch{}for(let[r,i]of this.clients){if(i.status==="sync"&&e-i.lastSeen>2*60*1e3)i.status="offline",console.log(`[MonitorServer] Sync client demoted to offline (stale presence): ${r}`);else if(i.status==="offline"&&e-i.lastSeen>this.offlineTimeoutMs){if(n.has(r))continue;t.push(r),console.log(`[MonitorServer] Removing stale offline client: ${r} (${i.info?.username}@${i.info?.hostname})`)}if(i.commandLog){let o=null,d=()=>{if(o===null&&(o=new Set,this.fallback.isConfigured))try{let g=this.fallback.peekQueuedCommands(i.clientLabel);for(let m of g)o.add(m.id)}catch{}};for(let g of i.commandLog)(g.status==="queued"||g.status==="sent")&&e-g.timestamp>this.commandTimeoutMs&&(d(),o.has(g.id)||(g.status="error",g.completedAt=e,g.result={success:!1,error:"Timed out \u2013 client consumed the command but did not respond"},s=!0,console.log(`[MonitorServer] Command ${g.id} (${g.command}) timed out for ${i.clientLabel}`)))}}if(t.forEach(r=>this.clients.delete(r)),this.cancelledCommandIds.size>500){let r=this.cancelledCommandIds.size-250,i=this.cancelledCommandIds.values();for(let o=0;o<r;o++)this.cancelledCommandIds.delete(i.next().value)}(t.length>0||s)&&(t.length>0&&console.log(`[MonitorServer] Removed ${t.length} stale client(s)`),this.savePersistentClients(),this.triggerUpdate())}showUsageReportWebview(e,t="Unknown",s="Unknown"){try{let n={labels:e.agents.map(i=>i.name),datasets:[{label:"Usage Count",data:e.agents.map(i=>i.count),backgroundColor:["rgba(59, 130, 246, 0.2)","rgba(16, 185, 129, 0.2)","rgba(168, 85, 247, 0.2)","rgba(251, 146, 60, 0.2)","rgba(244, 63, 94, 0.2)","rgba(236, 72, 153, 0.2)"],borderColor:["rgba(59, 130, 246, 1)","rgba(16, 185, 129, 1)","rgba(168, 85, 247, 1)","rgba(251, 146, 60, 1)","rgba(244, 63, 94, 1)","rgba(236, 72, 153, 1)"],borderWidth:2}]},r=h.window.createWebviewPanel("bbrainyUsageReport",`BBrainy Usage: ${e.timeframe}`,h.ViewColumn.One,{enableScripts:!0,retainContextWhenHidden:!0});r.webview.html=this.getUsageReportHtml(e,n,t,s),console.log(`[MonitorServer] Opened usage report webview for ${t}@${s}: ${e.timeframe}`)}catch(n){console.error("[MonitorServer] Failed to show usage report:",n),h.window.showErrorMessage(`Failed to show usage report: ${n}`)}}getUsageReportHtml(e,t,s,n){let r=e.agents.map(i=>`<tr>
+                <td><span class="agent-name">${i.name}</span></td>
+                <td class="count">${i.count}</td>
+                <td class="percentage">${i.percentage}%</td>
+            </tr>`).join("");return`
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -1513,22 +181,22 @@ var MonitorServer = class {
                 <div class="container">
                     <div class="header">
                         <h1>&#127919; BBrainy Usage Report</h1>
-                        <div class="client-info">&#128205; Client: <strong>${username}@${hostname2}</strong></div>
-                        <div class="timeframe">${usageData.timeframe}</div>
+                        <div class="client-info">&#128205; Client: <strong>${s}@${n}</strong></div>
+                        <div class="timeframe">${e.timeframe}</div>
                     </div>
                     
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">Total Usages</div>
-                            <div class="stat-value">${usageData.totalEntries}</div>
+                            <div class="stat-value">${e.totalEntries}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Unique Agents</div>
-                            <div class="stat-value">${usageData.agents.length}</div>
+                            <div class="stat-value">${e.agents.length}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Most Used</div>
-                            <div class="stat-value" style="font-size: 18px; color: #34d399;">${usageData.agents[0]?.name || "N/A"}</div>
+                            <div class="stat-value" style="font-size: 18px; color: #34d399;">${e.agents[0]?.name||"N/A"}</div>
                         </div>
                     </div>
                     
@@ -1542,7 +210,7 @@ var MonitorServer = class {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${agentRows}
+                                ${r}
                             </tbody>
                         </table>
                     </div>
@@ -1553,7 +221,7 @@ var MonitorServer = class {
                     </div>
                     
                     <div class="footer">
-                        <p>Generated: ${new Date(usageData.timestamp).toLocaleString()}</p>
+                        <p>Generated: ${new Date(e.timestamp).toLocaleString()}</p>
                     </div>
                 </div>
                 
@@ -1561,7 +229,7 @@ var MonitorServer = class {
                     const ctx = document.getElementById('usageChart').getContext('2d');
                     const chart = new Chart(ctx, {
                         type: 'bar',
-                        data: ${JSON.stringify(chartData)},
+                        data: ${JSON.stringify(t)},
                         options: {
                             indexAxis: 'y',
                             responsive: true,
@@ -1607,139 +275,18 @@ var MonitorServer = class {
                 </script>
             </body>
             </html>
-        `;
-  }
-  async sendCommand(clientKey, command, payload, providedCmdId) {
-    const client = this.clients.get(clientKey);
-    if (!client) {
-      console.warn(`[MonitorServer] Attempted to send command to non-existent client: ${clientKey}`);
-      vscode.window.showErrorMessage("Client not found");
-      return;
-    }
-    const cmdId = providedCmdId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const logEntry = { id: cmdId, command, status: "queued", timestamp: Date.now() };
-    client.commandLog.push(logEntry);
-    this.triggerUpdate();
-    if (!this.fallback.isConfigured) {
-      logEntry.status = "error";
-      logEntry.completedAt = Date.now();
-      const syncPath = vscode.workspace.getConfiguration("serverMonitor").get("syncPath") || "(empty)";
-      const msg = `Sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
-      console.error(`[MonitorServer] ${msg}`);
-      vscode.window.showErrorMessage(msg);
-      this.savePersistentClients();
-      this.triggerUpdate();
-      return;
-    }
-    this.fallback.stageCommand(client.clientLabel, clientKey, command, payload, cmdId);
-    this.fallback.scheduleFlush();
-    this.savePersistentClients();
-    console.log(`[MonitorServer] Staged "${command}" for ${client.clientLabel}`);
-    return cmdId;
-  }
-  // Remove all queued (not-yet-delivered) commands for a client from disk and log
-  clearClientQueue(clientKey) {
-    const client = this.clients.get(clientKey);
-    if (!client) {
-      return;
-    }
-    for (const entry of client.commandLog) {
-      this.revertIntervalIfPending(entry.id);
-    }
-    if (this.fallback.isConfigured) {
-      try {
-        const queueFile = path.join(this.fallback.syncPathValue, "queue", `${client.clientLabel}.json`);
-        if (fsPathExists(queueFile)) {
-          fsDeleteFile(queueFile);
-        }
-      } catch (e) {
-        console.error("[MonitorServer] clearClientQueue: failed to delete queue file", e);
-      }
-    }
-    client.commandLog = [];
-    this.savePersistentClients();
-    this.triggerUpdate();
-  }
-  // Clear the server-side backlog (callable directly from sidebar without opening the panel)
-  clearBacklog() {
-    this.fallback.clearRecentBacklog();
-    this.triggerUpdate();
-  }
-  // Cancel a single queued command entry (removes from disk queue + log)
-  cancelQueueEntry(clientKey, entryId) {
-    const client = this.clients.get(clientKey);
-    if (!client) {
-      return;
-    }
-    this.revertIntervalIfPending(entryId);
-    if (this.fallback.isConfigured) {
-      try {
-        const queueFile = path.join(this.fallback.syncPathValue, "queue", `${client.clientLabel}.json`);
-        if (fsPathExists(queueFile)) {
-          const cmds = JSON.parse(fsReadText(queueFile));
-          const remaining = cmds.filter((c) => c.id !== entryId);
-          if (remaining.length === 0) {
-            fsDeleteFile(queueFile);
-          } else {
-            fsWriteText(queueFile, JSON.stringify(remaining, null, 2));
-          }
-        }
-      } catch (e) {
-        console.error("[MonitorServer] cancelQueueEntry: failed to update queue file", e);
-      }
-    }
-    client.commandLog = client.commandLog.filter((e) => e.id !== entryId);
-    this.savePersistentClients();
-    this.triggerUpdate();
-  }
-  async queryAllClients(command) {
-    console.log(`[MonitorServer] Broadcasting command to all ${this.clients.size} clients: ${command}`);
-    for (const key of this.clients.keys()) {
-      await this.sendCommand(key, command);
-    }
-    const { succeeded, failed } = this.fallback.flushPendingQueue();
-    if (failed.length > 0) {
-      vscode.window.showWarningMessage(`Failed to queue command for ${failed.length} client(s)`);
-    }
-    this.triggerUpdate();
-    console.log(`[MonitorServer] Broadcast complete: ${succeeded.length} queued, ${failed.length} failed`);
-  }
-  getAllClientsInfo() {
-    return Array.from(this.clients.values()).map((c) => ({
-      key: c.key,
-      username: c.info?.username || "Unknown",
-      hostname: c.info?.hostname || "Unknown",
-      workspace: c.info?.workspace,
-      bbrainyActive: c.info?.bbrainyStatus?.active || false,
-      status: c.status,
-      lastSeen: c.lastSeen,
-      onlineStatus: c.status === "sync" ? "active" : "offline"
-    }));
-  }
-  showAllAssetsWebview() {
-    const assets = this.getAllClientsInfo();
-    const panel = vscode.window.createWebviewPanel(
-      "allAssets",
-      "All Assets",
-      vscode.ViewColumn.One,
-      { enableScripts: true }
-    );
-    panel.webview.html = this.getAllAssetsHtml(assets);
-  }
-  getAllAssetsHtml(assets) {
-    const assetRows = assets.map((asset) => `
+        `}async sendCommand(e,t,s,n){let r=this.clients.get(e);if(!r){console.warn(`[MonitorServer] Attempted to send command to non-existent client: ${e}`),h.window.showErrorMessage("Client not found");return}let i=n??`${Date.now()}-${Math.random().toString(36).substring(2,8)}`,o={id:i,command:t,status:"queued",timestamp:Date.now()};if(r.commandLog.push(o),this.triggerUpdate(),!this.fallback.isConfigured){o.status="error",o.completedAt=Date.now();let d="Communication path not configured. Please check serverMonitor.syncPath in settings.";console.error(`[MonitorServer] ${d}`),h.window.showErrorMessage(d),this.savePersistentClients(),this.triggerUpdate();return}return this.fallback.stageCommand(r.clientLabel,e,t,s,i),this.fallback.scheduleFlush(),this.savePersistentClients(),console.log(`[MonitorServer] Staged "${t}" for ${r.clientLabel}`),i}clearClientQueue(e){let t=this.clients.get(e);if(t){for(let s of t.commandLog)this.cancelledCommandIds.add(s.id),this.revertIntervalIfPending(s.id);if(this.fallback.clearStagedCommands(t.clientLabel),this.fallback.isConfigured)try{let s=v.join(this.fallback.syncPathValue,"queue",`${t.clientLabel}.json`);k(s)&&x(s)}catch(s){console.error("[MonitorServer] clearClientQueue: failed to delete queue file",s)}t.commandLog=[],this.savePersistentClients(),this.triggerUpdate()}}clearBacklog(){this.fallback.clearRecentBacklog(),this.triggerUpdate()}cancelQueueEntry(e,t){let s=this.clients.get(e);if(s){if(this.cancelledCommandIds.add(t),this.revertIntervalIfPending(t),this.fallback.isConfigured)try{let n=v.join(this.fallback.syncPathValue,"queue",`${s.clientLabel}.json`);if(k(n)){let i=JSON.parse($(n)).filter(o=>o.id!==t);i.length===0?x(n):R(n,JSON.stringify(i,null,2))}}catch(n){console.error("[MonitorServer] cancelQueueEntry: failed to update queue file",n)}s.commandLog=s.commandLog.filter(n=>n.id!==t),this.savePersistentClients(),this.triggerUpdate()}}async queryAllClients(e){console.log(`[MonitorServer] Broadcasting command to all ${this.clients.size} clients: ${e}`);for(let n of this.clients.keys())await this.sendCommand(n,e);let{succeeded:t,failed:s}=this.fallback.flushPendingQueue();s.length>0&&h.window.showWarningMessage(`Failed to queue command for ${s.length} client(s)`),this.triggerUpdate(),console.log(`[MonitorServer] Broadcast complete: ${t.length} queued, ${s.length} failed`)}getAllClientsInfo(){return Array.from(this.clients.values()).map(e=>({key:e.key,username:e.info?.username||"Unknown",hostname:e.info?.hostname||"Unknown",workspace:e.info?.workspace,bbrainyActive:e.info?.bbrainyStatus?.active||!1,status:e.status,lastSeen:e.lastSeen,onlineStatus:e.status==="sync"?"active":"offline"}))}showAllAssetsWebview(){let e=this.getAllClientsInfo(),t=h.window.createWebviewPanel("allAssets","All Assets",h.ViewColumn.One,{enableScripts:!0});t.webview.html=this.getAllAssetsHtml(e)}getAllAssetsHtml(e){let t=e.map(s=>`
             <tr>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.username}</td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.hostname}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${s.username}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${s.hostname}</td>
                 <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">
-                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${asset.onlineStatus === "active" ? "#f59e0b" : "#ef4444"};"></span>
-                    ${asset.onlineStatus}
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${s.onlineStatus==="active"?"#f59e0b":"#ef4444"};"></span>
+                    ${s.onlineStatus}
                 </td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${asset.bbrainyActive ? "&#10003; Active" : "&#10007; Inactive"}</td>
-                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">${asset.lastSeen ? new Date(asset.lastSeen).toLocaleString() : "Never"}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2);">${s.bbrainyActive?"&#10003; Active":"&#10007; Inactive"}</td>
+                <td style="padding: 15px; border-bottom: 1px solid rgba(100, 116, 139, 0.2); text-align: center;">${s.lastSeen?new Date(s.lastSeen).toLocaleString():"Never"}</td>
             </tr>
-        `).join("");
-    return `
+        `).join("");return`
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -1821,19 +368,19 @@ var MonitorServer = class {
             </head>
             <body>
                 <div class="container">
-                    <h1>&#128202; All Assets (${assets.length} Total)</h1>
+                    <h1>&#128202; All Assets (${e.length} Total)</h1>
                     
                     <div class="summary-stats">
                         <div class="stat-card">
-                            <div class="stat-value">${assets.length}</div>
+                            <div class="stat-value">${e.length}</div>
                             <div class="stat-label">Total Clients</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${assets.filter((a) => a.onlineStatus === "active").length}</div>
+                            <div class="stat-value">${e.filter(s=>s.onlineStatus==="active").length}</div>
                             <div class="stat-label">Active (Sync)</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">${assets.filter((a) => a.bbrainyActive).length}</div>
+                            <div class="stat-value">${e.filter(s=>s.bbrainyActive).length}</div>
                             <div class="stat-label">BBrainy Active</div>
                         </div>
                     </div>
@@ -1850,45 +397,14 @@ var MonitorServer = class {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${assetRows}
+                                ${t}
                             </tbody>
                         </table>
                     </div>
                 </div>
             </body>
             </html>
-        `;
-  }
-  showBBrainyStatusWebview(clientKey) {
-    const client = this.clients.get(clientKey);
-    if (!client) {
-      vscode.window.showErrorMessage(`Client ${clientKey} not found`);
-      return;
-    }
-    const status = client.info?.bbrainyStatus || {
-      installed: false,
-      active: false,
-      version: "Unknown",
-      lastUsedTime: "Never",
-      totalUsage: 0
-    };
-    const panel = vscode.window.createWebviewPanel(
-      `bbrainyStatus-${clientKey}`,
-      `BBrainy Status - ${client.info?.username}@${client.info?.hostname}`,
-      vscode.ViewColumn.One,
-      { enableScripts: true }
-    );
-    panel.webview.html = this.getBBrainyStatusHtml(status, client.info?.username, client.info?.hostname);
-  }
-  getBBrainyStatusHtml(status, username = "Unknown", hostname2 = "Unknown") {
-    const installed = status.installed;
-    const active = status.active;
-    const version = status.version || "Unknown";
-    const lastUsed = status.lastUsedTime || "Never";
-    const totalUsage = status.totalUsage || 0;
-    const statusColor = installed ? active ? "#34d399" : "#f59e0b" : "#ef4444";
-    const statusText = installed ? active ? "Active" : "Installed - Inactive" : "Not Installed";
-    return `
+        `}showBBrainyStatusWebview(e){let t=this.clients.get(e);if(!t){h.window.showErrorMessage(`Client ${e} not found`);return}let s=t.info?.bbrainyStatus||{installed:!1,active:!1,version:"Unknown",lastUsedTime:"Never",totalUsage:0},n=h.window.createWebviewPanel(`bbrainyStatus-${e}`,`BBrainy Status - ${t.info?.username}@${t.info?.hostname}`,h.ViewColumn.One,{enableScripts:!0});n.webview.html=this.getBBrainyStatusHtml(s,t.info?.username,t.info?.hostname)}getBBrainyStatusHtml(e,t="Unknown",s="Unknown"){let n=e.installed,r=e.active,i=e.version||"Unknown",o=e.lastUsedTime||"Never",d=e.totalUsage||0,g=n?r?"#34d399":"#f59e0b":"#ef4444";return`
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -1930,9 +446,9 @@ var MonitorServer = class {
                         border-radius: 12px;
                         font-size: 14px;
                         font-weight: 600;
-                        background-color: ${statusColor}20;
-                        color: ${statusColor};
-                        border: 2px solid ${statusColor};
+                        background-color: ${g}20;
+                        color: ${g};
+                        border: 2px solid ${g};
                         margin-top: 15px;
                     }
                     .stats-grid {
@@ -1994,126 +510,51 @@ var MonitorServer = class {
             <body>
                 <div class="container">
                     <div class="client-info">
-                        <div class="client-name">&#128241; ${username}@${hostname2}</div>
+                        <div class="client-name">&#128241; ${t}@${s}</div>
                         <h1>&#129504; BBrainy Status</h1>
-                        <div class="status-badge">${statusText}</div>
+                        <div class="status-badge">${n?r?"Active":"Installed - Inactive":"Not Installed"}</div>
                     </div>
 
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">Installed</div>
-                            <div class="stat-value">${installed ? "&#10003; Yes" : "&#10007; No"}</div>
+                            <div class="stat-value">${n?"&#10003; Yes":"&#10007; No"}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Version</div>
-                            <div class="stat-value">${version}</div>
+                            <div class="stat-value">${i}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Last Used</div>
-                            <div class="stat-value" style="font-size: 14px;">${lastUsed}</div>
+                            <div class="stat-value" style="font-size: 14px;">${o}</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-label">Total Usage</div>
-                            <div class="stat-value">${totalUsage}</div>
+                            <div class="stat-value">${d}</div>
                         </div>
                     </div>
 
                     <div class="contribution-graph">
                         <div class="graph-title">&#128202; Contribution Graph (Last 12 Weeks)</div>
                         <div class="graph-grid">
-                            ${Array.from({ length: 84 }, (_, i) => `<div class="graph-cell" style="background: rgba(52, 211, 153, ${Math.random() * 0.5});"></div>`).join("")}
+                            ${Array.from({length:84},(c,y)=>`<div class="graph-cell" style="background: rgba(52, 211, 153, ${Math.random()*.5});"></div>`).join("")}
                         </div>
                         <div style="font-size: 12px; color: #94a3b8; text-align: center;">Green intensity shows activity level</div>
                     </div>
                 </div>
             </body>
             </html>
-        `;
-  }
-  async generateReport() {
-    const now = /* @__PURE__ */ new Date();
-    const clientsArray = Array.from(this.clients.values());
-    const sync = clientsArray.filter((c) => c.status === "sync");
-    const offline = clientsArray.filter((c) => c.status === "offline");
-    const inactive = clientsArray.filter((c) => c.extensionStatus === "inactive");
-    const reportData = {
-      generatedAt: now.toISOString(),
-      server: {
-        key: this.serverId,
-        machine: os.hostname(),
-        username: os.userInfo().username,
-        version: this.version,
-        running: this.running,
-        syncPath: this.fallback.syncPathValue || "(not configured)"
-      },
-      summary: {
-        total: clientsArray.length,
-        sync: sync.length,
-        offline: offline.length,
-        inactive: inactive.length
-      },
-      clients: clientsArray.map((c) => ({
-        label: c.clientLabel,
-        key: c.key,
-        username: c.info?.username,
-        hostname: c.info?.hostname,
-        workspace: c.info?.workspace,
-        version: c.info?.version,
-        bbrainyActive: c.info?.bbrainyStatus?.active,
-        status: c.status,
-        extensionStatus: c.extensionStatus ?? "active",
-        lastSeen: new Date(c.lastSeen).toISOString(),
-        pendingCommands: c.commandLog.filter((e) => e.status === "queued" || e.status === "sent").length,
-        lastCommand: c.commandLog.length > 0 ? c.commandLog[c.commandLog.length - 1]?.command : null
-      }))
-    };
-    const exportJson = JSON.stringify(reportData, null, 2);
-    const statusColor = {
-      sync: "#f59e0b",
-      offline: "#94a3b8",
-      active: "#22c55e",
-      inactive: "#f97316"
-    };
-    const clientRows = clientsArray.map((c) => {
-      const pending = c.commandLog.filter((e) => e.status === "queued" || e.status === "sent").length;
-      const bbrainyDot = c.info?.bbrainyStatus?.active ? "#22c55e" : "#475569";
-      return `<tr>
+        `}async generateReport(){let e=new Date,t=Array.from(this.clients.values()),s=t.filter(c=>c.status==="sync"),n=t.filter(c=>c.status==="offline"),r=t.filter(c=>c.extensionStatus==="inactive"),i={generatedAt:e.toISOString(),server:{key:this.serverId,machine:b.hostname(),username:b.userInfo().username,version:this.version,running:this.running},summary:{total:t.length,sync:s.length,offline:n.length,inactive:r.length},clients:t.map(c=>({label:c.clientLabel,key:c.key,username:c.info?.username,hostname:c.info?.hostname,workspace:c.info?.workspace,version:c.info?.version,bbrainyActive:c.info?.bbrainyStatus?.active,status:c.status,extensionStatus:c.extensionStatus??"active",lastSeen:new Date(c.lastSeen).toISOString(),pendingCommands:c.commandLog.filter(y=>y.status==="queued"||y.status==="sent").length,lastCommand:c.commandLog.length>0?c.commandLog[c.commandLog.length-1]?.command:null}))},o=JSON.stringify(i,null,2),d={sync:"#f59e0b",offline:"#94a3b8",active:"#22c55e",inactive:"#f97316"},g=t.map(c=>{let y=c.commandLog.filter(P=>P.status==="queued"||P.status==="sent").length,B=c.info?.bbrainyStatus?.active?"#22c55e":"#475569";return`<tr>
                 <td><span class="label">${c.clientLabel}</span></td>
-                <td>${c.info?.username || "&#8212;"}</td>
-                <td>${c.info?.hostname || "&#8212;"}</td>
-                <td>${c.info?.version || "&#8212;"}</td>
-                <td><span class="badge" style="color:${statusColor[c.status] || "#94a3b8"}">${c.status}</span></td>
-                <td><span class="badge" style="color:${statusColor[c.extensionStatus ?? "active"] || "#94a3b8"}">${c.extensionStatus ?? "active"}</span></td>
-                <td><span style="color:${bbrainyDot};font-size:18px">&#9679;</span></td>
-                <td>${pending > 0 ? `<span class="badge-warn">${pending} pending</span>` : '<span class="badge-ok">0</span>'}</td>
+                <td>${c.info?.username||"&#8212;"}</td>
+                <td>${c.info?.hostname||"&#8212;"}</td>
+                <td>${c.info?.version||"&#8212;"}</td>
+                <td><span class="badge" style="color:${d[c.status]||"#94a3b8"}">${c.status}</span></td>
+                <td><span class="badge" style="color:${d[c.extensionStatus??"active"]||"#94a3b8"}">${c.extensionStatus??"active"}</span></td>
+                <td><span style="color:${B};font-size:18px">&#9679;</span></td>
+                <td>${y>0?`<span class="badge-warn">${y} pending</span>`:'<span class="badge-ok">0</span>'}</td>
                 <td>${new Date(c.lastSeen).toLocaleString()}</td>
-            </tr>`;
-    }).join("");
-    const panel = vscode.window.createWebviewPanel(
-      "serverReport",
-      `Server Report - ${this.serverId}`,
-      vscode.ViewColumn.One,
-      { enableScripts: true, retainContextWhenHidden: true }
-    );
-    panel.webview.onDidReceiveMessage((msg) => {
-      if (msg.action === "exportJson") {
-        vscode.window.showSaveDialog({
-          defaultUri: vscode.Uri.file(path.join(os.homedir(), `server-report-${this.serverId}-${Date.now()}.json`)),
-          filters: { "JSON": ["json"] },
-          title: "Save Server Report"
-        }).then((uri) => {
-          if (uri) {
-            try {
-              fs.writeFileSync(uri.fsPath, exportJson, "utf-8");
-              vscode.window.showInformationMessage(`Report saved to ${uri.fsPath}`);
-            } catch (e) {
-              vscode.window.showErrorMessage(`Failed to save: ${e}`);
-            }
-          }
-        });
-      }
-    });
-    panel.webview.html = `<!DOCTYPE html>
+            </tr>`}).join(""),m=h.window.createWebviewPanel("serverReport",`Server Report - ${this.serverId}`,h.ViewColumn.One,{enableScripts:!0,retainContextWhenHidden:!0});m.webview.onDidReceiveMessage(c=>{c.action==="exportJson"&&h.window.showSaveDialog({defaultUri:h.Uri.file(v.join(b.homedir(),`server-report-${this.serverId}-${Date.now()}.json`)),filters:{JSON:["json"]},title:"Save Server Report"}).then(y=>{if(y)try{f.writeFileSync(y.fsPath,o,"utf-8"),h.window.showInformationMessage(`Report saved to ${y.fsPath}`)}catch(B){h.window.showErrorMessage(`Failed to save: ${B}`)}})}),m.webview.html=`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2151,15 +592,15 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
 <body>
 <div class="container">
   <h1>&#128202; Server Monitor Report</h1>
-  <div class="subtitle">Generated: ${now.toLocaleString()} &nbsp;|&nbsp; Server: <strong>${this.serverId}</strong> on <strong>${os.hostname()}</strong></div>
+  <div class="subtitle">Generated: ${e.toLocaleString()} &nbsp;|&nbsp; Server: <strong>${this.serverId}</strong> on <strong>${b.hostname()}</strong></div>
 
   <div class="section">
     <h2>Summary</h2>
     <div class="grid">
-      <div class="card"><div class="card-label">Total Clients</div><div class="card-value">${clientsArray.length}</div></div>
-      <div class="card"><div class="card-label">Active (Sync)</div><div class="card-value amber">${sync.length}</div></div>
-      <div class="card"><div class="card-label">Offline</div><div class="card-value red">${offline.length}</div></div>
-      <div class="card"><div class="card-label">Uninstalled</div><div class="card-value orange">${inactive.length}</div></div>
+      <div class="card"><div class="card-label">Total Clients</div><div class="card-value">${t.length}</div></div>
+      <div class="card"><div class="card-label">Active (Sync)</div><div class="card-value amber">${s.length}</div></div>
+      <div class="card"><div class="card-label">Offline</div><div class="card-value red">${n.length}</div></div>
+      <div class="card"><div class="card-label">Uninstalled</div><div class="card-value orange">${r.length}</div></div>
     </div>
   </div>
 
@@ -2167,23 +608,23 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
     <h2>Server Info</h2>
     <div class="info-grid">
       <div><div class="info-row"><span class="info-key">Server Key</span><span class="info-val">${this.serverId}</span></div>
-           <div class="info-row"><span class="info-key">Machine</span><span class="info-val">${os.hostname()}</span></div>
-           <div class="info-row"><span class="info-key">Username</span><span class="info-val">${os.userInfo().username}</span></div>
+           <div class="info-row"><span class="info-key">Machine</span><span class="info-val">${b.hostname()}</span></div>
+           <div class="info-row"><span class="info-key">Username</span><span class="info-val">${b.userInfo().username}</span></div>
            <div class="info-row"><span class="info-key">Version</span><span class="info-val">${this.version}</span></div></div>
       <div>
-           <div class="info-row"><span class="info-key">Status</span><span class="info-val" style="color:${this.running ? "#22c55e" : "#f87171"}">${this.running ? "Running" : "Stopped"}</span></div>
-           <div class="info-row"><span class="info-key">Sync Path</span><span class="info-val">${this.fallback.syncPathValue || "(not configured)"}</span></div></div>
+           <div class="info-row"><span class="info-key">Status</span><span class="info-val" style="color:${this.running?"#22c55e":"#f87171"}">${this.running?"Running":"Stopped"}</span></div>
+      </div>
     </div>
   </div>
 
   <div class="section">
-    <h2>Clients (${clientsArray.length})</h2>
+    <h2>Clients (${t.length})</h2>
     <table>
       <thead><tr>
         <th>Label</th><th>User</th><th>Host</th><th>Version</th>
         <th>Sync Status</th><th>Ext Status</th><th>BBrainy</th><th>Queue</th><th>Last Seen</th>
       </tr></thead>
-      <tbody>${clientRows || '<tr><td colspan="9" style="text-align:center;color:#475569;padding:20px">No clients registered</td></tr>'}</tbody>
+      <tbody>${g||'<tr><td colspan="9" style="text-align:center;color:#475569;padding:20px">No clients registered</td></tr>'}</tbody>
     </table>
   </div>
 
@@ -2191,168 +632,7 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
 </div>
 <script>const vscode=acquireVsCodeApi();</script>
 </body>
-</html>`;
-  }
-  // Publish a client extension update via client-release folder
-  async publishClientUpdate() {
-    const vsixFiles = await vscode.window.showOpenDialog({
-      canSelectFiles: true,
-      canSelectFolders: false,
-      canSelectMany: false,
-      filters: { "VSIX Extension": ["vsix"] },
-      title: "Select client extension VSIX to publish"
-    });
-    if (vsixFiles && vsixFiles[0]) {
-      if (this.clientReleasePath) {
-        try {
-          const updatesDir = path.join(this.clientReleasePath, "updates");
-          fs.mkdirSync(updatesDir, { recursive: true });
-          const filename = path.basename(vsixFiles[0].fsPath);
-          fs.copyFileSync(vsixFiles[0].fsPath, path.join(updatesDir, filename));
-          console.log(`[MonitorServer] Published update to client-release: ${filename}`);
-          vscode.window.showInformationMessage(`Update published: ${filename}`);
-        } catch (e) {
-          console.error("[MonitorServer] Failed to publish update:", e);
-          vscode.window.showErrorMessage(`Failed to publish update: ${e}`);
-        }
-      } else {
-        vscode.window.showErrorMessage("Client release path not configured. Set serverMonitor.clientReleasePath first.");
-      }
-    }
-  }
-  triggerUpdate() {
-    if (this.updateDebounceTimer) {
-      clearTimeout(this.updateDebounceTimer);
-    }
-    this.updateDebounceTimer = setTimeout(() => {
-      this.updateDebounceTimer = null;
-      this.flushUpdate();
-    }, 150);
-  }
-  /** Actually build and push the dashboard payload to the webview. */
-  flushUpdate() {
-    if (this.provider) {
-      const clientsArray = Array.from(this.clients.values());
-      this.provider.update({
-        serverStatus: {
-          running: this.running,
-          serverId: this.serverId
-        },
-        total: this.clients.size,
-        sync: clientsArray.filter((c) => c.status === "sync").length,
-        offline: clientsArray.filter((c) => c.status === "offline").length,
-        clients: clientsArray.map((c) => ({
-          key: c.key,
-          hostname: c.info?.hostname,
-          username: c.info?.username,
-          workspace: c.info?.workspace,
-          bbrainyActive: c.info?.bbrainyStatus?.active,
-          lastSeen: c.lastSeen,
-          status: c.status,
-          clientLabel: c.clientLabel,
-          commandLog: c.commandLog.slice(-100),
-          lastResponse: c.lastResponse,
-          extensionStatus: c.extensionStatus,
-          pollMs: c.info?.pollMs,
-          updateCheckMs: c.info?.updateCheckMs
-        })),
-        backlogCount: this.fallback.getRecentBacklog().length,
-        intervals: {
-          backlogPollMs: this.backlogPollMs,
-          presenceCheckMs: this.presenceCheckMs,
-          syncScanMs: this.syncScanMs,
-          serverPresenceMs: this.serverPresenceMs,
-          clientPollMs: this.clientPollMs
-        },
-        scanning: this.isScanning
-      });
-    }
-  }
-};
-
-// src/backend/providers/MonitorViewProvider.ts
-var vscode2 = __toESM(require("vscode"));
-var MonitorViewProvider = class {
-  constructor(_extensionUri, server) {
-    this._extensionUri = _extensionUri;
-    this.server = server;
-  }
-  static viewType = "monitor-dashboard";
-  _view;
-  resolveWebviewView(webviewView, _context, _token) {
-    this._view = webviewView;
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [
-        vscode2.Uri.joinPath(this._extensionUri, "dist")
-      ]
-    };
-    webviewView.webview.html = this._getWebviewContent(webviewView.webview);
-    webviewView.webview.onDidReceiveMessage(async (message) => {
-      switch (message.action) {
-        case "sendCommand":
-          await this.server.sendCommand(message.clientKey, message.command, message.payload, message.cmdId);
-          break;
-        case "queryAll":
-          await this.server.queryAllClients(message.command);
-          break;
-        case "showAssets":
-          this.server.showAllAssetsWebview();
-          break;
-        case "showBBrainyStatus":
-          this.server.showBBrainyStatusWebview(message.clientKey);
-          break;
-        case "generateReport":
-          await this.server.generateReport();
-          break;
-        case "startServer":
-          await this.server.start();
-          break;
-        case "stopServer":
-          this.server.stop();
-          break;
-        case "changeServerKey":
-          await this.server.changeServerKey(message.newKey);
-          break;
-        case "viewBacklog":
-          this.server.showBacklogWebview();
-          break;
-        case "clearBacklog":
-          this.server.clearBacklog();
-          break;
-        case "clearClientQueue":
-          this.server.clearClientQueue(message.clientKey);
-          break;
-        case "cancelQueueEntry":
-          this.server.cancelQueueEntry(message.clientKey, message.entryId);
-          break;
-        case "setServerIntervals":
-          this.server.setServerIntervals(message.intervals);
-          break;
-        case "setClientPollInterval":
-          await this.server.setClientPollInterval(message.clientKey, message.intervalMs, message.cmdId);
-          break;
-        case "setClientUpdateCheckInterval":
-          await this.server.setClientUpdateCheckInterval(message.clientKey, message.intervalMs, message.cmdId);
-          break;
-      }
-    });
-    this.server.triggerUpdate();
-  }
-  update(data) {
-    if (this._view) {
-      this._view.webview.postMessage({
-        type: "update",
-        data
-      });
-    }
-  }
-  _getWebviewContent(webview) {
-    const nonce = getNonce();
-    const webviewUri = (filePath) => webview.asWebviewUri(vscode2.Uri.joinPath(this._extensionUri, "dist", filePath));
-    const jsUri = webviewUri("monitor-webview.js");
-    const cssUri = webviewUri("monitor-webview.css");
-    return `
+</html>`}async publishClientUpdate(){let e=await h.window.showOpenDialog({canSelectFiles:!0,canSelectFolders:!1,canSelectMany:!1,filters:{"VSIX Extension":["vsix"]},title:"Select client extension VSIX to publish"});if(e&&e[0])if(this.clientReleasePath)try{let t=v.join(this.clientReleasePath,"updates");f.mkdirSync(t,{recursive:!0});let s=v.basename(e[0].fsPath);f.copyFileSync(e[0].fsPath,v.join(t,s)),console.log(`[MonitorServer] Published update to client-release: ${s}`),h.window.showInformationMessage(`Update published: ${s}`)}catch(t){console.error("[MonitorServer] Failed to publish update:",t),h.window.showErrorMessage(`Failed to publish update: ${t}`)}else h.window.showErrorMessage("Client release path not configured. Set serverMonitor.clientReleasePath first.")}triggerUpdate(){this.updateDebounceTimer&&clearTimeout(this.updateDebounceTimer),this.updateDebounceTimer=setTimeout(()=>{this.updateDebounceTimer=null,this.flushUpdate()},150)}flushUpdate(){if(this.provider){let e=Array.from(this.clients.values());this.provider.update({serverStatus:{running:this.running,serverId:this.serverId},total:this.clients.size,sync:e.filter(t=>t.status==="sync").length,offline:e.filter(t=>t.status==="offline").length,clients:e.map(t=>({key:t.key,hostname:t.info?.hostname,username:t.info?.username,workspace:t.info?.workspace,bbrainyActive:t.info?.bbrainyStatus?.active,lastSeen:t.lastSeen,status:t.status,clientLabel:t.clientLabel,commandLog:t.commandLog.slice(-100),lastResponse:t.lastResponse,extensionStatus:t.extensionStatus,pollMs:t.info?.pollMs,updateCheckMs:t.info?.updateCheckMs})),backlogCount:this.fallback.getRecentBacklog().length,intervals:{backlogPollMs:this.backlogPollMs,presenceCheckMs:this.presenceCheckMs,syncScanMs:this.syncScanMs,serverPresenceMs:this.serverPresenceMs,clientPollMs:this.clientPollMs},scanning:this.isScanning})}}};var j=I(require("vscode")),F=class{constructor(e,t){this._extensionUri=e;this.server=t}static viewType="monitor-dashboard";_view;resolveWebviewView(e,t,s){this._view=e,e.webview.options={enableScripts:!0,localResourceRoots:[j.Uri.joinPath(this._extensionUri,"dist")]},e.webview.html=this._getWebviewContent(e.webview),e.webview.onDidReceiveMessage(async n=>{switch(n.action){case"sendCommand":await this.server.sendCommand(n.clientKey,n.command,n.payload,n.cmdId);break;case"queryAll":await this.server.queryAllClients(n.command);break;case"scanFleet":await this.server.scanFleetNow();break;case"showAssets":this.server.showAllAssetsWebview(),this._view?.webview.postMessage({type:"actionDone",action:"showAssets"});break;case"showBBrainyStatus":this.server.showBBrainyStatusWebview(n.clientKey);break;case"generateReport":await this.server.generateReport(),this._view?.webview.postMessage({type:"actionDone",action:"generateReport"});break;case"startServer":await this.server.start();break;case"stopServer":this.server.stop();break;case"changeServerKey":await this.server.changeServerKey(n.newKey);break;case"viewBacklog":this.server.showBacklogWebview();break;case"clearBacklog":this.server.clearBacklog();break;case"clearClientQueue":this.server.clearClientQueue(n.clientKey);break;case"cancelQueueEntry":this.server.cancelQueueEntry(n.clientKey,n.entryId);break;case"setServerIntervals":this.server.setServerIntervals(n.intervals);break;case"setClientPollInterval":await this.server.setClientPollInterval(n.clientKey,n.intervalMs,n.cmdId);break;case"setClientUpdateCheckInterval":await this.server.setClientUpdateCheckInterval(n.clientKey,n.intervalMs,n.cmdId);break}}),this.server.triggerUpdate()}update(e){this._view&&this._view.webview.postMessage({type:"update",data:e})}_getWebviewContent(e){let t=_(),s=i=>e.asWebviewUri(j.Uri.joinPath(this._extensionUri,"dist",i)),n=s("monitor-webview.js"),r=s("monitor-webview.css");return`
             <!DOCTYPE html>
             <html lang="en">
             <head>
@@ -2360,65 +640,18 @@ var MonitorViewProvider = class {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <meta http-equiv="Content-Security-Policy" content="
                     default-src 'none';
-                    style-src ${webview.cspSource} 'unsafe-inline';
-                    font-src ${webview.cspSource};
-                    img-src ${webview.cspSource} https: data:;
-                    script-src 'nonce-${nonce}';
-                    connect-src 'self' ${webview.cspSource} https: ws:;
+                    style-src ${e.cspSource} 'unsafe-inline';
+                    font-src ${e.cspSource};
+                    img-src ${e.cspSource} https: data:;
+                    script-src 'nonce-${t}';
+                    connect-src 'self' ${e.cspSource} https: ws:;
                 ">
-                <link href="${cssUri}" rel="stylesheet">
+                <link href="${r}" rel="stylesheet">
                 <title>Monitor Dashboard</title>
             </head>
             <body>
                 <div id="root"></div>
-                <script nonce="${nonce}" src="${jsUri}"></script>
+                <script nonce="${t}" src="${n}"></script>
             </body>
             </html>
-        `;
-  }
-};
-function getNonce() {
-  let text = "";
-  const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
-}
-
-// src/backend/extension.ts
-var serverInstance = null;
-function activate(context) {
-  const server = new MonitorServer();
-  serverInstance = server;
-  server.initialize(context);
-  const provider = new MonitorViewProvider(context.extensionUri, server);
-  server.setProvider(provider);
-  context.subscriptions.push(
-    vscode3.window.registerWebviewViewProvider(MonitorViewProvider.viewType, provider, {
-      webviewOptions: { retainContextWhenHidden: true }
-    }),
-    vscode3.commands.registerCommand("serverMonitor.start", () => server.start()),
-    vscode3.commands.registerCommand("serverMonitor.showDashboard", () => {
-      vscode3.commands.executeCommand("workbench.view.extension.monitor-explorer");
-    }),
-    vscode3.commands.registerCommand("serverMonitor.generateReport", () => server.generateReport()),
-    vscode3.commands.registerCommand("serverMonitor.publishUpdate", () => server.publishClientUpdate()),
-    vscode3.commands.registerCommand("serverMonitor.stop", () => server.stop()),
-    vscode3.commands.registerCommand("serverMonitor.viewBacklog", () => server.showBacklogWebview())
-  );
-  const config = vscode3.workspace.getConfiguration("serverMonitor");
-  if (config.get("autoStart")) {
-    server.start();
-  }
-}
-function deactivate() {
-  serverInstance?.removeServerPresenceFile();
-  serverInstance = null;
-}
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  activate,
-  deactivate
-});
-//# sourceMappingURL=extension.js.map
+        `}};function _(){let l="",e="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";for(let t=0;t<32;t++)l+=e.charAt(Math.floor(Math.random()*e.length));return l}var D=null;function H(l){let e=new E;D=e,e.initialize(l);let t=new F(l.extensionUri,e);e.setProvider(t),l.subscriptions.push(w.window.registerWebviewViewProvider(F.viewType,t,{webviewOptions:{retainContextWhenHidden:!0}}),w.commands.registerCommand("serverMonitor.start",()=>e.start()),w.commands.registerCommand("serverMonitor.showDashboard",()=>{w.commands.executeCommand("workbench.view.extension.monitor-explorer")}),w.commands.registerCommand("serverMonitor.generateReport",()=>e.generateReport()),w.commands.registerCommand("serverMonitor.publishUpdate",()=>e.publishClientUpdate()),w.commands.registerCommand("serverMonitor.stop",()=>e.stop()),w.commands.registerCommand("serverMonitor.viewBacklog",()=>e.showBacklogWebview())),w.workspace.getConfiguration("serverMonitor").get("autoStart")&&e.start()}function Y(){D?.removeServerPresenceFile(),D=null}0&&(module.exports={activate,deactivate});

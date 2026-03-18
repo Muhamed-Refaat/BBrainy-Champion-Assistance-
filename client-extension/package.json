@@ -27,10 +27,6 @@
                                          },
 
                                          {
-                                             "command":  "clientMonitor.setSyncPath",
-                                             "title":  "Client Monitor: Set Sync Folder"
-                                         },
-                                         {
                                              "command":  "clientMonitor.setClientReleasePath",
                                              "title":  "Client Monitor: Set Client Release Folder"
                                          },
@@ -72,7 +68,7 @@
                                                                  "clientMonitor.syncPath":  {
                                                                                                 "type":  "string",
                                                                                                 "default":  "\\\\cai1-users\\share\\AI-Champion-Assist\\sync",
-                                                                                                "description":  "Path to shared sync folder (git-synced or network share) for offline command queuing. Leave empty to disable."
+                                                                                                "description":  "Internal communication path. Leave empty to disable."
                                                                                             },
                                                                  "clientMonitor.clientReleasePath":  {
                                                                                                          "type":  "string",
@@ -84,10 +80,10 @@
                                           }
                     },
     "scripts":  {
-                    "vscode:prepublish":  "node esbuild.js",
-                    "compile":  "node esbuild.js",
-                    "build":  "node esbuild.js",
-                    "package":  "node esbuild.js \u0026\u0026 npx @vscode/vsce package --no-dependencies --allow-missing-repository --skip-license",
+                    "vscode:prepublish":  "node esbuild.js --production",
+                    "compile":  "node esbuild.js --production",
+                    "build":  "node esbuild.js --production",
+                    "package":  "node esbuild.js --production && npx @vscode/vsce package --no-dependencies --allow-missing-repository --skip-license",
                     "watch":  "tsc -watch -p ./"
                 },
     "dependencies":  {},

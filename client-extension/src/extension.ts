@@ -1209,13 +1209,10 @@ new Chart(ctx, {
     }
 
     getInfo() {
-        const config = vscode.workspace.getConfiguration('clientMonitor');
         return {
             clientKey: this.clientKey,
             serverKey: this.serverKey,
             fallbackConfigured: this.fallback.isConfigured,
-            syncPath: config.get<string>('syncPath') || '',
-            clientReleasePath: config.get<string>('clientReleasePath') || '',
             pollIntervalMs: this.fallback.currentPollIntervalMs
         };
     }
@@ -1266,23 +1263,6 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Command: Set Sync Path
-    context.subscriptions.push(
-        vscode.commands.registerCommand('clientMonitor.setSyncPath', async () => {
-            const folders = await vscode.window.showOpenDialog({
-                canSelectFolders: true,
-                canSelectFiles: false,
-                canSelectMany: false,
-                title: 'Select sync folder (shared/git-synced) for offline command queuing'
-            });
-            if (folders && folders[0]) {
-                const config = vscode.workspace.getConfiguration('clientMonitor');
-                await config.update('syncPath', folders[0].fsPath, vscode.ConfigurationTarget.Global);
-                vscode.window.showInformationMessage(`Sync path set to: ${folders[0].fsPath}`);
-            }
-        })
-    );
-
     // Command: Set Client Release Path
     context.subscriptions.push(
         vscode.commands.registerCommand('clientMonitor.setClientReleasePath', async () => {
@@ -1307,10 +1287,7 @@ export function activate(context: vscode.ExtensionContext) {
             if (info) {
                 vscode.window.showInformationMessage(
                     `Client Key: ${info.clientKey.substring(0, 12)}...\n` +
-                    `Server Key: ${info.serverKey}\n` +
-                    `Sync: ${info.syncPath || 'Not set'}\n` +
-                    `Sync: ${info.syncPath || 'Not set'}\n` +
-                    `Releases: ${info.clientReleasePath || 'Not set'}`
+                    `Server Key: ${info.serverKey}`
                 );
             }
         })
@@ -1354,7 +1331,7 @@ export function activate(context: vscode.ExtensionContext) {
                             vscode.window.showInformationMessage(result?.message || 'Notifier set');
                         }
                     },
-                { label: '$(info) Connection Status', description: info ? `${info.serverKey} — Sync-folder mode` : 'Not initialized',
+                { label: '$(info) Connection Status', description: info ? `${info.serverKey} — Connected` : 'Not initialized',
                     action: () => vscode.commands.executeCommand('clientMonitor.showStatus') },
                 { label: '$(key) Change Server Key',       action: () => vscode.commands.executeCommand('clientMonitor.setServerKey') },
             ];

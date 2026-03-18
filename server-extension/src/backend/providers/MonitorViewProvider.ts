@@ -37,14 +37,19 @@ export class MonitorViewProvider implements vscode.WebviewViewProvider {
                 case 'queryAll':
                     await this.server.queryAllClients(message.command);
                     break;
+                case 'scanFleet':
+                    await this.server.scanFleetNow();
+                    break;
                 case 'showAssets':
                     this.server.showAllAssetsWebview();
+                    this._view?.webview.postMessage({ type: 'actionDone', action: 'showAssets' });
                     break;
                 case 'showBBrainyStatus':
                     this.server.showBBrainyStatusWebview(message.clientKey);
                     break;
                 case 'generateReport':
                     await this.server.generateReport();
+                    this._view?.webview.postMessage({ type: 'actionDone', action: 'generateReport' });
                     break;
                 case 'startServer':
                     await this.server.start();

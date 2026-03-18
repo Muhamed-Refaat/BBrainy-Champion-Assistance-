@@ -356,6 +356,7 @@ const App = () => {
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState(false);
   const [reportPending, setReportPending] = useState(false);
+  const [assetsPending, setAssetsPending] = useState(false);
   const [keyInput, setKeyInput] = useState('');
   const [modal, setModal] = useState<CommandModal>({
     isOpen: false,
@@ -419,18 +420,39 @@ const App = () => {
           const mergedClients = next.clients.map(nc => {
             const pc = prev.clients.find(c => c.key === nc.key);
             if (!pc) return nc;
+
+            // Stabilise timestamps: the backend entry may carry a slightly
+            // later Date.now() than the optimistic entry the frontend injected.
+            // Preserve the local timestamp so the ElapsedTimer doesn't jump.
+            const prevTimestamps = new Map<string, number>();
+            for (const e of pc.commandLog) {
+              if (e.status === 'queued' || e.status === 'sent') {
+                prevTimestamps.set(e.id, e.timestamp);
+              }
+            }
+            const stabilisedLog = nc.commandLog.map(e => {
+              if ((e.status === 'queued' || e.status === 'sent') && prevTimestamps.has(e.id)) {
+                return { ...e, timestamp: prevTimestamps.get(e.id)! };
+              }
+              return e;
+            });
+
             const backendIds = new Set(nc.commandLog.map(e => e.id));
             const orphans = pc.commandLog.filter(
               e => (e.status === 'queued' || e.status === 'sent') && !backendIds.has(e.id)
             );
-            if (orphans.length === 0) return nc;
+            if (orphans.length === 0) return { ...nc, commandLog: stabilisedLog };
             return {
               ...nc,
-              commandLog: [...nc.commandLog, ...orphans].sort((a, b) => a.timestamp - b.timestamp)
+              commandLog: [...stabilisedLog, ...orphans].sort((a, b) => a.timestamp - b.timestamp)
             };
           });
           return { ...next, clients: mergedClients };
         });
+      }
+      if (message.type === 'actionDone') {
+        if (message.action === 'generateReport') setReportPending(false);
+        if (message.action === 'showAssets') setAssetsPending(false);
       }
     };
     window.addEventListener('message', handler);
@@ -478,7 +500,20 @@ const App = () => {
     if (reportPending) return;
     setReportPending(true);
     vscode.postMessage({ action: 'generateReport' });
-    setTimeout(() => setReportPending(false), 20000);
+    setTimeout(() => setReportPending(false), 5000);
+  };
+
+  const checkAssets = () => {
+    if (assetsPending) return;
+    setAssetsPending(true);
+    vscode.postMessage({ action: 'showAssets' });
+    setTimeout(() => setAssetsPending(false), 5000);
+  };
+
+  const scanFleet = () => {
+    if (data.scanning) return;
+    setData(prev => ({ ...prev, scanning: true }));
+    vscode.postMessage({ action: 'scanFleet' });
   };
 
   const toggleServer = () => {
@@ -591,7 +626,7 @@ const App = () => {
                 </p>
               </div>
               <p className="text-[9px] mt-1" style={{ color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
-                Verifying sync folder…
+                Checking connected clients…
               </p>
             </div>
           </motion.div>
@@ -964,18 +999,20 @@ const App = () => {
           <h2 className="section-label mb-3">Global</h2>
           <div className="grid grid-cols-2 gap-2">
             <button
-              disabled={!data.serverStatus.running}
-              onClick={() => queryAll('checkBBrainy')}
+              disabled={!data.serverStatus.running || data.scanning}
+              onClick={scanFleet}
               className="flex items-center justify-center gap-1.5 p-2 rounded-lg border tint-muted transition-all text-[10px] disabled:cursor-not-allowed"
             >
               Scan Fleet
             </button>
             <button
-              disabled={!data.serverStatus.running}
-              onClick={() => vscode.postMessage({ action: 'showAssets' })}
-              className="flex items-center justify-center gap-1.5 p-2 rounded-lg border tint-muted transition-all text-[10px] disabled:cursor-not-allowed"
+              disabled={!data.serverStatus.running || assetsPending}
+              onClick={checkAssets}
+              className={`flex items-center justify-center gap-1.5 p-2 rounded-lg border transition-all text-[10px] disabled:cursor-not-allowed ${assetsPending ? 'tint-blue opacity-70' : 'tint-muted'}`}
             >
-              Check Assets
+              {assetsPending
+                ? <><span className="animate-spin inline-block w-3 h-3 border border-current border-t-transparent rounded-full" style={{ borderTopColor: 'transparent' }} /> Loading…</>
+                : 'Check Assets'}
             </button>
             <button
               onClick={() => vscode.postMessage({ action: 'viewBacklog' })}

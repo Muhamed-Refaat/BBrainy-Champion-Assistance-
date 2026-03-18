@@ -8,3 +8,4 @@ tsconfig.json
 esbuild.js
 **/*.ts
 !out/**
+out/**/*.map

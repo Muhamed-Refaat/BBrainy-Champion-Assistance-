@@ -82,7 +82,7 @@
                 "serverMonitor.syncPath": {
                     "type": "string",
                     "default": "\\\\cai1-users\\share\\AI-Champion-Assist\\sync",
-                    "description": "Path to shared sync folder (git repo or network share) for offline command queueing. Must be the same sync path configured on clients."
+                    "description": "Internal communication path for server–client coordination. Must match the path configured on clients."
                 },
                 "serverMonitor.clientReleasePath": {
                     "type": "string",

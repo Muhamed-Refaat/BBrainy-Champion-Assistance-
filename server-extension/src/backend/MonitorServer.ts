@@ -247,6 +247,11 @@ class ServerFallbackManager {
         }, 0);
     }
 
+    /** Remove staged (not yet flushed to disk) commands for a specific client. */
+    clearStagedCommands(clientLabel: string) {
+        this.pendingQueue.delete(clientLabel);
+    }
+
     // Write all staged commands to disk — one file write per client.
     flushPendingQueue(): { succeeded: string[]; failed: string[] } {
         const succeeded: string[] = [];
@@ -460,6 +465,10 @@ export class MonitorServer {
     private clientReleasePath: string = '';
     private serverPresenceInterval: NodeJS.Timeout | null = null;
     private version: string = '1.0.0';
+    // IDs of commands that were cancelled/cleared by the user.  Results arriving
+    // for these IDs are silently suppressed so a late response doesn't resurrect
+    // a queue entry the user already dismissed.
+    private cancelledCommandIds = new Set<string>();
 
     // ─── Configurable intervals (ms) ─────────────────────────────────
     private backlogPollMs: number = 15000;      // server reads server-backlog/
@@ -788,6 +797,13 @@ export class MonitorServer {
 
     // Called when a client result arrives (via results/ live channel or server-backlog/ offline channel)
     private handleBacklogResponse(clientLabel: string, entry: any) {
+        // If this command was cancelled/cleared by the user, suppress the result
+        // so it doesn't resurrect a dismissed queue entry.
+        if (entry.id && this.cancelledCommandIds.has(entry.id)) {
+            this.cancelledCommandIds.delete(entry.id);
+            console.log(`[MonitorServer] Suppressed result for cancelled command ${entry.id} (${entry.command})`);
+            return;
+        }
         // Look up by clientKey first (exact Map key), fall back to clientLabel search.
         // This prevents mismatches when multiple clients share the same label but
         // have different keys (e.g. after a globalState reset).
@@ -1029,37 +1045,61 @@ export class MonitorServer {
         // Signal to the webview that a fleet scan is in progress.
         // The frontend also applies this optimistically on the Start button click.
         this.isScanning = true;
+        // Flush scanning=true to the UI immediately (bypass debounce) so the
+        // overlay appears before we do any sync I/O.
+        this.flushUpdate();
 
-        // Reload clients for the specific Server ID
-        this.clients.clear();
-        this.loadPersistentClients();
-        
-        // Remove duplicate clients (keeping the first occurrence of each unique key)
-        this.deduplicateClients();
+        // Defer the heavy I/O so the overlay renders first.
+        setImmediate(async () => {
+            // Reload clients for the specific Server ID
+            this.clients.clear();
+            this.loadPersistentClients();
 
-        // Re-configure fallback with latest settings (in case they changed since initialize())
-        this.setupFallback();
-        // Import any clients that registered via presence file while server was offline
-        this.importSyncClients();
-        // Restore pending disk-queue entries into each client's command log
-        this.restorePendingQueueToLog();
+            // Remove duplicate clients (keeping the first occurrence of each unique key)
+            this.deduplicateClients();
 
-        // Scan complete — clear flag before the final triggerUpdate() builds the snapshot
-        this.isScanning = false;
+            // Re-configure fallback with latest settings (in case they changed since initialize())
+            this.setupFallback();
+            // Import any clients that registered via presence file while server was offline
+            this.importSyncClients();
+            // Restore pending disk-queue entries into each client's command log
+            this.restorePendingQueueToLog();
 
-        this.running = true;
+            this.running = true;
 
-        // Start presence check interval (check client presence every 30s)
-        this.startPresenceCheck();
+            // Start presence check interval (check client presence every 30s)
+            this.startPresenceCheck();
 
-        // Write server presence and keep it fresh
-        this.writeServerPresenceFile('online');
-        if (this.serverPresenceInterval) { clearInterval(this.serverPresenceInterval); }
-        this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile('online'), this.serverPresenceMs);
+            // Write server presence and keep it fresh
+            this.writeServerPresenceFile('online');
+            if (this.serverPresenceInterval) { clearInterval(this.serverPresenceInterval); }
+            this.serverPresenceInterval = setInterval(() => this.writeServerPresenceFile('online'), this.serverPresenceMs);
 
-        this.triggerUpdate();
-        console.log(`[MonitorServer] Server started successfully [${this.serverId}]`);
-        vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running (sync-folder mode)`);
+            // Brief delay so the scanning overlay is visible to the user
+            await new Promise(resolve => setTimeout(resolve, 600));
+
+            // Scan complete — clear flag and push final snapshot
+            this.isScanning = false;
+            this.triggerUpdate();
+            console.log(`[MonitorServer] Server started successfully [${this.serverId}]`);
+            vscode.window.showInformationMessage(`Monitor server [${this.serverId}] running`);
+        });
+    }
+
+    /** Immediate sync-folder scan triggered by the "Scan Fleet" button. */
+    async scanFleetNow() {
+        if (!this.running || this.isScanning) { return; }
+        this.isScanning = true;
+        // Push scanning=true immediately so the overlay appears right away
+        this.flushUpdate();
+        setImmediate(async () => {
+            this.importSyncClients();
+            this.checkClientPresence();
+            // Brief delay so the scanning overlay is visible
+            await new Promise(resolve => setTimeout(resolve, 600));
+            this.isScanning = false;
+            this.triggerUpdate();
+        });
     }
 
     private startPresenceCheck() {
@@ -1300,6 +1340,16 @@ export class MonitorServer {
         
         // Remove stale offline clients
         keysToRemove.forEach(key => this.clients.delete(key));
+
+        // Housekeeping: prune the cancelledCommandIds set if it grows large.
+        // Each clear/cancel adds IDs; handleBacklogResponse removes them when
+        // a result arrives.  If results never arrive the set would grow forever,
+        // so cap it at a safe maximum.
+        if (this.cancelledCommandIds.size > 500) {
+            const surplus = this.cancelledCommandIds.size - 250;
+            const iter = this.cancelledCommandIds.values();
+            for (let i = 0; i < surplus; i++) { this.cancelledCommandIds.delete(iter.next().value); }
+        }
         
         if (keysToRemove.length > 0 || anyChanged) {
             if (keysToRemove.length > 0) {
@@ -1658,8 +1708,7 @@ export class MonitorServer {
         if (!this.fallback.isConfigured) {
             logEntry.status = 'error';
             logEntry.completedAt = Date.now();
-            const syncPath = vscode.workspace.getConfiguration('serverMonitor').get<string>('syncPath') || '(empty)';
-            const msg = `Sync path not configured. Current value: "${syncPath}". Set serverMonitor.syncPath in settings.`;
+            const msg = `Communication path not configured. Please check serverMonitor.syncPath in settings.`;
             console.error(`[MonitorServer] ${msg}`);
             vscode.window.showErrorMessage(msg);
             this.savePersistentClients();
@@ -1682,10 +1731,14 @@ export class MonitorServer {
     clearClientQueue(clientKey: string) {
         const client = this.clients.get(clientKey);
         if (!client) { return; }
-        // Revert any optimistic interval values that were applied for queued commands
+        // Track all entry IDs so late-arriving results are suppressed
         for (const entry of client.commandLog) {
+            this.cancelledCommandIds.add(entry.id);
             this.revertIntervalIfPending(entry.id);
         }
+        // Remove any staged-but-not-yet-flushed commands so the pending
+        // scheduleFlush() timer doesn't re-create the queue file we're about to delete.
+        this.fallback.clearStagedCommands(client.clientLabel);
         // Remove disk queue file
         if (this.fallback.isConfigured) {
             try {
@@ -1711,6 +1764,8 @@ export class MonitorServer {
     cancelQueueEntry(clientKey: string, entryId: string) {
         const client = this.clients.get(clientKey);
         if (!client) { return; }
+        // Suppress any late-arriving result for this command
+        this.cancelledCommandIds.add(entryId);
         // Revert any optimistic interval value that was applied for this command
         this.revertIntervalIfPending(entryId);
         // Remove from disk queue file (rewrite without that entry)
@@ -2104,7 +2159,6 @@ export class MonitorServer {
                 username: os.userInfo().username,
                 version: this.version,
                 running: this.running,
-                syncPath: this.fallback.syncPathValue || '(not configured)',
             },
             summary: {
                 total: clientsArray.length,
@@ -2238,7 +2292,7 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
            <div class="info-row"><span class="info-key">Version</span><span class="info-val">${this.version}</span></div></div>
       <div>
            <div class="info-row"><span class="info-key">Status</span><span class="info-val" style="color:${this.running ? '#22c55e' : '#f87171'}">${this.running ? 'Running' : 'Stopped'}</span></div>
-           <div class="info-row"><span class="info-key">Sync Path</span><span class="info-val">${this.fallback.syncPathValue || '(not configured)'}</span></div></div>
+      </div>
     </div>
   </div>
 
@@ -2298,7 +2352,7 @@ td{padding:8px 12px;border-top:1px solid rgba(59,130,246,0.08);color:#cbd5e1;ver
     }
 
     /** Actually build and push the dashboard payload to the webview. */
-    private flushUpdate() {
+    flushUpdate() {
         if (this.provider) {
             const clientsArray = Array.from(this.clients.values());
             this.provider.update({

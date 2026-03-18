@@ -5,6 +5,7 @@ const fs = require("fs");
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 const isWebview = process.argv.includes('--webview');
+const secureBuild = production || !watch;
 
 // Problem matcher plugin
 const esbuildProblemMatcherPlugin = {
@@ -29,8 +30,8 @@ const extensionConfig = {
     entryPoints: ["src/backend/extension.ts"],
     bundle: true,
     format: "cjs",
-    minify: production,
-    sourcemap: !production,
+    minify: secureBuild,
+    sourcemap: watch && !production,
     sourcesContent: false,
     platform: "node",
     outfile: "dist/extension.js",
@@ -64,8 +65,8 @@ const webviewConfig = {
     entryPoints: ["src/frontend/src/main.tsx"],
     bundle: true,
     format: "esm",
-    minify: production,
-    sourcemap: !production,
+    minify: secureBuild,
+    sourcemap: watch && !production,
     platform: "browser",
     outdir: "dist",
     entryNames: "monitor-webview",
