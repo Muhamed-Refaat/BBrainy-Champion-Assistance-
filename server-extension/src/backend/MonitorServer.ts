@@ -1217,6 +1217,12 @@ export class MonitorServer {
         } else {
             await this.sendCommand(clientKey, 'setPollInterval', { intervalMs: ms }, providedCmdId);
         }
+        // Keep the server's backlog polling at least as fast as the fastest
+        // client poll so that changing a client to "Fast (3s)" actually speeds
+        // up the full round trip (not just the client→queue leg).
+        if (ms < this.backlogPollMs) {
+            this.setServerIntervals({ backlogPollMs: ms });
+        }
     }
 
     /** Send a setUpdateCheckInterval command to a specific client (queued via sync folder). */

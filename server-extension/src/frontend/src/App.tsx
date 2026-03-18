@@ -423,7 +423,10 @@ const App = () => {
 
             // Stabilise timestamps: the backend entry may carry a slightly
             // later Date.now() than the optimistic entry the frontend injected.
-            // Preserve the local timestamp so the ElapsedTimer doesn't jump.
+            // Preserve the local (earlier) timestamp so
+            //   a) the ElapsedTimer doesn't jump while the command is pending,
+            //   b) the final "executed in MM:SS" badge reflects the full
+            //      user-perceived wait time, not only the backend's portion.
             const prevTimestamps = new Map<string, number>();
             for (const e of pc.commandLog) {
               if (e.status === 'queued' || e.status === 'sent') {
@@ -431,7 +434,7 @@ const App = () => {
               }
             }
             const stabilisedLog = nc.commandLog.map(e => {
-              if ((e.status === 'queued' || e.status === 'sent') && prevTimestamps.has(e.id)) {
+              if (prevTimestamps.has(e.id)) {
                 return { ...e, timestamp: prevTimestamps.get(e.id)! };
               }
               return e;
@@ -1058,6 +1061,10 @@ const App = () => {
                 const cmdId = optimisticId();
                 setData(prev => ({
                   ...prev,
+                  // Also lower backlog poll to match so the full round-trip speeds up
+                  intervals: prev.intervals && ms < prev.intervals.backlogPollMs
+                    ? { ...prev.intervals, backlogPollMs: ms }
+                    : prev.intervals,
                   clients: prev.clients.map(c =>
                     c.key === selectedClient
                       ? { ...c, pollMs: ms, commandLog: [...c.commandLog, { id: cmdId, command: 'setPollInterval', status: 'queued' as const, timestamp: Date.now() }] }
