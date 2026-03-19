@@ -11,6 +11,55 @@ const FALLBACK_POLL_INTERVAL_MS = 15000;
 const UPDATE_CHECK_INTERVAL_MS = 3600000; // 1 hour
 const EXTENSION_ID = 'client-monitor';
 
+// ─── Diagnostic Logger ────────────────────────────────────────────────────────
+// Writes sync-folder activity to a local file so issues on remote machines can
+// be investigated without needing physical access.
+//
+// Log path (Windows): %LOCALAPPDATA%\BBrainySyncLog\client-sync.log
+// Log path (other):   ~/BBrainySyncLog/client-sync.log
+// Rotation: capped at 2 MB; older half saved as .log.1
+const LOG_MAX_BYTES = 2 * 1024 * 1024;
+
+class DiagnosticLogger {
+    private readonly logDir: string;
+    private readonly logFile: string;
+    private readonly tag: string;
+
+    constructor() {
+        const base = (process.platform === 'win32' && process.env['LOCALAPPDATA'])
+            ? process.env['LOCALAPPDATA']!
+            : os.homedir();
+        this.logDir  = path.join(base, 'BBrainySyncLog');
+        this.logFile = path.join(this.logDir, 'client-sync.log');
+        this.tag     = `${os.userInfo().username}@${os.hostname()}`;
+        try { fs.mkdirSync(this.logDir, { recursive: true }); } catch {}
+        this._write('INFO ', `=== Session start — pid=${process.pid} platform=${process.platform} ===`);
+    }
+
+    info (msg: string) { this._write('INFO ', msg); }
+    warn (msg: string) { this._write('WARN ', msg); }
+    error(msg: string) { this._write('ERROR', msg); }
+    debug(msg: string) { this._write('DEBUG', msg); }
+
+    private _write(level: string, msg: string): void {
+        const line = `[${new Date().toISOString()}] [${level}] [${this.tag}] ${msg}\n`;
+        console.log(`[SyncDiag] ${line.trimEnd()}`);
+        try {
+            try {
+                if (fs.statSync(this.logFile).size > LOG_MAX_BYTES) {
+                    try { fs.unlinkSync(this.logFile + '.1'); } catch {}
+                    fs.renameSync(this.logFile, this.logFile + '.1');
+                }
+            } catch { /* file missing — no rotation needed */ }
+            fs.appendFileSync(this.logFile, line, 'utf-8');
+        } catch { /* never throw from logger */ }
+    }
+
+    get filePath(): string { return this.logFile; }
+}
+
+const syncLog = new DiagnosticLogger();
+
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 interface FallbackCommand {
     id: string;
@@ -168,6 +217,11 @@ class GitFallbackManager {
         this.writePresenceFile();
         // Attempt to become the leader for sync-folder polling
         this.tryAcquireLeadership();
+        syncLog.info(`Configured — serverKey="${serverKey}" clientLabel="${clientLabel}" isUNC=${isUncPath(fallbackPath)} pid=${process.pid}`);
+        // Self-test: verify write+rename permission on the queue folder so
+        // permission issues surface immediately with a clear actionable message
+        // rather than silently failing on every poll tick.
+        this.testSyncFolderPermissions(fallbackPath);
     }
 
     // ─── Leader election ─────────────────────────────────────────────
@@ -209,6 +263,7 @@ class GitFallbackManager {
                         return false;
                     }
                     // Owner PID is dead — take over
+                    syncLog.info(`Previous leader PID ${lock.pid} is dead — taking over leadership`);
                     console.log(`[Fallback] Previous leader PID ${lock.pid} is dead — claiming leadership`);
                 } catch { /* corrupt file — take over */ }
             }
@@ -216,9 +271,11 @@ class GitFallbackManager {
             // Claim leadership
             fsWriteText(lockPath, JSON.stringify({ pid: process.pid, timestamp: Date.now() }));
             this._isLeader = true;
+            syncLog.info(`Leader acquired — PID ${process.pid} for clientLabel="${this.clientLabel}"`);
             console.log(`[Fallback] This instance (PID ${process.pid}) is now the leader for ${this.clientLabel}`);
             return true;
         } catch (e: any) {
+            syncLog.warn(`Leader acquisition failed: ${e?.message || e} — falling back to leader mode`);
             console.warn(`[Fallback] Leader acquisition failed: ${e?.message || e}`);
             // If we can't write the lock file, fall back to being a leader anyway
             // (better one extra poller than zero pollers)
@@ -277,8 +334,10 @@ class GitFallbackManager {
                 status: 'active'
             };
             fsWriteText(filePath, JSON.stringify(entry, null, 2));
+            syncLog.debug(`Presence written: ${filePath}`);
             console.log(`[Fallback] Presence file written: ${filePath}`);
         } catch (e: any) {
+            syncLog.error(`Presence write FAILED: ${e?.message || e} — attempted path: ${path.join(this.fallbackPath || '', 'clients', this.serverKey, this.clientLabel + '.json')}`);
             console.warn(`[Fallback] Could not write presence file: ${e?.message || e}`);
         }
     }
@@ -338,6 +397,58 @@ class GitFallbackManager {
         }
     }
 
+    /** Quick write+rename probe to confirm the sync folder is writable. */
+    private testSyncFolderPermissions(syncPath: string): void {
+        const queueDir = path.join(syncPath, 'queue');
+        try { fsEnsureDir(queueDir); } catch { /* ignore — dir may already exist */ }
+        const probe  = path.join(queueDir, `.perm-probe-${process.pid}.tmp`);
+        const probe2 = probe + '.2';
+        let renameOk = false;
+        try {
+            fsWriteText(probe, 'probe');
+            try {
+                fsRenameFile(probe, probe2);
+                renameOk = true;
+                try { fsDeleteFile(probe2); } catch {}
+            } catch (renameErr: any) {
+                // Write succeeded but rename did not — indicate limited permissions
+                try { fsDeleteFile(probe); } catch {}
+                const msg = `Sync folder write permission OK but rename (MODIFY) permission is MISSING. ` +
+                    `Commands will fall back to read-only mode (dedup via executedIds). ` +
+                    `To allow atomic claiming, grant Modify permission on: ${queueDir}`;
+                syncLog.warn(msg);
+                vscode.window.showWarningMessage(
+                    `Client Monitor: Sync folder has limited permissions (rename denied). ` +
+                    `Commands will still work via fallback mode. ` +
+                    `For best reliability, grant Modify access on the shared queue folder.`,
+                    'View Log'
+                ).then(choice => {
+                    if (choice === 'View Log') {
+                        vscode.commands.executeCommand('clientMonitor.openDiagLog');
+                    }
+                });
+                return;
+            }
+            if (renameOk) {
+                syncLog.info(`Sync folder permission check PASSED (write + rename OK)`);
+            }
+        } catch (writeErr: any) {
+            // Even write failed — no write permission at all
+            const msg = `Sync folder is NOT writable: ${writeErr?.message || writeErr}. ` +
+                `Path: ${queueDir}. Grant at least Write permission for this user.`;
+            syncLog.error(msg);
+            vscode.window.showErrorMessage(
+                `Client Monitor: Cannot write to sync folder (Access Denied). ` +
+                `The extension will not function until write permission is granted on: ${queueDir}`,
+                'View Log'
+            ).then(choice => {
+                if (choice === 'View Log') {
+                    vscode.commands.executeCommand('clientMonitor.openDiagLog');
+                }
+            });
+        }
+    }
+
     get isConfigured(): boolean {
         return !!this.fallbackPath && !!this.clientKey;
     }
@@ -353,6 +464,7 @@ class GitFallbackManager {
         // Do an immediate check, then poll
         this.checkBacklog();
         this.pollInterval = setInterval(() => this.checkBacklog(), this.pollIntervalMs);
+        syncLog.info(`Polling started — interval=${this.pollIntervalMs / 1000}s isUNC=${isUncPath(this.fallbackPath)}`);
         console.log(`[Fallback] Polling started (${this.pollIntervalMs / 1000}s): ${this.fallbackPath}`);
     }
 
@@ -391,27 +503,68 @@ class GitFallbackManager {
 
         const queueFile = path.join(this.fallbackPath, 'queue', `${this.clientLabel}.json`);
         const claimedFile = queueFile + `.lock-${process.pid}`;
+        syncLog.debug(`Poll tick — checking queue for clientLabel="${this.clientLabel}"`);
 
         try {
-            // Atomic claim: rename the queue file so no other VS Code instance processes it.
-            // If rename fails (no queue file or another instance claimed it), we still
-            // try to read our PID's lock file in case it's an orphan from a previous crash.
-            try { fsRenameFile(queueFile, claimedFile); } catch { /* no queue file or lost race */ }
+            // Strategy: attempt an atomic rename (Modify permission) so only one
+            // VS Code instance processes each queue file.  If rename is denied
+            // (e.g. the share grants only Write but not Modify, or the file was
+            // created by a different user), fall back to reading the file directly
+            // and relying on executedIds for deduplication.  Either way blank the
+            // queue file afterwards so it is not re-processed on the next tick.
+            let raw: string | null = null;
+            let claimedViaRename = false;
 
-            let raw: string;
+            // ── Phase 1: try atomic rename ───────────────────────────
             try {
-                raw = fsReadText(claimedFile);
-            } catch {
-                return; // Nothing to process
+                fsRenameFile(queueFile, claimedFile);
+                claimedViaRename = true;
+                syncLog.debug(`Queue file claimed via rename`);
+            } catch (renameErr: any) {
+                const errMsg: string = renameErr?.message || String(renameErr);
+                const isAccessDenied = /access is denied|access denied|permission denied/i.test(errMsg);
+                const fileExists = fsPathExists(queueFile);
+
+                if (!fileExists) {
+                    // Normal case: queue file doesn't exist yet
+                    syncLog.debug(`Queue file absent — nothing to do`);
+                    return;
+                }
+
+                if (isAccessDenied) {
+                    // Limited-permission fallback: read directly, dedup via executedIds
+                    syncLog.warn(`Rename denied (limited share permissions) — reading queue directly`);
+                    try {
+                        raw = fsReadText(queueFile);
+                    } catch (readErr: any) {
+                        syncLog.error(`Queue read FAILED in fallback mode: ${readErr?.message || readErr}`);
+                        return;
+                    }
+                } else {
+                    // Some other transient error (lock held by another instance, etc.)
+                    syncLog.debug(`Queue rename skipped: ${errMsg}`);
+                    return;
+                }
             }
 
-            // Delete lock file before executing to prevent stale data on crash
-            try { fsDeleteFile(claimedFile); } catch {}
+            // ── Phase 2: read lock file (rename succeeded) ───────────
+            if (claimedViaRename) {
+                try {
+                    raw = fsReadText(claimedFile);
+                } catch (readErr: any) {
+                    syncLog.error(`Queue read FAILED after rename: ${readErr?.message || readErr}`);
+                    return;
+                }
+                try { fsDeleteFile(claimedFile); } catch {}
+            }
+
+            if (!raw) { return; }
 
             let cmds: FallbackCommand[] = [];
             try {
                 cmds = JSON.parse(raw);
-            } catch {
+            } catch (parseErr: any) {
+                syncLog.error(`Queue file has invalid JSON — discarded. Error: ${parseErr?.message || parseErr}`);
                 console.warn(`[Fallback] Queue file has invalid JSON — discarded`);
                 return;
             }
@@ -419,17 +572,24 @@ class GitFallbackManager {
             if (cmds.length === 0) { return; }
 
             // Filter to only commands addressed to this server — ignore stale entries from other servers.
+            const allCount = cmds.length;
+            const allServerKeys = [...new Set(cmds.map(c => c.serverKey))];
             cmds = cmds.filter(c => !c.serverKey || c.serverKey === this.serverKey);
             if (cmds.length === 0) {
+                syncLog.info(`Queue had ${allCount} cmd(s) but none matched serverKey="${this.serverKey}" — found keys: [${allServerKeys.join(', ')}]`);
                 console.log(`[Fallback] Queue had commands but none for serverKey="${this.serverKey}" — skipping`);
                 return;
             }
 
-            console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
-
             // Filter out already-executed commands
             const toExecute = cmds.filter(cmd => !this.executedIds.has(cmd.id));
-            if (toExecute.length === 0) { return; }
+            if (toExecute.length === 0) {
+                syncLog.info(`Queue had ${cmds.length} cmd(s) — all already executed (IDs cached)`);
+                return;
+            }
+
+            syncLog.info(`Executing ${toExecute.length} cmd(s): ${toExecute.map(c => `${c.command}(${c.id.slice(0, 8)})`).join(', ')}`);
+            console.log(`[Fallback] Found ${cmds.length} queued command(s) for ${this.clientLabel}`);
 
             // Pre-mark all IDs before parallel execution to prevent double-processing
             // if another instance claims the same work concurrently.
@@ -437,11 +597,14 @@ class GitFallbackManager {
 
             // Execute all commands in parallel — independent of each other, so no ordering constraint.
             const batchResults = await Promise.all(toExecute.map(async cmd => {
+                const t0 = Date.now();
                 try {
                     console.log(`[Fallback] Executing queued command: ${cmd.command} (${cmd.id})`);
-                    const payload = await this.onCommand(cmd);
+                    const payload = await this.onCommand!(cmd);
+                    syncLog.info(`Command OK: ${cmd.command} (${cmd.id.slice(0, 8)}) in ${Date.now() - t0}ms`);
                     return { id: cmd.id, command: cmd.command, payload };
                 } catch (e: any) {
+                    syncLog.error(`Command FAILED: ${cmd.command} (${cmd.id.slice(0, 8)}) — ${e?.message || String(e)}`);
                     console.error(`[Fallback] Error executing queued command ${cmd.command}:`, e);
                     return { id: cmd.id, command: cmd.command, payload: { success: false, error: e?.message || String(e) } };
                 }
@@ -459,8 +622,22 @@ class GitFallbackManager {
 
             // Write all results as a single batch file — one UNC write instead of N
             this.writeServerBacklogBatch(batchResults);
+            syncLog.info(`Results dispatched: ${batchResults.length} entries for ${this.clientLabel}`);
             console.log(`[Fallback] Wrote batch result file (${batchResults.length} entries) for ${this.clientLabel}`);
-        } catch (e) {
+
+            // ── Phase 3: clear the queue file so the next poll tick doesn't re-read it.
+            // For the rename path the lock file is already gone (deleted above).
+            // For the direct-read path we overwrite the queue file with [] so commands
+            // are not re-read on the next tick (executedIds is the authoritative dedup
+            // guard, but clearing the file avoids noisy repeated dedup log entries).
+            if (!claimedViaRename) {
+                try {
+                    fsWriteText(queueFile, '[]');
+                    syncLog.debug(`Queue file blanked after direct-read execution`);
+                } catch { /* best-effort — executedIds will deduplicate anyway */ }
+            }
+        } catch (e: any) {
+            syncLog.error(`Poll loop unhandled error: ${e?.message || String(e)}`);
             console.error('[Fallback] Backlog check error:', e);
         }
     }
@@ -516,10 +693,12 @@ class GitFallbackManager {
     // and array-of-objects formats, so no server-side changes are needed.
     private writeServerBacklogBatch(entries: Array<{ id: string; command: string; payload: any }>) {
         if (!this.isConfigured || entries.length === 0) { return; }
-        const targetDir = this.isServerOnline()
+        const serverOnline = this.isServerOnline();
+        const targetDir = serverOnline
             ? path.join(this.fallbackPath, 'results')
             : path.join(this.fallbackPath, 'server-backlog');
         fsEnsureDir(targetDir);
+        syncLog.info(`Writing ${entries.length} result(s) → ${serverOnline ? 'results/' : 'server-backlog/'} (server ${serverOnline ? 'online' : 'offline'})`);
         const batchEntries = entries.map(e => ({
             id: e.id,
             command: e.command,
@@ -532,16 +711,34 @@ class GitFallbackManager {
         const baseName = `${this.clientLabel}-batch-${batchId}`;
         const tmpFile = path.join(targetDir, `${baseName}.tmp`);
         const finalFile = path.join(targetDir, `${baseName}.json`);
-        fsWriteText(tmpFile, JSON.stringify(batchEntries, null, 2));
-        // Rename .tmp → .json (atomic on the same volume). Retry on transient UNC lock.
+        // Two-phase write: .tmp then rename.  If rename is denied (limited share
+        // permissions) fall back to writing directly to the .json path.
+        try {
+            fsWriteText(tmpFile, JSON.stringify(batchEntries, null, 2));
+        } catch (writeErr: any) {
+            syncLog.error(`Result .tmp write FAILED: ${writeErr?.message || writeErr} — attempting direct write`);
+            try { fsWriteText(finalFile, JSON.stringify(batchEntries, null, 2)); } catch (e2: any) {
+                syncLog.error(`Result direct write also FAILED: ${e2?.message || e2}`);
+            }
+            return;
+        }
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
                 fsRenameFile(tmpFile, finalFile);
                 return;
             } catch (e: any) {
+                const isAccessDenied = /access is denied|access denied|permission denied/i.test(e?.message || '');
+                if (isAccessDenied) {
+                    // Rename denied — write directly (re-serialise to final path)
+                    syncLog.warn(`Result rename denied — writing directly to .json`);
+                    try { fsWriteText(finalFile, JSON.stringify(batchEntries, null, 2)); } catch {}
+                    try { fsDeleteFile(tmpFile); } catch {}
+                    return;
+                }
                 if (attempt < 2) {
                     try { execSync('ping -n 2 127.0.0.1 >nul', { shell: 'cmd.exe', stdio: 'pipe', timeout: 3000 }); } catch {}
                 } else {
+                    syncLog.error(`Result batch rename failed after retries: ${e?.message || e} — file: ${path.basename(finalFile)}`);
                     console.error(`[Fallback] Failed to rename batch .tmp → .json after retries: ${e?.message || e}`);
                     try { fsWriteText(finalFile, JSON.stringify(batchEntries, null, 2)); } catch {}
                     try { fsDeleteFile(tmpFile); } catch {}
@@ -814,6 +1011,22 @@ class ClientMonitor {
                     return { success: true, intervalMs: ms };
                 }
                 return { success: false, error: 'intervalMs must be >= 60000 (1 minute)' };
+            }
+            case 'getDiagLog': {
+                // Returns the tail of the local diagnostics log — useful for remote debugging.
+                const maxLines = Math.min((payload?.lines ?? 200), 1000);
+                const logPath = syncLog.filePath;
+                try {
+                    if (!fs.existsSync(logPath)) {
+                        return { success: true, log: '(no log file yet — no sync activity recorded)', logPath };
+                    }
+                    const content = fs.readFileSync(logPath, 'utf-8');
+                    const allLines = content.split('\n').filter((l: string) => l.trim());
+                    const tail = allLines.slice(-maxLines);
+                    return { success: true, log: tail.join('\n'), lineCount: tail.length, logPath };
+                } catch (e: any) {
+                    return { success: false, error: e?.message || String(e), logPath };
+                }
             }
             case 'getAssets':
                 return { acknowledged: true };
@@ -1334,6 +1547,8 @@ export function activate(context: vscode.ExtensionContext) {
                 { label: '$(info) Connection Status', description: info ? `${info.serverKey} — Connected` : 'Not initialized',
                     action: () => vscode.commands.executeCommand('clientMonitor.showStatus') },
                 { label: '$(key) Change Server Key',       action: () => vscode.commands.executeCommand('clientMonitor.setServerKey') },
+                { label: '$(list-ordered) Open Sync Diagnostics Log', description: 'View local sync folder activity log',
+                    action: () => vscode.commands.executeCommand('clientMonitor.openDiagLog') },
             ];
 
             const picked = await vscode.window.showQuickPick(
@@ -1385,6 +1600,24 @@ export function activate(context: vscode.ExtensionContext) {
             if (!monitor) { vscode.window.showWarningMessage('Client Monitor not initialized'); return; }
             const result = (monitor as any).closeNotifierDirect();
             vscode.window.showInformationMessage(result.message || 'Notifier closed');
+        })
+    );
+
+    // Command: Open Sync Diagnostics Log
+    context.subscriptions.push(
+        vscode.commands.registerCommand('clientMonitor.openDiagLog', () => {
+            const logPath = syncLog.filePath;
+            vscode.workspace.openTextDocument(vscode.Uri.file(logPath)).then(
+                doc => vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.One }),
+                () => vscode.window.showWarningMessage(
+                    `Diagnostics log not found yet — no sync activity has been recorded.`,
+                    'Show Path'
+                ).then(choice => {
+                    if (choice === 'Show Path') {
+                        vscode.window.showInformationMessage(`Log path: ${logPath}`);
+                    }
+                })
+            );
         })
     );
 }

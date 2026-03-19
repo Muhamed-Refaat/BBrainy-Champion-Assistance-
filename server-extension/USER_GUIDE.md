@@ -65,6 +65,31 @@ Stopping:
 
 When running, the server writes its own presence information into the shared sync folder and starts scanning for clients and results.
 
+## Quick Start
+
+1. **Start the Server**
+   - Open Command Palette (Ctrl+Shift+P)
+   - Run: `Server Monitor: Start Server`
+   - The Monitor icon appears in the activity bar
+
+2. **View Clients**
+   - Click the Monitor icon
+   - See the list of connected clients in MANAGED FLEET
+   - Status indicators show online/sync status
+
+3. **Check Fleet Status**
+   - Click "Scan Fleet" to broadcast BBrainy status check to all clients
+   - Click "Check Assets" to view all clients in a summary webview
+
+4. **Select and Manage a Client**
+   - Click on a client in the MANAGED FLEET
+   - The Control Center displays available actions
+   - Choose an action from System, BBrainy, Analytics, or Notifications
+
+5. **View Reports**
+   - Click "Generate Client Report" to create a comprehensive server report
+   - Use analytics buttons to generate client-specific usage reports
+
 ## Opening the Dashboard
 
 The extension contributes a Monitor icon in the VS Code activity bar.
@@ -77,6 +102,16 @@ Inside it you will find the `Command Center` webview, which is the main dashboar
 - Reviewing responses
 - Managing sync timing
 - Opening backlog views
+
+### Dashboard Overview
+
+![Monitor Command Center](./resources/screenshots/monitor-command-center.png)
+
+The dashboard displays:
+- Server status and activity state
+- Fleet statistics (total, active, and offline clients)
+- Managed fleet with all connected clients
+- Control center for per-client actions
 
 ## Server Commands
 
@@ -92,20 +127,43 @@ There is also an internal backlog view command used by the dashboard:
 
 - `serverMonitor.viewBacklog`
 
-## Dashboard Overview
+## Fleet Operations
 
-The dashboard provides:
+### Scan Fleet
 
-- A server status section
-- Fleet counts for total, sync, and offline clients
-- A selectable client list
-- Per-client actions
-- A command queue log
-- A last response panel
-- Sync tuning controls
-- Global actions such as viewing and clearing backlog
+The "Scan Fleet" button triggers a broadcast `checkBBrainy` command to all connected clients, allowing you to verify BBrainy status across your entire fleet.
 
-## Client Discovery and Presence
+![Scanning Fleet](./resources/screenshots/scanning-fleet.png)
+
+When scanning:
+- The server broadcasts the command to all clients
+- Each client responds with their BBrainy installation and activation status
+- Results are collected and displayed in the dashboard
+- The operation shows a scanning progress state with the current server key
+
+### Check Assets
+
+The "Check Assets" button displays a comprehensive webview showing all connected clients with their status information:
+
+- Total number of assets
+- Online vs offline client count
+- BBrainy active status count
+- Detailed table with username, hostname, status indicators, and last seen timestamps
+
+### Check Status (Per Client)
+
+When you select a client and click "Check Status", the server:
+1. Sends a `checkBBrainy` command to that specific client
+2. Collects the response containing BBrainy status data
+3. Displays a detailed webview showing:
+   - Client identifier (username@hostname)
+   - Installation status (badge indicator)
+   - Version number
+   - Last used time
+   - Total usage count
+   - 12-week contribution graph showing activity intensity
+
+The contribution graph uses color intensity to represent usage levels, similar to GitHub contribution graphs.
 
 Clients register themselves by writing presence files into the shared sync folder.
 
@@ -133,6 +191,80 @@ Typical operations include:
 - Adjust client update-check interval
 
 Queued commands appear in the selected client's command queue section.
+
+### Control Center
+
+When you select a client from the managed fleet, the Control Center displays all available actions:
+
+![Control Center Actions](./resources/screenshots/control-center-actions.png)
+
+The control center is organized by sections:
+
+- **System**: Refresh node, peek directory
+- **BBrainy**: Activate, Check Status, Scan Fleet
+- **Analytics**: 24h Report, 7d Report, All Time, Custom
+- **Notifications**: Set Reminder, Close Reminder, Reminder Screen
+- **Command Queue**: Shows pending and completed commands
+
+#### System Section
+
+- **Refresh Node**: Collects fresh system information from the selected client
+- **Peek Directory**: Shows the current workspace directory structure
+
+#### BBrainy Section
+
+- **Activate**: Forces the BBrainy extension to activate on the client
+- **Check Status**: Retrieves and displays BBrainy status with usage data and contribution graph
+- **Scan Fleet**: Broadcasts BBrainy status check to all clients (server-wide operation)
+
+#### Analytics Section
+
+- **24h Report**: Generates a usage report for the last 24 hours
+- **7d Report**: Generates a usage report for the last 7 days
+- **All Time**: Generates a usage report for all available history
+- **Custom**: Allows specifying a custom time period for the report
+
+Analytics reports display:
+- Agent usage statistics
+- Total entries processed
+- Time-based usage breakdowns
+- Chart visualization of usage patterns
+
+#### Notifications Section
+
+- **Set Reminder**: Opens a modal to set a periodic notifier (1-120 minute intervals)
+- **Close Reminder**: Stops the active notifier on the client
+- **Reminder Screen**: Opens a modal to display a reminder with title and body text
+
+### Modal Dialogs
+
+#### Set Notifier Modal
+
+When you click "Set Reminder", a modal appears with:
+- A number input field labeled "Set Reminder (1-120 minutes)"
+- Client-side validation to ensure the interval is between 1 and 120 minutes
+- A confirm button to send the command
+
+The notifier plays a beep sound on the client at the specified interval.
+
+#### Reminder Screen Modal
+
+When you click "Reminder Screen", a modal appears with:
+- A "Title" text input field (default: "Important Message")
+- A "Body" textarea field (default: "This is your message content")
+- A confirm button to send and display the reminder
+
+The reminder screen shows on the client with:
+- Large bell icon (56px)
+- Title displayed horizontally next to the icon
+- Body text below with proper formatting
+- Glass-morphism styling with dark theme
+
+#### Analytics Custom Report Modal
+
+The "Custom" analytics option allows:
+- Specifying a custom time period in hours
+- Flexible time-based reporting
 
 ## Command Queue Log
 
@@ -177,6 +309,8 @@ Behavior details:
 - Client-specific tuning values are shown per selected client.
 - Changing one client's poll or update interval should not overwrite another client's displayed settings.
 
+![Sync Tuning Controls](./resources/screenshots/sync-tuning-controls.png)
+
 ## Generating Reports
 
 Use `Generate Client Report` or the dashboard actions to collect usage or machine information.
@@ -189,6 +323,19 @@ The server can display formatted results for:
 - Workspace data
 
 Usage reports may open automatically in a dedicated webview when returned by a client.
+
+### Server Report
+
+![Server Monitor Report](./resources/screenshots/server-monitor-report.png)
+
+The report displays:
+
+- **Summary**: Total clients, active sync count, offline count, uninstalled count
+- **Server Info**: Server key, status, machine name, username, version
+- **Clients Table**: Detailed information for each connected client
+  - Label, user, hostname, version, sync status, extension status
+  - BBrainy active status, command queue count, last seen timestamp
+- **Export as JSON**: Option to export the full report for external analysis
 
 ## Publishing Client Updates
 
@@ -203,6 +350,96 @@ Recommended practice:
 1. Build the client VSIX.
 2. Publish it to the shared release folder.
 3. Let clients detect it through their configured update checks.
+
+## Common Workflows
+
+### Checking BBrainy Status Across the Fleet
+
+1. Click "Scan Fleet" in the GLOBAL section
+2. The server broadcasts `checkBBrainy` to all clients
+3. Wait for responses to arrive
+4. View the "Check Assets" webview to see all client statuses with a summary count
+
+### Detailed Single Client Review
+
+1. Select a client from the MANAGED FLEET section
+2. Click "Check Status" to get detailed BBrainy information
+3. View the client-specific webview showing:
+   - Installation and activation status
+   - Version number
+   - Last used time
+   - Total usage count
+   - 12-week contribution graph
+
+### Setting Up a Reminder Notification
+
+1. Select a client from the MANAGED FLEET section
+2. Click "Set Reminder" in the NOTIFICATIONS section
+3. Enter an interval between 1 and 120 minutes
+4. Click confirm to start the notifier
+5. The client receives periodic beep notifications at the specified interval
+6. Click "Close Reminder" to stop the notifier
+
+### Sending a Custom Reminder Message
+
+1. Select a client from the MANAGED FLEET section
+2. Click "Reminder Screen" in the NOTIFICATIONS section
+3. Enter a title (e.g., "Update Required")
+4. Enter body text with your message
+5. Click confirm to display the reminder on the client
+6. The client shows a modal with your full message and large icon
+
+### Generating Usage Reports
+
+1. Select a client from the MANAGED FLEET section
+2. Under ANALYTICS, choose:
+   - "24h Report" for the last day
+   - "7d Report" for the last week
+   - "All Time" for complete history
+   - "Custom" for a specific time period
+3. The report displays in a dedicated webview with:
+   - Agent usage breakdown
+   - Chart visualization
+   - Total entries processed
+
+## Tips & Best Practices
+
+### Monitoring Tips
+
+- **Regular Fleet Checks**: Click "Scan Fleet" daily to keep up-to-date on BBrainy status
+- **Check Assets View**: Use this to get a quick overview of all clients' health and status
+- **Offline Clients**: The dashboard shows offline clients; consider investigating if too many are offline
+- **Last Seen Timestamp**: Use this to identify clients that haven't checked in recently
+
+### Command Tips
+
+- **Queue Status**: Check the Command Queue log to see if commands are pending or completed
+- **Error Responses**: If a command fails, the queue log shows the error message for troubleshooting
+- **One Client at a Time**: Select one client before sending per-client commands for clarity
+
+### Notification Tips
+
+- **Short Intervals**: Use 5-15 minute intervals for time-sensitive reminders
+- **Longer Messages**: Use "Reminder Screen" for detailed instructions; "Set Reminder" for periodic alarms
+- **Stopping Notifiers**: Remember to close reminders when done; only one can run per client
+
+### Report Tips
+
+- **Compare Time Periods**: Generate 24h, 7d, and all-time reports to see usage trends
+- **Export for Analysis**: Use "Export as JSON" to analyze server reports in other tools
+- **Timing**: Run "Generate Client Report" regularly to track fleet metrics over time
+
+### Sync Folder Tips
+
+- **Monitor Folder Size**: The sync folder can grow; periodically clean up old response files
+- **Network Latency**: If using UNC paths, factor in network latency when waiting for responses
+- **Backlog**: Check "View Backlog" if responses seem to be delayed
+
+### Performance Tips
+
+- **Large Fleets**: For more than 20 clients, space out "Scan Fleet" operations to avoid overwhelming the network
+- **Batch Reports**: Generate reports outside peak usage hours
+- **Connection Timeouts**: Adjust polling intervals if clients frequently appear offline then online
 
 ## Settings Reference
 

@@ -54,6 +54,10 @@
                                          {
                                              "command":  "clientMonitor.closeNotifier",
                                              "title":  "Client Monitor: Close BBrainy Notifier"
+                                         },
+                                         {
+                                             "command":  "clientMonitor.openDiagLog",
+                                             "title":  "Client Monitor: Open Sync Diagnostics Log"
                                          }
                                      ],
                         "configuration":  {
