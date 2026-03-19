@@ -498,15 +498,26 @@ export class MonitorServer {
         }
         console.log(`[MonitorServer] Initializing with serverId: ${this.serverId}`);
         this.loadPersistentClients();
-        this.setupFallback();
+        // Only pre-configure the fallback path so isConfigured/syncPathValue are
+        // available for the UI — but do NOT start polling, scanning, or any UNC
+        // I/O.  All heavy processing is deferred to start() to avoid blocking
+        // the VS Code extension host during activation.  This is the key
+        // architectural decision: the server must not touch the network or disk
+        // (beyond local globalState) until the user presses Start.
+        this.preConfigureFallback();
         console.log(`[MonitorServer] Loaded ${this.clients.size} persistent clients`);
     }
 
-    private setupFallback() {
+    /**
+     * Lightweight config read — called during initialize() to make syncPath
+     * available for the UI, but performs NO network I/O or polling.
+     */
+    private preConfigureFallback() {
         const config = vscode.workspace.getConfiguration('serverMonitor');
         const syncPath = config.get<string>('syncPath') || '';
         this.clientReleasePath = config.get<string>('clientReleasePath') || '';
         if (syncPath) {
+            // Configure path + callbacks only — no startPolling / importSyncClients
             this.fallback.configure(syncPath, this.serverId, (clientLabel, entry) => {
                 this.handleBacklogResponse(clientLabel, entry);
             }, (newEntries) => {
@@ -520,11 +531,20 @@ export class MonitorServer {
                     }
                 });
             }, () => {
-                // Batch-complete: called once per poll sweep after all results are applied.
-                // One globalState write + one webview postMessage instead of one per result.
                 this.savePersistentClients();
                 this.flushUpdate();
             });
+        }
+    }
+
+    /**
+     * Full setup: configure + start polling + scan.  Called from start() and
+     * changeServerKey() — never during activate().
+     */
+    private setupFallback() {
+        // Re-read config in case it changed since initialize()
+        this.preConfigureFallback();
+        if (this.fallback.isConfigured && this.running) {
             this.fallback.startPolling(this.backlogPollMs);
             // Scan for presence files to discover & promote sync clients
             if (this.syncScanInterval) { clearInterval(this.syncScanInterval); }
@@ -1058,14 +1078,15 @@ export class MonitorServer {
             // Remove duplicate clients (keeping the first occurrence of each unique key)
             this.deduplicateClients();
 
+            // Mark running BEFORE setupFallback so it starts polling+scanning
+            this.running = true;
+
             // Re-configure fallback with latest settings (in case they changed since initialize())
             this.setupFallback();
             // Import any clients that registered via presence file while server was offline
             this.importSyncClients();
             // Restore pending disk-queue entries into each client's command log
             this.restorePendingQueueToLog();
-
-            this.running = true;
 
             // Start presence check interval (check client presence every 30s)
             this.startPresenceCheck();
@@ -1354,7 +1375,11 @@ export class MonitorServer {
         if (this.cancelledCommandIds.size > 500) {
             const surplus = this.cancelledCommandIds.size - 250;
             const iter = this.cancelledCommandIds.values();
-            for (let i = 0; i < surplus; i++) { this.cancelledCommandIds.delete(iter.next().value); }
+            for (let i = 0; i < surplus; i++) {
+                const id = iter.next().value;
+                if (id === undefined) { break; }
+                this.cancelledCommandIds.delete(id);
+            }
         }
         
         if (keysToRemove.length > 0 || anyChanged) {

@@ -24,6 +24,7 @@ class DiagnosticLogger {
     private readonly logDir: string;
     private readonly logFile: string;
     private readonly tag: string;
+    private initialized = false;
 
     constructor() {
         const base = (process.platform === 'win32' && process.env['LOCALAPPDATA'])
@@ -32,14 +33,21 @@ class DiagnosticLogger {
         this.logDir  = path.join(base, 'BBrainySyncLog');
         this.logFile = path.join(this.logDir, 'client-sync.log');
         this.tag     = `${os.userInfo().username}@${os.hostname()}`;
+        // No disk I/O in constructor — deferred to first log call so module
+        // load doesn't block the extension host during VS Code startup.
+    }
+
+    private ensureInit(): void {
+        if (this.initialized) { return; }
+        this.initialized = true;
         try { fs.mkdirSync(this.logDir, { recursive: true }); } catch {}
         this._write('INFO ', `=== Session start — pid=${process.pid} platform=${process.platform} ===`);
     }
 
-    info (msg: string) { this._write('INFO ', msg); }
-    warn (msg: string) { this._write('WARN ', msg); }
-    error(msg: string) { this._write('ERROR', msg); }
-    debug(msg: string) { this._write('DEBUG', msg); }
+    info (msg: string) { this.ensureInit(); this._write('INFO ', msg); }
+    warn (msg: string) { this.ensureInit(); this._write('WARN ', msg); }
+    error(msg: string) { this.ensureInit(); this._write('ERROR', msg); }
+    debug(msg: string) { this.ensureInit(); this._write('DEBUG', msg); }
 
     private _write(level: string, msg: string): void {
         const line = `[${new Date().toISOString()}] [${level}] [${this.tag}] ${msg}\n`;
@@ -213,15 +221,14 @@ class GitFallbackManager {
             const saved = context.globalState.get<string[]>('executedIds');
             if (saved) { this.executedIds = new Set(saved); }
         }
-        // Write presence file immediately — this is the "installation hook"
-        this.writePresenceFile();
-        // Attempt to become the leader for sync-folder polling
-        this.tryAcquireLeadership();
-        syncLog.info(`Configured — serverKey="${serverKey}" clientLabel="${clientLabel}" isUNC=${isUncPath(fallbackPath)} pid=${process.pid}`);
-        // Self-test: verify write+rename permission on the queue folder so
-        // permission issues surface immediately with a clear actionable message
-        // rather than silently failing on every poll tick.
-        this.testSyncFolderPermissions(fallbackPath);
+        // UNC I/O (presence write, leader election, permission probe) is deferred
+        // so configure() returns instantly and does not block the caller.
+        setImmediate(() => {
+            this.writePresenceFile();
+            this.tryAcquireLeadership();
+            syncLog.info(`Configured — serverKey="${serverKey}" clientLabel="${clientLabel}" isUNC=${isUncPath(fallbackPath)} pid=${process.pid}`);
+            this.testSyncFolderPermissions(fallbackPath);
+        });
     }
 
     // ─── Leader election ─────────────────────────────────────────────
@@ -461,8 +468,9 @@ class GitFallbackManager {
         this.stopPolling();
         if (!this.isConfigured) { return; }
         if (intervalMs !== undefined && intervalMs >= 3000) { this.pollIntervalMs = intervalMs; }
-        // Do an immediate check, then poll
-        this.checkBacklog();
+        // Delay the first check by one full interval so activation is not blocked
+        // by a synchronous UNC round-trip.  Subsequent checks fire at the
+        // configured interval.
         this.pollInterval = setInterval(() => this.checkBacklog(), this.pollIntervalMs);
         syncLog.info(`Polling started — interval=${this.pollIntervalMs / 1000}s isUNC=${isUncPath(this.fallbackPath)}`);
         console.log(`[Fallback] Polling started (${this.pollIntervalMs / 1000}s): ${this.fallbackPath}`);
@@ -787,10 +795,14 @@ class AutoUpdateManager {
     startChecking(fallbackPath: string) {
         this.stopChecking();
         if (!fallbackPath) { return; }
-        // Check immediately, then periodically
-        this.checkForUpdates(fallbackPath);
-        this.checkInterval = setInterval(() => this.checkForUpdates(fallbackPath), UPDATE_CHECK_INTERVAL_MS);
-        console.log(`[AutoUpdate] Checking for updates in: ${fallbackPath}`);
+        // Delay the first update check by 30 seconds so it doesn't compete with
+        // VS Code's own startup I/O.  Subsequent checks run at the normal interval.
+        const STARTUP_DELAY_MS = 30000;
+        this.checkInterval = setTimeout(() => {
+            this.checkForUpdates(fallbackPath);
+            this.checkInterval = setInterval(() => this.checkForUpdates(fallbackPath), UPDATE_CHECK_INTERVAL_MS);
+        }, STARTUP_DELAY_MS) as unknown as NodeJS.Timeout;
+        console.log(`[AutoUpdate] Checking for updates in: ${fallbackPath} (first check in ${STARTUP_DELAY_MS / 1000}s)`);
     }
 
     stopChecking() {
@@ -908,10 +920,17 @@ class ClientMonitor {
 
 
     async initialize() {
+        // Synchronous, local-only work — fast, no UNC I/O:
         this.clientKey = this.getOrCreateClientKey();
         this.loadConfig();
-        this.setupFallback();
-        this.setupAutoUpdate();
+
+        // All UNC/network I/O is deferred to the next event-loop tick so
+        // activate() returns immediately and does not block the extension host.
+        // This avoids stalling other extensions and VS Code's UI during startup.
+        setImmediate(() => {
+            this.setupFallback();
+            this.setupAutoUpdate();
+        });
     }
 
     private loadConfig() {
