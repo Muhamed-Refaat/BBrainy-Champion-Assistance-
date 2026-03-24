@@ -210,14 +210,13 @@ class ServerFallbackManager {
     startPolling(intervalMs: number = 15000) {
         this.stopPolling();
         if (!this.isConfigured) { return; }
-        // Immediate sweep on start to pick up any results already waiting
-        this.pollResultsDir();
-        this.pollServerBacklog();
+        // Only poll results/ (live channel) — server-backlog/ polling is removed
+        // to minimize sync-folder visits.  Clients write to results/ when the
+        // server is online, which is the expected path during normal operation.
         this.backlogPollInterval = setInterval(() => {
             this.pollResultsDir();
-            this.pollServerBacklog();
         }, intervalMs);
-        console.log(`[ServerFallback] Polling results+backlog every ${intervalMs / 1000}s from: ${this.syncPath}`);
+        console.log(`[ServerFallback] Polling results every ${intervalMs / 1000}s from: ${this.syncPath}`);
     }
 
     stopPolling() {
@@ -471,11 +470,11 @@ export class MonitorServer {
     private cancelledCommandIds = new Set<string>();
 
     // ─── Configurable intervals (ms) ─────────────────────────────────
-    private backlogPollMs: number = 15000;      // server reads server-backlog/
-    private presenceCheckMs: number = 30000;    // check client presence staleness
-    private syncScanMs: number = 30000;         // scan presence files in clients/<serverKey>/
-    private serverPresenceMs: number = 30000;   // refresh server's own presence file
-    private clientPollMs: number = 15000;       // target interval pushed to clients
+    private backlogPollMs: number = 30000;      // server reads results/ (live channel only)
+    private presenceCheckMs: number = 60000;    // check client presence + import sync clients (merged)
+    private syncScanMs: number = 60000;         // (legacy — sync scan merged into presenceCheck)
+    private serverPresenceMs: number = 60000;   // refresh server's own presence file
+    private clientPollMs: number = 30000;       // target interval pushed to clients
     private commandTimeoutMs: number = 120000;  // 2 minutes – queued commands time out after this
     private updateDebounceTimer: NodeJS.Timeout | null = null;
 
@@ -546,10 +545,9 @@ export class MonitorServer {
         this.preConfigureFallback();
         if (this.fallback.isConfigured && this.running) {
             this.fallback.startPolling(this.backlogPollMs);
-            // Scan for presence files to discover & promote sync clients
-            if (this.syncScanInterval) { clearInterval(this.syncScanInterval); }
-            this.syncScanInterval = setInterval(() => this.importSyncClients(), this.syncScanMs);
-            // Immediate scan — don't wait for the first interval tick
+            // Sync-client scanning is merged into checkClientPresence() to avoid
+            // a duplicate scanRegisteredClients() UNC round-trip every tick.
+            // Do one immediate scan on start so clients appear right away.
             this.importSyncClients();
         }
     }
@@ -560,6 +558,10 @@ export class MonitorServer {
         // snapshot contains the new key — the UI sees it without waiting for I/O.
         this.removeServerPresenceFile();
         this.serverId = newKey;
+        // Reset presence caches for new key
+        this.stalePresenceCleaned = false;
+        this.serverPresenceStartedAt = 0;
+        this.serversDirEnsured = false;
         // Mark as scanning so that any snapshot that slips out during the deferred
         // block still carries scanning=true. The frontend also sets it optimistically.
         this.isScanning = true;
@@ -614,20 +616,38 @@ export class MonitorServer {
         }
     }
 
+    // Tracks whether we've already cleaned up stale presence files from previous PIDs.
+    // Only need to do this once at start — not every 30s refresh.
+    private stalePresenceCleaned = false;
+    // Cache the startedAt time so subsequent presence refreshes don't need to re-read
+    // the existing presence file (saves a UNC round-trip on every tick).
+    private serverPresenceStartedAt: number = 0;
+    // Whether the servers/ dir has already been ensured (no need to mkdir every tick).
+    private serversDirEnsured = false;
+
     private writeServerPresenceFile(status: 'online' | 'offline'): void {
         if (!this.fallback.isConfigured) { return; }
         try {
             const serversDir = path.join(this.fallback.syncPathValue, 'servers');
-            fsEnsureDir(serversDir);
-            // Remove leftover files from previous instances (different PIDs)
-            this.cleanStaleServerPresenceFiles();
+            if (!this.serversDirEnsured) {
+                fsEnsureDir(serversDir);
+                this.serversDirEnsured = true;
+            }
+            // Stale cleanup only once per start — not on every refresh tick
+            if (!this.stalePresenceCleaned) {
+                this.cleanStaleServerPresenceFiles();
+                this.stalePresenceCleaned = true;
+            }
             const filePath = this.serverPresenceFilePath();
-            let startedAt = Date.now();
-            if (status === 'online' && fsPathExists(filePath)) {
-                try {
-                    const existing: ServerPresenceEntry = JSON.parse(fsReadText(filePath));
-                    if (existing.status === 'online') { startedAt = existing.startedAt; }
-                } catch { /* keep current */ }
+            // Use cached startedAt for refreshes; only read from disk on first write
+            if (this.serverPresenceStartedAt === 0) {
+                this.serverPresenceStartedAt = Date.now();
+                if (status === 'online' && fsPathExists(filePath)) {
+                    try {
+                        const existing: ServerPresenceEntry = JSON.parse(fsReadText(filePath));
+                        if (existing.status === 'online') { this.serverPresenceStartedAt = existing.startedAt; }
+                    } catch { /* keep current */ }
+                }
             }
             const clientsSnapshot = Array.from(this.clients.values()).map(c => ({
                 key: c.key,
@@ -641,12 +661,11 @@ export class MonitorServer {
                 username: os.userInfo().username,
                 version: this.version,
                 clients: clientsSnapshot,
-                startedAt,
+                startedAt: this.serverPresenceStartedAt,
                 lastSeen: Date.now(),
                 status
             };
             fsWriteText(filePath, JSON.stringify(entry, null, 2));
-            console.log(`[MonitorServer] Server presence file written (${status}): ${filePath}`);
         } catch (e: any) {
             console.warn(`[MonitorServer] Could not write server presence file: ${e?.message || e}`);
         }
@@ -911,6 +930,12 @@ export class MonitorServer {
     // Adds them as offline stubs and persists them to globalState so they survive restarts.
     private importSyncClients() {
         const entries = this.fallback.scanRegisteredClients();
+        this.importSyncClientsFromEntries(entries);
+    }
+
+    /** Process pre-scanned presence entries — avoids a redundant scanRegisteredClients() call
+     *  when the caller already has the entries (e.g. checkClientPresence). */
+    private importSyncClientsFromEntries(entries: PresenceEntry[]) {
         if (entries.length === 0) { return; }
 
         // Grace period: treat 'inactive' only if lastSeen > 2 hours ago.
@@ -1083,8 +1108,7 @@ export class MonitorServer {
 
             // Re-configure fallback with latest settings (in case they changed since initialize())
             this.setupFallback();
-            // Import any clients that registered via presence file while server was offline
-            this.importSyncClients();
+            // setupFallback() already does one immediate importSyncClients() scan.
             // Restore pending disk-queue entries into each client's command log
             this.restorePendingQueueToLog();
 
@@ -1186,12 +1210,9 @@ export class MonitorServer {
         this.serverPresenceMs = clamp(opts.serverPresenceMs, 3000, 300000, this.serverPresenceMs);
 
         if (this.running) {
-            // Restart all timers with new intervals
+            // Restart timers with new intervals
             this.fallback.startPolling(this.backlogPollMs);
-
-            if (this.syncScanInterval) { clearInterval(this.syncScanInterval); }
-            this.syncScanInterval = setInterval(() => this.importSyncClients(), this.syncScanMs);
-
+            // syncScan is merged into presenceCheck — no separate timer needed
             this.startPresenceCheck();
 
             if (this.serverPresenceInterval) { clearInterval(this.serverPresenceInterval); }
@@ -1303,10 +1324,13 @@ export class MonitorServer {
         // These are "registered" clients that must never be auto-removed — even if
         // their lastSeen is stale — because importSyncClients would just re-add them
         // on the next tick, causing a visible oscillation in the dashboard.
+        // Re-use the same scan for importSyncClients to avoid a second UNC round-trip.
         const registeredInSync = new Set<string>();
+        let scannedEntries: PresenceEntry[] = [];
         if (this.fallback.isConfigured) {
             try {
-                for (const entry of this.fallback.scanRegisteredClients()) {
+                scannedEntries = this.fallback.scanRegisteredClients();
+                for (const entry of scannedEntries) {
                     registeredInSync.add(entry.clientKey);
                 }
             } catch { /* best-effort */ }
@@ -1388,6 +1412,12 @@ export class MonitorServer {
             }
             this.savePersistentClients();
             this.triggerUpdate();
+        }
+
+        // Piggyback the sync-client import onto the same tick using the
+        // already-scanned presence entries — avoids a second UNC round-trip.
+        if (scannedEntries.length > 0) {
+            this.importSyncClientsFromEntries(scannedEntries);
         }
     }
     private showUsageReportWebview(usageData: any, username: string = 'Unknown', hostname: string = 'Unknown') {

@@ -7,7 +7,7 @@ import { execSync, exec } from 'child_process';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DEFAULT_SERVER_KEY = 'default';
-const FALLBACK_POLL_INTERVAL_MS = 15000;
+const FALLBACK_POLL_INTERVAL_MS = 30000;
 const UPDATE_CHECK_INTERVAL_MS = 3600000; // 1 hour
 const EXTENSION_ID = 'client-monitor';
 
@@ -199,6 +199,14 @@ class GitFallbackManager {
     private executedIds: Set<string> = new Set();
     private context: vscode.ExtensionContext | null = null;
     private _isLeader: boolean = false;
+    // Tick counter for throttling expensive UNC operations.  Leadership
+    // re-evaluation and presence-file refresh only need to happen every few
+    // poll ticks, not on every single tick.
+    private pollTickCount: number = 0;
+    // How many ticks between leader re-checks and presence refreshes.
+    // At 15s poll interval, 4 ticks = ~60s.  Keeps UNC ops low while still
+    // detecting dead leaders within a reasonable time window.
+    private readonly HEAVY_OPS_EVERY_N_TICKS = 4;
 
     configure(
         fallbackPath: string,
@@ -497,14 +505,16 @@ class GitFallbackManager {
     private async checkBacklog() {
         if (!this.isConfigured || !this.onCommand) { return; }
 
-        // ── Leader election check ────────────────────────────────────
-        // Re-evaluate leadership on every tick.  If the leader died between
-        // ticks, a follower will promote itself.
-        this.tryAcquireLeadership();
+        this.pollTickCount++;
 
-        // Keep presence file fresh regardless of leader/follower status
-        // so the server always sees an up-to-date lastSeen.
-        this.updatePresenceLastSeen();
+        // ── Leader election + presence refresh (throttled) ───────────
+        // These each do 2-3 UNC round-trips.  Running them every tick (15s)
+        // wastes I/O.  Instead, run them every Nth tick (~60s) which still
+        // detects dead leaders promptly while halving the per-tick UNC cost.
+        if (this.pollTickCount % this.HEAVY_OPS_EVERY_N_TICKS === 0) {
+            this.tryAcquireLeadership();
+            this.updatePresenceLastSeen();
+        }
 
         // Only the leader interacts with the queue and writes results.
         if (!this._isLeader) { return; }
@@ -757,7 +767,22 @@ class GitFallbackManager {
 
     // Check whether the server is currently online by reading its presence file.
     // Server is considered online if its presence file has lastSeen within 90 seconds.
+    // Results are cached for 60s to avoid repeated UNC scans of the servers/ directory
+    // when multiple result writes happen in a single checkBacklog() sweep.
+    private _serverOnlineCache: { value: boolean; ts: number } = { value: false, ts: 0 };
+    private static readonly SERVER_ONLINE_CACHE_MS = 60000;
+
     private isServerOnline(): boolean {
+        const now = Date.now();
+        if (now - this._serverOnlineCache.ts < GitFallbackManager.SERVER_ONLINE_CACHE_MS) {
+            return this._serverOnlineCache.value;
+        }
+        const result = this._checkServerOnlineUncached();
+        this._serverOnlineCache = { value: result, ts: now };
+        return result;
+    }
+
+    private _checkServerOnlineUncached(): boolean {
         if (!this.fallbackPath || !this.serverKey) { return false; }
         try {
             const serversDir = path.join(this.fallbackPath, 'servers');
